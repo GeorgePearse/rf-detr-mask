@@ -60,3 +60,5 @@ rfdetr_mask.egg-info/dependency_links.txt
 rfdetr_mask.egg-info/entry_points.txt
 rfdetr_mask.egg-info/requires.txt
 rfdetr_mask.egg-info/top_level.txt
+tests/test_coco_segmentation.py
+tests/test_minimal_segmentation.py

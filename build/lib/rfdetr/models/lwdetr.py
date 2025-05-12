@@ -181,8 +181,8 @@ class LWDETR(nn.Module):
 
         outputs_class = self.class_embed(hs)
         
-        # Generate mask predictions from the same features
-        outputs_mask = self.mask_embed(hs).reshape(hs.shape[0], hs.shape[1], hs.shape[2], 28, 28)
+        # Generate mask predictions from the same features (in FP16)
+        outputs_mask = self.mask_embed(hs).reshape(hs.shape[0], hs.shape[1], hs.shape[2], 28, 28).half()
 
         out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1], 'pred_masks': outputs_mask[-1]}
         if self.aux_loss:
@@ -218,8 +218,8 @@ class LWDETR(nn.Module):
         else:
             outputs_coord = (self.bbox_embed(hs) + ref_unsigmoid).sigmoid()
         outputs_class = self.class_embed(hs)
-        outputs_mask = self.mask_embed(hs).reshape(hs.shape[0], hs.shape[1], hs.shape[2], 28, 28)
-        return outputs_coord, outputs_class, outputs_mask
+        outputs_mask = self.mask_embed(hs).reshape(hs.shape[0], hs.shape[1], hs.shape[2], 28, 28).half()
+        return outputs_coord, outputs_class, outputs_mask, ref_unsigmoid
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord, outputs_mask=None):
@@ -440,15 +440,49 @@ class SetCriterion(nn.Module):
         # Extract predicted masks for each matched query
         src_masks = outputs['pred_masks'][src_idx]
         
-        # Extract GT masks for each matched target
-        target_masks = torch.cat([t['masks'][i] for t, (_, i) in zip(targets, indices)], dim=0)
+        # Check if masks are available in targets
+        has_masks = all('masks' in t for t, (_, i) in zip(targets, indices))
+        if not has_masks:
+            # Return zero loss if masks are not available
+            return {'loss_mask': torch.as_tensor(0.0, device=src_masks.device)}
         
-        # Resize target masks to match prediction size (28x28)
-        target_masks = F.interpolate(target_masks.unsqueeze(1).float(), size=(28, 28), mode="bilinear").squeeze(1).gt(0.5)
+        # Process each mask individually and resize to a common size before concatenation
+        resized_masks = []
+        for t, (_, i) in zip(targets, indices):
+            if len(i) > 0:  # Skip if no indices for this batch item
+                # Get masks for current target and resize them all to 28x28
+                masks = t['masks'][i]  # Shape: [num_instances, h, w]
+                # Resize masks to 28x28 in batches to save memory
+                batch_size = 32  # Process in batches
+                num_masks = masks.shape[0]
+                resized_batch = []
+                
+                for j in range(0, num_masks, batch_size):
+                    # Process a batch of masks
+                    mask_batch = masks[j:j+batch_size]
+                    # Resize this batch
+                    # Use half precision (FP16) for memory efficiency
+                    batch_resized = F.interpolate(
+                        mask_batch.unsqueeze(1).half(), 
+                        size=(28, 28), 
+                        mode="bilinear"
+                    ).squeeze(1).gt(0.5)
+                    resized_batch.append(batch_resized)
+                
+                # Concatenate the resized batches
+                masks = torch.cat(resized_batch, dim=0) if resized_batch else torch.zeros((0, 28, 28), dtype=torch.bool, device=masks.device)
+                resized_masks.append(masks)
+        
+        # Concatenate all resized masks
+        if resized_masks:
+            target_masks = torch.cat(resized_masks, dim=0)
+        else:
+            # Return zero loss if no valid masks
+            return {'loss_mask': torch.as_tensor(0.0, device=src_masks.device)}
         
         # Compute dice loss
-        src_masks = src_masks.flatten(1) # [num_matched_queries, 28*28]
-        target_masks = target_masks.flatten(1) # [num_matched_queries, 28*28]
+        src_masks = src_masks.flatten(1)  # [num_matched_queries, 28*28]
+        target_masks = target_masks.flatten(1)  # [num_matched_queries, 28*28]
         
         # Dice loss
         numerator = 2 * (src_masks * target_masks).sum(1)
@@ -511,6 +545,12 @@ class SetCriterion(nn.Module):
 
         if 'enc_outputs' in outputs:
             enc_outputs = outputs['enc_outputs']
+            # Add pred_masks key if missing for compatibility with mask loss
+            if 'masks' in self.losses and 'pred_masks' not in enc_outputs:
+                enc_outputs['pred_masks'] = torch.zeros((outputs['pred_masks'].shape[0], 
+                                                        enc_outputs['pred_boxes'].shape[1], 
+                                                        28, 28), 
+                                                       device=outputs['pred_masks'].device)
             indices = self.matcher(enc_outputs, targets, group_detr=group_detr)
             for loss in self.losses:
                 kwargs = {}
@@ -619,13 +659,110 @@ class PostProcess(nn.Module):
                 masks_per_image = out_mask[i]
                 masks = torch.gather(masks_per_image, 0, topk_boxes[i].unsqueeze(-1).unsqueeze(-1).repeat(1, 28, 28))
                 
-                # Resize masks to original image size
-                masks = F.interpolate(masks.unsqueeze(1), size=(int(img_h[i].item()), int(img_w[i].item())), 
-                                      mode='bilinear', align_corners=False).squeeze(1)
-                result['masks'] = masks
+                # Resize masks to original image size with batching to reduce memory consumption
+                batch_size = 32  # Process masks in batches of this size
+                num_masks = masks.shape[0]
+                resized_masks = []
+                
+                for j in range(0, num_masks, batch_size):
+                    # Process a batch of masks
+                    batch_masks = masks[j:j+batch_size]
+                    # Ensure FP16 for interpolation
+                    batch_resized = F.interpolate(
+                        batch_masks.unsqueeze(1).half(), 
+                        size=(int(img_h[i].item()), int(img_w[i].item())), 
+                        mode='bilinear', 
+                        align_corners=False
+                    ).squeeze(1)
+                    resized_masks.append(batch_resized)
+                
+                # Concatenate batches back together
+                if resized_masks:
+                    result['masks'] = torch.cat(resized_masks, dim=0)
+                else:
+                    result['masks'] = torch.zeros((0, int(img_h[i].item()), int(img_w[i].item())), device=masks.device)
                 
             results.append(result)
 
+        return results
+
+
+class PostProcessSegm(nn.Module):
+    """
+    Post-processes the mask predictions from the model into a format suitable for
+    evaluation and visualization.
+    """
+    def __init__(self, threshold=0.5):
+        super().__init__()
+        self.threshold = threshold
+
+    @torch.no_grad()
+    def forward(self, outputs, target_sizes):
+        """
+        Process the mask outputs to create high-resolution binary masks.
+        
+        Args:
+            outputs: Dict containing the model outputs including 'pred_masks'
+            target_sizes: Tensor of shape [batch_size, 2] containing the size of each image
+        
+        Returns:
+            List of dicts with mask predictions for each image
+        """
+        out_logits, out_bbox = outputs['pred_logits'], outputs['pred_boxes']
+        assert 'pred_masks' in outputs, "Masks not found in model outputs"
+        out_masks = outputs['pred_masks']
+        
+        assert len(out_logits) == len(target_sizes)
+        assert target_sizes.shape[1] == 2
+        
+        prob = out_logits.sigmoid()
+        topk_values, topk_indexes = torch.topk(
+            prob.view(out_logits.shape[0], -1), 100, dim=1
+        )
+        scores = topk_values
+        topk_boxes = topk_indexes // out_logits.shape[2]
+        labels = topk_indexes % out_logits.shape[2]
+        
+        # Extract masks for top-k predictions
+        batch_size = out_masks.shape[0]
+        results = []
+        
+        for i in range(batch_size):
+            masks = out_masks[i, topk_boxes[i]]  # [num_queries, H/4, W/4]
+            
+            # Upsample masks to original image size with batching for memory efficiency
+            img_h, img_w = target_sizes[i]
+            batch_size = 32  # Process masks in batches of this size
+            num_masks = masks.shape[0]
+            resized_masks = []
+            
+            for j in range(0, num_masks, batch_size):
+                # Process a batch of masks
+                batch_masks = masks[j:j+batch_size]
+                # Ensure FP16 for interpolation
+                batch_resized = F.interpolate(
+                    batch_masks.unsqueeze(1).half(), 
+                    size=(int(img_h.item()), int(img_w.item())),
+                    mode='bilinear',
+                    align_corners=False
+                ).squeeze(1)
+                # Apply threshold immediately to save memory
+                batch_resized = batch_resized > self.threshold
+                resized_masks.append(batch_resized)
+            
+            # Concatenate batches back together
+            if resized_masks:
+                masks = torch.cat(resized_masks, dim=0)
+            else:
+                masks = torch.zeros((0, int(img_h.item()), int(img_w.item())), 
+                                   dtype=torch.bool, device=masks.device)
+            
+            results.append({
+                'masks': masks,
+                'scores': scores[i],
+                'labels': labels[i],
+            })
+            
         return results
 
 
@@ -728,5 +865,8 @@ def build_criterion_and_postprocessors(args):
                              ia_bce_loss=args.ia_bce_loss)
     criterion.to(device)
     postprocessors = {'bbox': PostProcess(num_select=args.num_select)}
+    
+    # Add segmentation postprocessor
+    postprocessors.update({'segm': PostProcessSegm()})
 
     return criterion, postprocessors

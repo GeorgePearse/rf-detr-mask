@@ -19,10 +19,12 @@ COCO dataset which returns image_id for evaluation.
 Mostly copy-paste from https://github.com/pytorch/vision/blob/13b35ff/references/detection/coco_utils.py
 """
 from pathlib import Path
+import numpy as np
 
 import torch
 import torch.utils.data
 import torchvision
+import pycocotools.mask as mask_util
 
 import rfdetr.datasets.transforms as T
 
@@ -86,9 +88,33 @@ class ConvertCoco(object):
         classes = [obj["category_id"] for obj in anno]
         classes = torch.tensor(classes, dtype=torch.int64)
 
+        # Handle segmentation masks if available
+        masks = None
+        if anno and "segmentation" in anno[0]:
+            masks = []
+            for obj in anno:
+                if 'segmentation' in obj:
+                    if isinstance(obj['segmentation'], list):
+                        # Polygon format
+                        rles = mask_util.frPyObjects(obj['segmentation'], h, w)
+                        rle = mask_util.merge(rles)
+                    else:
+                        # RLE format
+                        rle = obj['segmentation']
+                    mask = mask_util.decode(rle)
+                    masks.append(mask)
+                else:
+                    # Create an empty mask if segmentation is missing
+                    masks.append(np.zeros((h, w), dtype=np.uint8))
+            
+            if masks:
+                masks = torch.as_tensor(np.stack(masks), dtype=torch.bool)
+
         keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
         boxes = boxes[keep]
         classes = classes[keep]
+        if masks is not None:
+            masks = masks[keep]
 
         target = {}
         target["boxes"] = boxes
@@ -100,6 +126,10 @@ class ConvertCoco(object):
         iscrowd = torch.tensor([obj["iscrowd"] if "iscrowd" in obj else 0 for obj in anno])
         target["area"] = area[keep]
         target["iscrowd"] = iscrowd[keep]
+
+        # Add masks to target if available
+        if masks is not None:
+            target["masks"] = masks
 
         target["orig_size"] = torch.as_tensor([int(h), int(w)])
         target["size"] = torch.as_tensor([int(h), int(w)])
