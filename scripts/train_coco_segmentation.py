@@ -60,6 +60,8 @@ def get_args_parser():
                         help='Gradient accumulation steps')
     parser.add_argument('--amp', action='store_true',
                         help='Use Automatic Mixed Precision')
+    parser.add_argument('--fp16_training', action='store_true',
+                        help='Use FP16 for the whole training pipeline (even when AMP is off)')
     
     # Model parameters
     parser.add_argument('--encoder', default='vit_base', type=str,
@@ -112,6 +114,11 @@ def main(args):
     
     # Create model
     model = build_model(args)
+    
+    # Convert model to FP16 if specified
+    if getattr(args, 'fp16_training', False):
+        model = model.half()
+        
     model.to(device)
     
     # Create criterion and postprocessors
