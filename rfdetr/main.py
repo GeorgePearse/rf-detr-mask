@@ -76,6 +76,7 @@ class Model:
         self.resolution = args.resolution
         self.model = build_model(args)
         self.device = torch.device(args.device)
+        _, self.postprocessors = build_criterion_and_postprocessors(args)
         if args.pretrain_weights is not None:
             print("Loading pretrain weights")
             try:

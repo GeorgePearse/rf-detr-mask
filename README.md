@@ -14,6 +14,8 @@ RF-DETR-MASK is an instance segmentation extension of the RF-DETR architecture, 
 
 Building on the foundation of RF-DETR, which exceeds 60 AP on the [Microsoft COCO benchmark](https://cocodataset.org/#home), this extension adds instance segmentation capabilities with minimal computational overhead. Like its parent architecture, RF-DETR-MASK maintains competitive speed and accuracy, making it suitable for both detection and segmentation tasks.
 
+The segmentation head architecture is inspired by [Facebook DETR's segmentation implementation](https://github.com/facebookresearch/detr/blob/main/models/segmentation.py).
+
 **RF-DETR-MASK combines the edge-friendly performance of RF-DETR with the added capability of producing instance masks, ideal for applications requiring precise object boundaries.**
 
 ## Results
@@ -94,7 +96,7 @@ model = RFDETRBase()
 url = "https://media.roboflow.com/notebooks/examples/dog-2.jpeg"
 
 image = Image.open(io.BytesIO(requests.get(url).content))
-detections = model.predict(image, threshold=0.5)
+detections = model.predict(image, threshold=0.5, return_masks=True)
 
 labels = [
     f"{COCO_CLASSES[class_id]} {confidence:.2f}"
@@ -109,7 +111,7 @@ mask_annotator = sv.MaskAnnotator()
 label_annotator = sv.LabelAnnotator()
 
 # Apply mask annotations first (if masks are present)
-if hasattr(detections, 'mask'):
+if hasattr(detections, 'mask') and detections.mask is not None:
     annotated_image = mask_annotator.annotate(annotated_image, detections)
 
 # Then add bounding boxes and labels
@@ -615,7 +617,7 @@ Both the code and the weights pretrained on the COCO dataset are released under 
 
 ## Acknowledgements
 
-Our work is built upon [LW-DETR](https://arxiv.org/pdf/2406.03459), [DINOv2](https://arxiv.org/pdf/2304.07193), and [Deformable DETR](https://arxiv.org/pdf/2010.04159). Thanks to their authors for their excellent work!
+Our work is built upon [LW-DETR](https://arxiv.org/pdf/2406.03459), [DINOv2](https://arxiv.org/pdf/2304.07193), [DETR](https://github.com/facebookresearch/detr), and [Deformable DETR](https://arxiv.org/pdf/2010.04159). Thanks to their authors for their excellent work!
 
 ## Citation
 

@@ -134,9 +134,8 @@ class RFDETR:
             threshold: float = 0.5,
             return_masks: bool = False,
             **kwargs,
-    ) -> Union[sv.Detections, List[sv.Detections], tuple]:
-        """Performs object detection on the input images and returns bounding box
-        predictions and optionally mask predictions.
+    ) -> Union[sv.Detections, List[sv.Detections]]:
+        """Performs object detection and instance segmentation on the input images.
 
         This method accepts a single image or a list of images in various formats
         (file path, PIL Image, NumPy array, or torch.Tensor). The images should be in
@@ -150,14 +149,15 @@ class RFDETR:
             threshold (float, optional):
                 The minimum confidence score needed to consider a detected bounding box valid.
             return_masks (bool, optional):
-                Whether to return mask predictions along with the bounding boxes.
+                Whether to include mask predictions in the detections. When True, the
+                'mask' attribute of the returned Detections will contain instance masks.
             **kwargs:
                 Additional keyword arguments.
 
         Returns:
-            Union[sv.Detections, List[sv.Detections], tuple]: 
-                If return_masks=False, returns a single or multiple Detections objects.
-                If return_masks=True, returns a tuple of (detections, masks).
+            Union[sv.Detections, List[sv.Detections]]: 
+                Either a single or multiple Detections objects containing bounding boxes,
+                confidence scores, class IDs, and optionally instance masks (if return_masks=True).
         """
         self.model.model.eval()
 
@@ -204,7 +204,6 @@ class RFDETR:
             results = self.model.postprocessors["bbox"](predictions, target_sizes=target_sizes)
 
         detections_list = []
-        masks_list = []
         
         for result in results:
             scores = result["scores"]
@@ -221,28 +220,23 @@ class RFDETR:
             
             if masks is not None:
                 masks = masks[keep]
+                # Convert masks to numpy array with shape (n, H, W)
+                mask_array = masks.cpu().numpy() if masks is not None else None
+            else:
+                mask_array = None
 
             detections = sv.Detections(
                 xyxy=boxes.cpu().numpy(),
                 confidence=scores.cpu().numpy(),
                 class_id=labels.cpu().numpy(),
+                mask=mask_array,
             )
             detections_list.append(detections)
-            
-            if masks is not None:
-                masks_list.append(masks.cpu().numpy())
 
         if len(detections_list) == 1:
-            detections_output = detections_list[0]
-            masks_output = masks_list[0] if masks_list else None
+            return detections_list[0]
         else:
-            detections_output = detections_list
-            masks_output = masks_list if masks_list else None
-            
-        if return_masks and masks_output is not None:
-            return detections_output, masks_output
-        else:
-            return detections_output
+            return detections_list
 
 
 class RFDETRBase(RFDETR):
