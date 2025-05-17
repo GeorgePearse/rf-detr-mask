@@ -1,0 +1,42 @@
+# Ruff configuration for RFDETR-Mask project
+
+line-length = 100
+target-version = "py39"
+
+[lint]
+# Enable flake8-bugbear (`B`) rules, in addition to the default C901
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+    "N",  # pep8-naming
+    "TID",  # flake8-tidy-imports
+    "SIM",  # flake8-simplify
+    "C90",  # mccabe
+    "RUF",  # Ruff-specific rules
+]
+
+# Avoid enforcing line-length violations (`E501`)
+ignore = [
+    "E501",  # line too long
+    "E203",  # whitespace before ':'
+]
+
+# Allow unused variables when underscore-prefixed
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[lint.mccabe]
+max-complexity = 10
+
+[lint.isort]
+known-first-party = ["rfdetr"]
+known-third-party = ["torch", "torchvision", "numpy", "cv2", "PIL"]
+
+[lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py
+"tests/*.py" = ["D", "N", "B", "C"]  # Relax docstring and naming rules in tests
+"scripts/*.py" = ["D"]  # Relax docstring rules in scripts

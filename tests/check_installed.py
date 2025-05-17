@@ -1,6 +1,7 @@
 import inspect
-import rfdetr.detr
+
 import rfdetr
+import rfdetr.detr
 
 print("rfdetr.__file__:", rfdetr.__file__)
 print("rfdetr.detr.__file__:", rfdetr.detr.__file__)
@@ -19,7 +20,7 @@ elif "return detections_list" in predict_source:
     print("✓ New version detected - returns Detections with masks")
 else:
     print("? Unknown version")
-    
+
 # Also check postprocessors initialization
 model_init = rfdetr.main.Model.__init__
 init_source = inspect.getsource(model_init)

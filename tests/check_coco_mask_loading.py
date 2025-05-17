@@ -15,28 +15,29 @@ import os
 import sys
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
 from PIL import Image
 from pycocotools.coco import COCO
-import pycocotools.mask as mask_util
 
 # Add the parent directory to the path so we can import the module
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from rfdetr.datasets.coco import CocoDetection, ConvertCoco
 import rfdetr.datasets.transforms as T
+from rfdetr.datasets.coco import CocoDetection, ConvertCoco
 
 
 def parse_args():
-    parser = argparse.ArgumentParser('Check COCO Mask Loading')
-    parser.add_argument('--coco_path', type=str, required=True,
-                        help='Path to COCO dataset')
-    parser.add_argument('--output_dir', type=str, default='mask_check_output',
-                        help='Directory to save output visualizations')
-    parser.add_argument('--num_images', type=int, default=5,
-                        help='Number of images to check')
+    parser = argparse.ArgumentParser("Check COCO Mask Loading")
+    parser.add_argument("--coco_path", type=str, required=True, help="Path to COCO dataset")
+    parser.add_argument(
+        "--output_dir",
+        type=str,
+        default="mask_check_output",
+        help="Directory to save output visualizations",
+    )
+    parser.add_argument("--num_images", type=int, default=5, help="Number of images to check")
     return parser.parse_args()
 
 
@@ -50,39 +51,38 @@ def visualize_masks(image, target, output_path):
             image = (image * 255).astype(np.uint8)
     elif isinstance(image, Image.Image):
         image = np.array(image)
-    
+
     # Create figure for visualization
     fig, ax = plt.subplots(1, 2, figsize=(12, 6))
-    
+
     # Original image with bounding boxes
     ax[0].imshow(image)
-    ax[0].set_title('Original Image with Boxes')
-    
+    ax[0].set_title("Original Image with Boxes")
+
     # Get boxes
-    if 'boxes' in target:
-        boxes = target['boxes']
+    if "boxes" in target:
+        boxes = target["boxes"]
         if isinstance(boxes, torch.Tensor):
             boxes = boxes.numpy()
-        
+
         # Draw boxes
         for box in boxes:
             x1, y1, x2, y2 = box
             width = x2 - x1
             height = y2 - y1
-            rect = plt.Rectangle((x1, y1), width, height, 
-                                 fill=False, edgecolor='red', linewidth=1)
+            rect = plt.Rectangle((x1, y1), width, height, fill=False, edgecolor="red", linewidth=1)
             ax[0].add_patch(rect)
-    
+
     # Image with masks
     ax[1].imshow(image)
-    ax[1].set_title('Image with Masks')
-    
+    ax[1].set_title("Image with Masks")
+
     # Get masks
-    if 'masks' in target:
-        masks = target['masks']
+    if "masks" in target:
+        masks = target["masks"]
         if isinstance(masks, torch.Tensor):
             masks = masks.numpy()
-        
+
         # Draw masks
         for i, mask in enumerate(masks):
             # Create a colored mask
@@ -91,8 +91,8 @@ def visualize_masks(image, target, output_path):
             color_mask[mask] = [*color, 0.5]  # RGBA with 0.5 alpha
             ax[1].imshow(color_mask)
     else:
-        ax[1].text(10, 30, "No masks found", color='red', fontsize=12)
-    
+        ax[1].text(10, 30, "No masks found", color="red", fontsize=12)
+
     # Save figure
     plt.tight_layout()
     plt.savefig(output_path)
@@ -103,63 +103,63 @@ def examine_original_annotations(coco_api, img_id, output_dir):
     """Examine the original annotations for a given image ID."""
     # Get image info
     img_info = coco_api.loadImgs(img_id)[0]
-    
+
     # Get annotations for the image
     ann_ids = coco_api.getAnnIds(imgIds=img_id)
     anns = coco_api.loadAnns(ann_ids)
-    
+
     # Check for segmentation
     has_segmentation = False
     for ann in anns:
-        if 'segmentation' in ann:
+        if "segmentation" in ann:
             has_segmentation = True
             break
-    
+
     # Create output
     result = {
-        'img_id': img_id,
-        'file_name': img_info['file_name'],
-        'has_segmentation': has_segmentation,
-        'num_annotations': len(anns),
-        'annotations': []
+        "img_id": img_id,
+        "file_name": img_info["file_name"],
+        "has_segmentation": has_segmentation,
+        "num_annotations": len(anns),
+        "annotations": [],
     }
-    
+
     # Add each annotation
     for ann in anns:
         ann_result = {
-            'category_id': ann['category_id'],
-            'bbox': ann.get('bbox', None),
-            'has_segmentation': 'segmentation' in ann,
+            "category_id": ann["category_id"],
+            "bbox": ann.get("bbox", None),
+            "has_segmentation": "segmentation" in ann,
         }
-        if 'segmentation' in ann:
-            if isinstance(ann['segmentation'], list):
-                ann_result['segmentation_type'] = 'polygon'
-                ann_result['polygon_count'] = len(ann['segmentation'])
+        if "segmentation" in ann:
+            if isinstance(ann["segmentation"], list):
+                ann_result["segmentation_type"] = "polygon"
+                ann_result["polygon_count"] = len(ann["segmentation"])
             else:
-                ann_result['segmentation_type'] = 'RLE'
-        
-        result['annotations'].append(ann_result)
-    
+                ann_result["segmentation_type"] = "RLE"
+
+        result["annotations"].append(ann_result)
+
     # Save the result
-    output_path = os.path.join(output_dir, f'annotation_info_{img_id}.txt')
-    with open(output_path, 'w') as f:
+    output_path = os.path.join(output_dir, f"annotation_info_{img_id}.txt")
+    with open(output_path, "w") as f:
         f.write(f"Image ID: {result['img_id']}\n")
         f.write(f"File name: {result['file_name']}\n")
         f.write(f"Has segmentation: {result['has_segmentation']}\n")
         f.write(f"Number of annotations: {result['num_annotations']}\n\n")
-        
-        for i, ann in enumerate(result['annotations']):
+
+        for i, ann in enumerate(result["annotations"]):
             f.write(f"Annotation {i}:\n")
             f.write(f"  Category ID: {ann['category_id']}\n")
-            if ann['bbox'] is not None:
+            if ann["bbox"] is not None:
                 f.write(f"  Bounding box: {ann['bbox']}\n")
             f.write(f"  Has segmentation: {ann['has_segmentation']}\n")
-            if ann['has_segmentation']:
+            if ann["has_segmentation"]:
                 f.write(f"  Segmentation type: {ann.get('segmentation_type', 'Unknown')}\n")
-                if 'polygon_count' in ann:
+                if "polygon_count" in ann:
                     f.write(f"  Polygon count: {ann['polygon_count']}\n")
             f.write("\n")
-    
+
     return result
 
 
@@ -169,54 +169,56 @@ def convert_coco_check(args):
     coco_path = Path(args.coco_path)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Get paths for COCO validation set
-    img_folder = coco_path / 'val2017'
-    ann_file = coco_path / 'annotations' / 'instances_val2017.json'
-    
+    img_folder = coco_path / "val2017"
+    ann_file = coco_path / "annotations" / "instances_val2017.json"
+
     # Load COCO API for examining original annotations
     coco_api = COCO(ann_file)
-    
+
     # Create transforms
-    transforms = T.Compose([
-        T.RandomResize([640], max_size=1333),
-        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ])
-    
+    transforms = T.Compose(
+        [
+            T.RandomResize([640], max_size=1333),
+            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        ]
+    )
+
     # Create dataset
     dataset = CocoDetection(img_folder, ann_file, transforms)
-    
+
     # Create a patched version of ConvertCoco to diagnose issues
     original_call = ConvertCoco.__call__
-    
+
     def patched_call(self, image, target):
         # Print target info before conversion
         print(f"Original target keys: {list(target.keys())}")
-        if 'annotations' in target:
+        if "annotations" in target:
             print(f"Number of annotations: {len(target['annotations'])}")
-            for i, ann in enumerate(target['annotations']):
+            for i, ann in enumerate(target["annotations"]):
                 print(f"Annotation {i} keys: {list(ann.keys())}")
-                if 'segmentation' in ann:
+                if "segmentation" in ann:
                     print(f"  Segmentation type: {type(ann['segmentation'])}")
-                    if isinstance(ann['segmentation'], list):
+                    if isinstance(ann["segmentation"], list):
                         print(f"  Number of polygons: {len(ann['segmentation'])}")
-        
+
         # Call original method
         image, converted_target = original_call(self, image, target)
-        
+
         # Print target info after conversion
         print(f"Converted target keys: {list(converted_target.keys())}")
-        if 'masks' in converted_target:
+        if "masks" in converted_target:
             print(f"Masks shape: {converted_target['masks'].shape}")
             print(f"Masks type: {converted_target['masks'].dtype}")
         else:
             print("No masks found in converted target")
-        
+
         return image, converted_target
-    
+
     # Use our patched method for diagnosis
     ConvertCoco.__call__ = patched_call
-    
+
     # Check a few images
     for i in range(min(args.num_images, len(dataset))):
         print(f"\n--- Checking image {i} ---")
@@ -224,29 +226,29 @@ def convert_coco_check(args):
             # Get image ID
             img_id = dataset.ids[i]
             print(f"Image ID: {img_id}")
-            
+
             # Examine original annotations
-            ann_info = examine_original_annotations(coco_api, img_id, output_dir)
+            examine_original_annotations(coco_api, img_id, output_dir)
             print(f"Original annotation info saved to: {output_dir}/annotation_info_{img_id}.txt")
-            
+
             # Get image and target
             image, target = dataset[i]
-            
+
             # Visualize
-            output_path = output_dir / f'image_{img_id}.png'
+            output_path = output_dir / f"image_{img_id}.png"
             visualize_masks(image, target, output_path)
             print(f"Visualization saved to: {output_path}")
-            
+
             # Check mask statistics if available
-            if 'masks' in target:
-                masks = target['masks']
-                print(f"Mask statistics:")
+            if "masks" in target:
+                masks = target["masks"]
+                print("Mask statistics:")
                 print(f"  Number of masks: {len(masks)}")
                 print(f"  Mask shape: {masks.shape}")
                 print(f"  Mask dtype: {masks.dtype}")
                 print(f"  Mask min value: {masks.min().item()}")
                 print(f"  Mask max value: {masks.max().item()}")
-                
+
                 # Count non-empty masks
                 non_empty = 0
                 for mask in masks:
@@ -255,10 +257,10 @@ def convert_coco_check(args):
                 print(f"  Non-empty masks: {non_empty} out of {len(masks)}")
             else:
                 print("No masks available in the target.")
-        
+
         except Exception as e:
             print(f"Error processing image {i}: {e}")
-    
+
     # Restore original method
     ConvertCoco.__call__ = original_call
 
@@ -266,7 +268,7 @@ def convert_coco_check(args):
 def suggest_coco_fix():
     """Suggest a fix for ConvertCoco to handle masks properly."""
     print("\n--- Suggested Fix for ConvertCoco ---")
-    
+
     suggested_code = """
     def __call__(self, image, target):
         w, h = image.size
@@ -305,7 +307,7 @@ def suggest_coco_fix():
                 else:
                     # Create an empty mask if segmentation is missing
                     masks.append(np.zeros((h, w), dtype=np.uint8))
-            
+
             masks = torch.as_tensor(np.stack(masks), dtype=torch.bool)
         else:
             masks = None
@@ -326,7 +328,7 @@ def suggest_coco_fix():
         iscrowd = torch.tensor([obj["iscrowd"] if "iscrowd" in obj else 0 for obj in anno])
         target["area"] = area[keep]
         target["iscrowd"] = iscrowd[keep]
-        
+
         # Add masks to target if available
         if masks is not None:
             target["masks"] = masks
@@ -336,7 +338,7 @@ def suggest_coco_fix():
 
         return image, target
     """
-    
+
     print(suggested_code)
     print("\nTo implement this fix:")
     print("1. Import pycocotools.mask in coco.py: 'import pycocotools.mask as mask_util'")

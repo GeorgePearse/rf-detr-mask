@@ -1,0 +1,7 @@
+[bandit]
+# B101: assert_used - We use asserts for development/debugging
+# B104: hardcoded_bind_all_interfaces - Used for testing servers
+# B601: paramiko_calls - We don't use paramiko
+# B602: subprocess_popen_with_shell_equals_true - We control our subprocess calls
+skips = B101,B104,B601,B602
+exclude = tests,scripts,docs,build

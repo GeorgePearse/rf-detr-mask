@@ -8,11 +8,14 @@
 # ------------------------------------------------------------------------
 
 import argparse
-from rf100vl import get_rf100vl_projects
-import roboflow
-from rfdetr import RFDETRBase
-import torch
 import os
+
+import roboflow
+import torch
+from rf100vl import get_rf100vl_projects
+
+from rfdetr import RFDETRBase
+
 
 def download_dataset(rf_project: roboflow.Project, dataset_version: int):
     versions = rf_project.versions()
@@ -28,7 +31,7 @@ def download_dataset(rf_project: roboflow.Project, dataset_version: int):
         location = version.download(
             model_format="coco", location=location, overwrite=False
         ).location
-    
+
     return location
 
 
@@ -49,7 +52,7 @@ def train_from_coco_dir(coco_dir: str):
     rf_detr.train(
         dataset_dir=coco_dir,
         epochs=1,
-        device="cuda" if device_supports_cuda else "cpu",
+        device="cuda" if torch.cuda.is_available() else "cpu",
     )
 
 
@@ -61,7 +64,7 @@ def trainer():
     parser.add_argument("--project_name", type=str, required=False, default=None)
     parser.add_argument("--dataset_version", type=int, required=False, default=None)
     args = parser.parse_args()
-    
+
     if args.coco_dir is not None:
         train_from_coco_dir(args.coco_dir)
         return
@@ -69,9 +72,7 @@ def trainer():
     if (args.workspace is None and args.project_name is not None) or (
         args.workspace is not None and args.project_name is None
     ):
-        raise ValueError(
-            "Either both workspace and project_name must be provided or none of them"
-        )
+        raise ValueError("Either both workspace and project_name must be provided or none of them")
 
     if args.workspace is not None:
         rf = roboflow.Roboflow(api_key=args.api_key)

@@ -20,20 +20,21 @@ Mostly copy-paste from https://github.com/pytorch/vision/blob/edfd5a7/references
 The difference is that there is less copy-pasting from pycocotools
 in the end of the file, as python3 can suppress prints with contextlib
 """
-import os
+
 import contextlib
 import copy
-import numpy as np
-import torch
+import os
 
-from pycocotools.cocoeval import COCOeval
-from pycocotools.coco import COCO
+import numpy as np
 import pycocotools.mask as mask_util
+import torch
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
 
 from rfdetr.util.misc import all_gather
 
 
-class CocoEvaluator(object):
+class CocoEvaluator:
     def __init__(self, coco_gt, iou_types):
         assert isinstance(iou_types, (list, tuple))
         coco_gt = copy.deepcopy(coco_gt)
@@ -55,9 +56,8 @@ class CocoEvaluator(object):
             results = self.prepare(predictions, iou_type)
 
             # suppress pycocotools prints
-            with open(os.devnull, 'w') as devnull:
-                with contextlib.redirect_stdout(devnull):
-                    coco_dt = COCO.loadRes(self.coco_gt, results) if results else COCO()
+            with open(os.devnull, "w") as devnull, contextlib.redirect_stdout(devnull):
+                coco_dt = COCO.loadRes(self.coco_gt, results) if results else COCO()
             coco_eval = self.coco_eval[iou_type]
 
             coco_eval.cocoDt = coco_dt
@@ -69,7 +69,9 @@ class CocoEvaluator(object):
     def synchronize_between_processes(self):
         for iou_type in self.iou_types:
             self.eval_imgs[iou_type] = np.concatenate(self.eval_imgs[iou_type], 2)
-            create_common_coco_eval(self.coco_eval[iou_type], self.img_ids, self.eval_imgs[iou_type])
+            create_common_coco_eval(
+                self.coco_eval[iou_type], self.img_ids, self.eval_imgs[iou_type]
+            )
 
     def accumulate(self):
         for coco_eval in self.coco_eval.values():
@@ -77,7 +79,7 @@ class CocoEvaluator(object):
 
     def summarize(self):
         for iou_type, coco_eval in self.coco_eval.items():
-            print("IoU metric: {}".format(iou_type))
+            print(f"IoU metric: {iou_type}")
             coco_eval.summarize()
 
     def prepare(self, predictions, iou_type):
@@ -88,7 +90,7 @@ class CocoEvaluator(object):
         elif iou_type == "keypoints":
             return self.prepare_for_coco_keypoint(predictions)
         else:
-            raise ValueError("Unknown iou type {}".format(iou_type))
+            raise ValueError(f"Unknown iou type {iou_type}")
 
     def prepare_for_coco_detection(self, predictions):
         coco_results = []
@@ -167,7 +169,7 @@ class CocoEvaluator(object):
                     {
                         "image_id": original_id,
                         "category_id": labels[k],
-                        'keypoints': keypoint,
+                        "keypoints": keypoint,
                         "score": scores[k],
                     }
                     for k, keypoint in enumerate(keypoints)
@@ -220,17 +222,17 @@ def create_common_coco_eval(coco_eval, img_ids, eval_imgs):
 
 
 def evaluate(self):
-    '''
+    """
     Run per image evaluation on given images and store results (a list of dict) in self.evalImgs
     :return: None
-    '''
+    """
     # tic = time.time()
     # print('Running per image evaluation...')
     p = self.params
     # add backward compatibility if useSegm is specified in params
     if p.useSegm is not None:
-        p.iouType = 'segm' if p.useSegm == 1 else 'bbox'
-        print('useSegm (deprecated) is not None. Running {} evaluation'.format(p.iouType))
+        p.iouType = "segm" if p.useSegm == 1 else "bbox"
+        print(f"useSegm (deprecated) is not None. Running {p.iouType} evaluation")
     # print('Evaluate annotation type *{}*'.format(p.iouType))
     p.imgIds = list(np.unique(p.imgIds))
     if p.useCats:
@@ -240,31 +242,31 @@ def evaluate(self):
 
     self._prepare()
     # loop through images, area range, max detection number
-    catIds = p.catIds if p.useCats else [-1]
+    cat_ids = p.catIds if p.useCats else [-1]
 
-    if p.iouType == 'segm' or p.iouType == 'bbox':
-        computeIoU = self.computeIoU
-    elif p.iouType == 'keypoints':
-        computeIoU = self.computeOks
+    if p.iouType == "segm" or p.iouType == "bbox":
+        compute_iou = self.computeIoU
+    elif p.iouType == "keypoints":
+        compute_iou = self.computeOks
     self.ious = {
-        (imgId, catId): computeIoU(imgId, catId)
-        for imgId in p.imgIds
-        for catId in catIds}
+        (imgId, catId): compute_iou(imgId, catId) for imgId in p.imgIds for catId in cat_ids
+    }
 
-    evaluateImg = self.evaluateImg
-    maxDet = p.maxDets[-1]
-    evalImgs = [
-        evaluateImg(imgId, catId, areaRng, maxDet)
-        for catId in catIds
+    evaluate_img = self.evaluateImg
+    max_det = p.maxDets[-1]
+    eval_imgs = [
+        evaluate_img(imgId, catId, areaRng, max_det)
+        for catId in cat_ids
         for areaRng in p.areaRng
         for imgId in p.imgIds
     ]
     # this is NOT in the pycocotools code, but could be done outside
-    evalImgs = np.asarray(evalImgs).reshape(len(catIds), len(p.areaRng), len(p.imgIds))
+    eval_imgs = np.asarray(eval_imgs).reshape(len(cat_ids), len(p.areaRng), len(p.imgIds))
     self._paramsEval = copy.deepcopy(self.params)
     # toc = time.time()
     # print('DONE (t={:0.2f}s).'.format(toc-tic))
-    return p.imgIds, evalImgs
+    return p.imgIds, eval_imgs
+
 
 #################################################################
 # end of straight copy from pycocotools, just removing the prints

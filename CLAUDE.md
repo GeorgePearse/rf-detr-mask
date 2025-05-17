@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Never use the python typing module, we'll be using a new enough version of python that ever type annotation
+we need is already avaiable.
+
+Never fix an import error with sys.path.append
+
 ## Build/Testing Commands
 
 - Install in dev mode: `pip install -e ".[dev]"`

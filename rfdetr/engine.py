@@ -17,9 +17,9 @@
 """
 Train and eval functions used in main.py
 """
+
 import math
-import sys
-from typing import Iterable
+from collections.abc import Iterable
 
 import torch
 
@@ -27,24 +27,31 @@ import rfdetr.util.misc as utils
 from rfdetr.datasets.coco_eval import CocoEvaluator
 
 try:
-    from torch.amp import autocast, GradScaler
+    from torch.amp import GradScaler, autocast
+
     DEPRECATED_AMP = False
 except ImportError:
-    from torch.cuda.amp import autocast, GradScaler
-    DEPRECATED_AMP = True
-from typing import DefaultDict, List, Callable
-from rfdetr.util.misc import NestedTensor
+    from torch.cuda.amp import GradScaler, autocast
 
+    DEPRECATED_AMP = True
+from collections import defaultdict
+from typing import Callable, Optional
+
+from rfdetr.util.misc import NestedTensor
 
 
 def get_autocast_args(args):
     # Prefer bfloat16 if available, otherwise use float16
-    dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
-    
+    dtype = (
+        torch.bfloat16
+        if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        else torch.float16
+    )
+
     if DEPRECATED_AMP:
-        return {'enabled': args.amp, 'dtype': dtype}
+        return {"enabled": args.amp, "dtype": dtype}
     else:
-        return {'device_type': 'cuda', 'enabled': args.amp, 'dtype': dtype}
+        return {"device_type": "cuda", "enabled": args.amp, "dtype": dtype}
 
 
 def train_one_epoch(
@@ -58,18 +65,18 @@ def train_one_epoch(
     batch_size: int,
     max_norm: float = 0,
     ema_m: torch.nn.Module = None,
-    schedules: dict = {},
+    schedules: Optional[dict] = None,
     num_training_steps_per_epoch=None,
     vit_encoder_num_layers=None,
     args=None,
-    callbacks: DefaultDict[str, List[Callable]] = None,
+    callbacks: Optional[defaultdict[str, list[Callable]]] = None,
 ):
+    if schedules is None:
+        schedules = {}
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value:.6f}"))
-    metric_logger.add_meter(
-        "class_error", utils.SmoothedValue(window_size=1, fmt="{value:.2f}")
-    )
-    header = "Epoch: [{}]".format(epoch)
+    metric_logger.add_meter("class_error", utils.SmoothedValue(window_size=1, fmt="{value:.2f}"))
+    header = f"Epoch: [{epoch}]"
     print_freq = 10
     start_steps = epoch * num_training_steps_per_epoch
 
@@ -80,7 +87,7 @@ def train_one_epoch(
     if DEPRECATED_AMP:
         scaler = GradScaler(enabled=args.amp)
     else:
-        scaler = GradScaler('cuda', enabled=args.amp)
+        scaler = GradScaler("cuda", enabled=args.amp)
 
     optimizer.zero_grad()
     assert batch_size % args.grad_accum_steps == 0
@@ -99,9 +106,7 @@ def train_one_epoch(
             callback(callback_dict)
         if "dp" in schedules:
             if args.distributed:
-                model.module.update_drop_path(
-                    schedules["dp"][it], vit_encoder_num_layers
-                )
+                model.module.update_drop_path(schedules["dp"][it], vit_encoder_num_layers)
             else:
                 model.update_drop_path(schedules["dp"][it], vit_encoder_num_layers)
         if "do" in schedules:
@@ -116,7 +121,9 @@ def train_one_epoch(
             new_samples_tensors = samples.tensors[start_idx:final_idx]
             new_samples = NestedTensor(new_samples_tensors, samples.mask[start_idx:final_idx])
             new_samples = new_samples.to(device)
-            new_targets = [{k: v.to(device) for k, v in t.items()} for t in targets[start_idx:final_idx]]
+            new_targets = [
+                {k: v.to(device) for k, v in t.items()} for t in targets[start_idx:final_idx]
+            ]
 
             with autocast(**get_autocast_args(args)):
                 outputs = model(new_samples, new_targets)
@@ -124,22 +131,17 @@ def train_one_epoch(
                 weight_dict = criterion.weight_dict
                 losses = sum(
                     (1 / args.grad_accum_steps) * loss_dict[k] * weight_dict[k]
-                    for k in loss_dict.keys()
+                    for k in loss_dict
                     if k in weight_dict
                 )
-
 
             scaler.scale(losses).backward()
 
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
-        loss_dict_reduced_unscaled = {
-            f"{k}_unscaled": v for k, v in loss_dict_reduced.items()
-        }
+        loss_dict_reduced_unscaled = {f"{k}_unscaled": v for k, v in loss_dict_reduced.items()}
         loss_dict_reduced_scaled = {
-            k:  v * weight_dict[k]
-            for k, v in loss_dict_reduced.items()
-            if k in weight_dict
+            k: v * weight_dict[k] for k, v in loss_dict_reduced.items() if k in weight_dict
         }
         losses_reduced_scaled = sum(loss_dict_reduced_scaled.values())
 
@@ -147,7 +149,7 @@ def train_one_epoch(
 
         if not math.isfinite(loss_value):
             print(loss_dict_reduced)
-            raise ValueError("Loss is {}, stopping training".format(loss_value))
+            raise ValueError(f"Loss is {loss_value}, stopping training")
 
         if max_norm > 0:
             scaler.unscale_(optimizer)
@@ -157,9 +159,8 @@ def train_one_epoch(
         scaler.update()
         lr_scheduler.step()
         optimizer.zero_grad()
-        if ema_m is not None:
-            if epoch >= 0:
-                ema_m.update(model)
+        if ema_m is not None and epoch >= 0:
+            ema_m.update(model)
         metric_logger.update(
             loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled
         )
@@ -178,12 +179,10 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
     criterion.eval()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
-    metric_logger.add_meter(
-        "class_error", utils.SmoothedValue(window_size=1, fmt="{value:.2f}")
-    )
+    metric_logger.add_meter("class_error", utils.SmoothedValue(window_size=1, fmt="{value:.2f}"))
     header = "Test:"
 
-    iou_types = tuple(k for k in ("segm", "bbox") if k in postprocessors.keys())
+    iou_types = tuple(k for k in ("segm", "bbox") if k in postprocessors)
     coco_evaluator = CocoEvaluator(base_ds, iou_types)
 
     for samples, targets in metric_logger.log_every(data_loader, 10, header):
@@ -198,16 +197,14 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
             outputs = model(samples)
 
         if args.fp16_eval:
-            for key in outputs.keys():
+            for key in outputs:
                 if key == "enc_outputs":
-                    for sub_key in outputs[key].keys():
+                    for sub_key in outputs[key]:
                         outputs[key][sub_key] = outputs[key][sub_key].float()
                 elif key == "aux_outputs":
                     for idx in range(len(outputs[key])):
-                        for sub_key in outputs[key][idx].keys():
-                            outputs[key][idx][sub_key] = outputs[key][idx][
-                                sub_key
-                            ].float()
+                        for sub_key in outputs[key][idx]:
+                            outputs[key][idx][sub_key] = outputs[key][idx][sub_key].float()
                 else:
                     outputs[key] = outputs[key].float()
 
@@ -217,13 +214,9 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
         loss_dict_reduced_scaled = {
-            k: v * weight_dict[k]
-            for k, v in loss_dict_reduced.items()
-            if k in weight_dict
+            k: v * weight_dict[k] for k, v in loss_dict_reduced.items() if k in weight_dict
         }
-        loss_dict_reduced_unscaled = {
-            f"{k}_unscaled": v for k, v in loss_dict_reduced.items()
-        }
+        loss_dict_reduced_unscaled = {f"{k}_unscaled": v for k, v in loss_dict_reduced.items()}
         metric_logger.update(
             loss=sum(loss_dict_reduced_scaled.values()),
             **loss_dict_reduced_scaled,
@@ -233,10 +226,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
 
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
         results = postprocessors["bbox"](outputs, orig_target_sizes)
-        res = {
-            target["image_id"].item(): output
-            for target, output in zip(targets, results)
-        }
+        res = {target["image_id"].item(): output for target, output in zip(targets, results)}
         if coco_evaluator is not None:
             coco_evaluator.update(res)
 
@@ -252,8 +242,8 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
         coco_evaluator.summarize()
     stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
     if coco_evaluator is not None:
-        if "bbox" in postprocessors.keys():
+        if "bbox" in postprocessors:
             stats["coco_eval_bbox"] = coco_evaluator.coco_eval["bbox"].stats.tolist()
-        if "segm" in postprocessors.keys():
+        if "segm" in postprocessors:
             stats["coco_eval_masks"] = coco_evaluator.coco_eval["segm"].stats.tolist()
     return stats, coco_evaluator

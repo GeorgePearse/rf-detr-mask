@@ -16,42 +16,42 @@
 """
 Backbone modules.
 """
-from functools import partial
+
+from typing import Optional
+
 import torch
 import torch.nn.functional as F
-from torch import nn
-
-from transformers import AutoModel, AutoProcessor, AutoModelForCausalLM, AutoConfig, AutoBackbone
-from peft import LoraConfig, get_peft_model, PeftModel
-
-from rfdetr.util.misc import NestedTensor, is_main_process
+from peft import PeftModel
 
 from rfdetr.models.backbone.base import BackboneBase
-from rfdetr.models.backbone.projector import MultiScaleProjector
 from rfdetr.models.backbone.dinov2 import DinoV2
+from rfdetr.models.backbone.projector import MultiScaleProjector
+from rfdetr.util.misc import NestedTensor
 
 __all__ = ["Backbone"]
 
 
 class Backbone(BackboneBase):
     """backbone."""
-    def __init__(self,
-                 name: str,
-                 pretrained_encoder: str=None,
-                 window_block_indexes: list=None,
-                 drop_path=0.0,
-                 out_channels=256,
-                 out_feature_indexes: list=None,
-                 projector_scale: list=None,
-                 use_cls_token: bool = False,
-                 freeze_encoder: bool = False,
-                 layer_norm: bool = False,
-                 target_shape: tuple[int, int] = (640, 640),
-                 rms_norm: bool = False,
-                 backbone_lora: bool = False,
-                 gradient_checkpointing: bool = False,
-                 load_dinov2_weights: bool = True,
-                 ):
+
+    def __init__(
+        self,
+        name: str,
+        pretrained_encoder: Optional[str] = None,
+        window_block_indexes: Optional[list] = None,
+        drop_path=0.0,
+        out_channels=256,
+        out_feature_indexes: Optional[list] = None,
+        projector_scale: Optional[list] = None,
+        use_cls_token: bool = False,
+        freeze_encoder: bool = False,
+        layer_norm: bool = False,
+        target_shape: tuple[int, int] = (640, 640),
+        rms_norm: bool = False,
+        backbone_lora: bool = False,
+        gradient_checkpointing: bool = False,
+        load_dinov2_weights: bool = True,
+    ):
         super().__init__()
         # an example name here would be "dinov2_base" or "dinov2_registers_windowed_base"
         # if "registers" is in the name, then use_registers is set to True, otherwise it is set to False
@@ -60,7 +60,7 @@ class Backbone(BackboneBase):
         # and the start should be dinov2
         name_parts = name.split("_")
         assert name_parts[0] == "dinov2"
-        size = name_parts[-1]
+        name_parts[-1]
         use_registers = False
         if "registers" in name_parts:
             use_registers = True
@@ -69,7 +69,9 @@ class Backbone(BackboneBase):
         if "windowed" in name_parts:
             use_windowed_attn = True
             name_parts.remove("windowed")
-        assert len(name_parts) == 2, "name should be dinov2, then either registers, windowed, both, or none, then the size"
+        assert (
+            len(name_parts) == 2
+        ), "name should be dinov2, then either registers, windowed, both, or none, then the size"
         self.encoder = DinoV2(
             size=name_parts[-1],
             out_feature_indexes=out_feature_indexes,
@@ -90,7 +92,7 @@ class Backbone(BackboneBase):
         assert (
             sorted(self.projector_scale) == self.projector_scale
         ), "only support projector scale P3/P4/P5/P6 in ascending order."
-        level2scalefactor = dict(P3=2.0, P4=1.0, P5=0.5, P6=0.25)
+        level2scalefactor = {"P3": 2.0, "P4": 1.0, "P5": 0.5, "P6": 0.25}
         scale_factors = [level2scalefactor[lvl] for lvl in self.projector_scale]
 
         self.projector = MultiScaleProjector(
@@ -122,9 +124,7 @@ class Backbone(BackboneBase):
         for feat in feats:
             m = tensor_list.mask
             assert m is not None
-            mask = F.interpolate(m[None].float(), size=feat.shape[-2:]).to(torch.bool)[
-                0
-            ]
+            mask = F.interpolate(m[None].float(), size=feat.shape[-2:]).to(torch.bool)[0]
             out.append(NestedTensor(feat, mask))
         return out
 
@@ -136,9 +136,7 @@ class Backbone(BackboneBase):
         for feat in feats:
             # x: [(B, C, H, W)]
             b, _, h, w = feat.shape
-            out_masks.append(
-                torch.zeros((b, h, w), dtype=torch.bool, device=feat.device)
-            )
+            out_masks.append(torch.zeros((b, h, w), dtype=torch.bool, device=feat.device))
             out_feats.append(feat)
         return out_feats, out_masks
 
@@ -185,6 +183,7 @@ def get_dinov2_lr_decay_rate(name, lr_decay_rate=1.0, num_layers=12):
         elif ".layer." in name and ".residual." not in name:
             layer_id = int(name[name.find(".layer.") :].split(".")[2]) + 1
     return lr_decay_rate ** (num_layers + 1 - layer_id)
+
 
 def get_dinov2_weight_decay_rate(name, weight_decay_rate=1.0):
     if (
