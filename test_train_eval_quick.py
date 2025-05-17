@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Quick test to verify training and evaluation work with fp16_eval"""
 
-import sys
 import os
 from pathlib import Path
 
