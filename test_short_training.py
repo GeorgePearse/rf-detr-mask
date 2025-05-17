@@ -165,7 +165,7 @@ def main():
     model.to(device)
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total trainable parameters: {n_parameters/1e6:.1f}M")
+    print(f"Total trainable parameters: {n_parameters / 1e6:.1f}M")
 
     # Build optimizer
     param_dicts = get_param_dict(args, model)

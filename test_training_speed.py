@@ -98,7 +98,7 @@ def main():
     print("Building model...")
     args = Config()
     model = build_model(args).cuda()
-    print(f"Model has {sum(p.numel() for p in model.parameters())/1e6:.1f}M parameters")
+    print(f"Model has {sum(p.numel() for p in model.parameters()) / 1e6:.1f}M parameters")
 
     print("\nBuilding criterion...")
     criterion, postprocessors = build_criterion_and_postprocessors(args)

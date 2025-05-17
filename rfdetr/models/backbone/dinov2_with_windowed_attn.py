@@ -388,7 +388,7 @@ class Dinov2WithRegistersSelfAttention(nn.Module):
             config, "embedding_size"
         ):
             raise ValueError(
-                f"The hidden size {config.hidden_size,} is not a multiple of the number of attention "
+                f"The hidden size {(config.hidden_size,)} is not a multiple of the number of attention "
                 f"heads {config.num_attention_heads}."
             )
 
