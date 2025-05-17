@@ -1,2 +1,0 @@
-[console_scripts]
-rfdetr-mask = rfdetr.cli.main:trainer

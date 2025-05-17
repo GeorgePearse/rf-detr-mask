@@ -1,0 +1,101 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyTorch model checkpoints
+*.pth
+*.pt
+*.ckpt
+*.pkl
+*.safetensors
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Testing
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.nox/
+
+# Environment
+.env
+.venv
+
+# Logs
+*.log
+logs/
+
+# Output directories
+outputs/
+output/
+output_*/
+results/
+checkpoints/
+wandb/
+
+# Data
+data/
+dataset/
+datasets/
+*.zip
+*.tar
+*.gz
+
+# ONNX
+*.onnx
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Documentation builds
+docs/_build/
+docs/.doctrees/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Coverage reports
+coverage.xml
+*.cover
+.hypothesis/
+
+# Other
+.cache/
