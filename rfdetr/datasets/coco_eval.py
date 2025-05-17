@@ -131,10 +131,27 @@ class CocoEvaluator:
             scores = prediction["scores"].tolist()
             labels = prediction["labels"].tolist()
 
-            rles = [
-                mask_util.encode(np.array(mask[0, :, :, np.newaxis], dtype=np.uint8, order="F"))[0]
-                for mask in masks
-            ]
+            # Handle different mask tensor shapes
+            rles = []
+            for mask in masks:
+                # Ensure mask is 2D numpy array
+                if isinstance(mask, torch.Tensor):
+                    mask = mask.cpu().numpy()
+                
+                # Handle cases where mask might have extra dimensions
+                if mask.ndim > 2:
+                    # If mask has batch dimension, remove it
+                    if mask.shape[0] == 1:
+                        mask = mask[0]
+                    # If mask has other extra dimensions, squeeze them
+                    mask = mask.squeeze()
+                
+                # Ensure mask is 2D
+                assert mask.ndim == 2, f"Mask should be 2D but got shape: {mask.shape}"
+                
+                # Encode the mask
+                rle = mask_util.encode(np.array(mask[:, :, np.newaxis], dtype=np.uint8, order="F"))[0]
+                rles.append(rle)
             for rle in rles:
                 rle["counts"] = rle["counts"].decode("utf-8")
 

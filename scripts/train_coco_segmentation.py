@@ -86,6 +86,12 @@ def get_args_parser():
     )
     parser.add_argument("--eval_only", action="store_true", help="Only run evaluation")
     parser.add_argument("--device", default="cuda", help="Device to use for training / testing")
+    parser.add_argument(
+        "--val_start", 
+        default=0, 
+        type=int, 
+        help="Start validation after this many steps (0 for validation every epoch)"
+    )
 
     # Distributed training parameters
     parser.add_argument("--world_size", default=1, type=int, help="Number of distributed processes")
@@ -258,19 +264,27 @@ def main(args):
                 checkpoint_path,
             )
 
-        # Evaluate
-        test_stats, coco_evaluator = evaluate(
-            model, criterion, postprocessors, data_loader_val, base_ds, device, args
-        )
+        # Evaluate (only if we've trained enough steps)
+        current_step = epoch * len(data_loader_train)
+        if current_step >= args.val_start:
+            test_stats, coco_evaluator = evaluate(
+                model, criterion, postprocessors, data_loader_val, base_ds, device, args
+            )
+        else:
+            # Skip evaluation before val_start steps
+            test_stats = {"loss": 0}
+            coco_evaluator = None
+            print(f"Skipping validation (step {current_step} < val_start {args.val_start})")
 
-        # Check if this is the best model so far
-        map_regular = test_stats["coco_eval_bbox"][0]
-        test_stats.get("coco_eval_masks", [0])[0]
+        # Check if this is the best model so far (only if we evaluated)
+        if coco_evaluator is not None:
+            map_regular = test_stats.get("coco_eval_bbox", [0])[0]
+            map_segm = test_stats.get("coco_eval_masks", [0])[0]
 
-        # Update best metrics
-        _is_best = best_map_holder.update(map_regular, epoch, is_ema=False)
-        if _is_best:
-            checkpoint_path = output_dir / "checkpoint_best.pth"
+            # Update best metrics
+            _is_best = best_map_holder.update(map_regular, epoch, is_ema=False)
+            if _is_best:
+                checkpoint_path = output_dir / "checkpoint_best.pth"
             utils.save_on_master(
                 {
                     "model": model_without_ddp.state_dict(),
