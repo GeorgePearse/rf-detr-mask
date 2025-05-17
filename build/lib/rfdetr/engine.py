@@ -38,10 +38,13 @@ from rfdetr.util.misc import NestedTensor
 
 
 def get_autocast_args(args):
+    # Prefer bfloat16 if available, otherwise use float16
+    dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
+    
     if DEPRECATED_AMP:
-        return {'enabled': args.amp, 'dtype': torch.bfloat16}
+        return {'enabled': args.amp, 'dtype': dtype}
     else:
-        return {'device_type': 'cuda', 'enabled': args.amp, 'dtype': torch.bfloat16}
+        return {'device_type': 'cuda', 'enabled': args.amp, 'dtype': dtype}
 
 
 def train_one_epoch(

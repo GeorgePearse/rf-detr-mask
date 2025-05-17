@@ -158,6 +158,13 @@ class DinoV2(nn.Module):
         )
 
     def forward(self, x):
+        # Pad the input to make it divisible by 14
+        h, w = x.shape[2], x.shape[3]
+        pad_h = (14 - h % 14) % 14
+        pad_w = (14 - w % 14) % 14
+        if pad_h > 0 or pad_w > 0:
+            x = torch.nn.functional.pad(x, (0, pad_w, 0, pad_h))
+        
         assert x.shape[2] % 14 == 0 and x.shape[3] % 14 == 0, f"Dinov2 requires input shape to be divisible by 14, but got {x.shape}"
         x = self.encoder(x)
         return list(x[0])

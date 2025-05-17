@@ -231,7 +231,20 @@ def build(image_set, args, resolution):
         "test": (root / "test2017", root / "annotations" / f'image_info_test-dev2017.json'),
     }
     
-    img_folder, ann_file = PATHS[image_set.split("_")[0]]
+    # Override with custom annotation files if provided
+    if hasattr(args, 'coco_train') and args.coco_train and image_set == 'train':
+        img_folder = Path(args.coco_img_path) if hasattr(args, 'coco_img_path') else root / "train2017"
+        ann_file = root / args.coco_train if not Path(args.coco_train).is_absolute() else Path(args.coco_train)
+    elif hasattr(args, 'coco_val') and args.coco_val and image_set == 'val':
+        img_folder = Path(args.coco_img_path) if hasattr(args, 'coco_img_path') else root / "val2017"
+        ann_file = root / args.coco_val if not Path(args.coco_val).is_absolute() else Path(args.coco_val)
+    else:
+        # Use default paths
+        img_folder, ann_file = PATHS[image_set.split("_")[0]]
+    
+    # Ensure the paths exist
+    assert img_folder.exists(), f'Image folder {img_folder} does not exist'
+    assert ann_file.exists(), f'Annotation file {ann_file} does not exist'
     
     try:
         square_resize = args.square_resize
