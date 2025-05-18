@@ -1,14 +1,22 @@
-# RF-DETR-MASK: Instance Segmentation Extension of RF-DETR
+# RF-DETR-MASK: Instance Segmentation Extension
 
 [![version](https://badge.fury.io/py/rfdetr.svg)](https://badge.fury.io/py/rfdetr)
-[![downloads](https://img.shields.io/pypi/dm/rfdetr)](https://pypistats.org/packages/rfdetr)
-[![python-version](https://img.shields.io/pypi/pyversions/rfdetr)](https://badge.fury.io/py/rfdetr)
 [![license](https://img.shields.io/badge/license-Apache%202.0-blue)](https://github.com/roboflow/rfdetr/blob/main/LICENSE)
 
-[![hf space](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/SkalskiP/RF-DETR)
-[![colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/roboflow-ai/notebooks/blob/main/notebooks/how-to-finetune-rf-detr-on-detection-dataset.ipynb)
-[![roboflow](https://raw.githubusercontent.com/roboflow-ai/notebooks/main/assets/badges/roboflow-blogpost.svg)](https://blog.roboflow.com/rf-detr)
-[![discord](https://img.shields.io/discord/1159501506232451173?logo=discord&label=discord&labelColor=fff&color=5865f2&link=https%3A%2F%2Fdiscord.gg%2FGbfgXGJ8Bk)](https://discord.gg/GbfgXGJ8Bk)
+## Note: This is a fork of Roboflow's RF-DETR Model
+
+This repository is a customized fork of the excellent [RF-DETR](https://github.com/roboflow/rf-detr) model developed by Roboflow. The original work provided an outstanding foundation for object detection, and we've extended it with instance segmentation capabilities specifically for the CMR (Cardiac Magnetic Resonance) dataset.
+
+**Special thanks to the Roboflow team** for their foundational work on RF-DETR, which made this adaptation possible.
+
+## What's Different in This Fork
+
+- Extended RF-DETR with a mask prediction head for instance segmentation
+- Added PyTorch Lightning integration for more structured training
+- Customized for CMR (Cardiac Magnetic Resonance) dataset processing
+- Optimized workflow for medical imaging segmentation tasks
+
+## RF-DETR-MASK Overview
 
 RF-DETR-MASK is an instance segmentation extension of the RF-DETR architecture, enabling pixel-precise object delineation in addition to bounding box detection. This variant adds a mask prediction head to the original RF-DETR model while maintaining its real-time performance characteristics.
 
@@ -44,9 +52,9 @@ We validated the performance of RF-DETR on both Microsoft COCO and the RF100-VL 
 <details>
 <summary>RF100-VL benchmark notes</summary>
 
-- The "Total Latency" reported here is measured on a T4 GPU using TensorRT10 FP16 (ms/img) and was introduced by LW-DETR. Unlike transformer-based models, YOLO models perform Non-Maximum Suppression (NMS) after generating predictions to refine bounding box candidates. While NMS boosts accuracy, it also slightly reduces speed due to the additional computation required, which varies with the number of objects in an image. Notably, many YOLO benchmarks include NMS in accuracy measurements but exclude it from speed metrics. By contrast, our benchmarking—following LW-DETR’s approach—factors in NMS latency to provide a uniform measure of the total time needed to obtain a final result across all models on the same hardware.
+- The "Total Latency" reported here is measured on a T4 GPU using TensorRT10 FP16 (ms/img) and was introduced by LW-DETR. Unlike transformer-based models, YOLO models perform Non-Maximum Suppression (NMS) after generating predictions to refine bounding box candidates. While NMS boosts accuracy, it also slightly reduces speed due to the additional computation required, which varies with the number of objects in an image. Notably, many YOLO benchmarks include NMS in accuracy measurements but exclude it from speed metrics. By contrast, our benchmarking—following LW-DETR's approach—factors in NMS latency to provide a uniform measure of the total time needed to obtain a final result across all models on the same hardware.
 
-- D-FINE’s fine-tuning capability is currently unavailable, making its domain adaptability performance inaccessible. The authors [caution](https://github.com/Peterande/D-FINE) that “if your categories are very simple, it might lead to overfitting and suboptimal performance.” Furthermore, several open issues ([#108](https://github.com/Peterande/D-FINE/issues/108), [#146](https://github.com/Peterande/D-FINE/issues/146), [#169](https://github.com/Peterande/D-FINE/issues/169), [#214](https://github.com/Peterande/D-FINE/issues/214)) currently prevent successful fine-tuning. We have opened an additional issue in hopes of ultimately benchmarking D-FINE with RF100-VL.
+- D-FINE's fine-tuning capability is currently unavailable, making its domain adaptability performance inaccessible. The authors [caution](https://github.com/Peterande/D-FINE) that "if your categories are very simple, it might lead to overfitting and suboptimal performance." Furthermore, several open issues ([#108](https://github.com/Peterande/D-FINE/issues/108), [#146](https://github.com/Peterande/D-FINE/issues/146), [#169](https://github.com/Peterande/D-FINE/issues/169), [#214](https://github.com/Peterande/D-FINE/issues/214)) currently prevent successful fine-tuning. We have opened an additional issue in hopes of ultimately benchmarking D-FINE with RF100-VL.
 </details>
 
 ## News
@@ -243,7 +251,7 @@ cv2.destroyAllWindows()
 ### Batch Inference
 
 > [!IMPORTANT] 
-> Batch inference isn’t officially released yet.
+> Batch inference isn't officially released yet.
 > Install from source to access it: `pip install git+https://github.com/roboflow/rf-detr.git`.
 
 You can provide `.predict()` with either a single image or a list of images. When multiple images are supplied, they are processed together in a single forward pass, resulting in a corresponding list of detections.
@@ -438,7 +446,7 @@ Different GPUs have different VRAM capacities, so adjust batch_size and grad_acc
     </tr>
     <tr>
       <td><code>early_stopping_min_delta</code></td>
-      <td>Minimum change in mAP to qualify as an improvement. Ensures that trivial gains don’t reset the early stopping counter.</td>
+      <td>Minimum change in mAP to qualify as an improvement. Ensures that trivial gains don't reset the early stopping counter.</td>
     </tr>
     <tr>
       <td><code>early_stopping_use_ema</code></td>
@@ -475,7 +483,7 @@ model.train(dataset_dir=<DATASET_PATH>, epochs=10, batch_size=4, grad_accum_step
 
 ### Multi-GPU training
 
-You can fine-tune RF-DETR on multiple GPUs using PyTorch’s Distributed Data Parallel (DDP). Create a `main.py` script that initializes your model and calls `.train()` as usual than run it in terminal.
+You can fine-tune RF-DETR on multiple GPUs using PyTorch's Distributed Data Parallel (DDP). Create a `main.py` script that initializes your model and calls `.train()` as usual than run it in terminal.
 
 ```bash
 python -m torch.distributed.launch --nproc_per_node=8 --use_env main.py
@@ -485,7 +493,7 @@ Replace `8` in the `--nproc_per_node argument` with the number of GPUs you want 
 
 ### Result checkpoints
 
-During training, two model checkpoints (the regular weights and an EMA-based set of weights) will be saved in the specified output directory. The EMA (Exponential Moving Average) file is a smoothed version of the model’s weights over time, often yielding better stability and generalization.
+During training, two model checkpoints (the regular weights and an EMA-based set of weights) will be saved in the specified output directory. The EMA (Exponential Moving Average) file is a smoothed version of the model's weights over time, often yielding better stability and generalization.
 
 ### Logging with TensorBoard
 
@@ -617,11 +625,13 @@ Both the code and the weights pretrained on the COCO dataset are released under 
 
 ## Acknowledgements
 
-Our work is built upon [LW-DETR](https://arxiv.org/pdf/2406.03459), [DINOv2](https://arxiv.org/pdf/2304.07193), [DETR](https://github.com/facebookresearch/detr), and [Deformable DETR](https://arxiv.org/pdf/2010.04159). Thanks to their authors for their excellent work!
+This repository is a fork of [Roboflow's RF-DETR](https://github.com/roboflow/rf-detr). We express our sincere gratitude to the Roboflow team for their excellent work on the original model, which provided a strong foundation for our extensions.
+
+Our work, like the original, is built upon [LW-DETR](https://arxiv.org/pdf/2406.03459), [DINOv2](https://arxiv.org/pdf/2304.07193), [DETR](https://github.com/facebookresearch/detr), and [Deformable DETR](https://arxiv.org/pdf/2010.04159). Thanks to all their authors for their excellent work!
 
 ## Citation
 
-If you find our work helpful for your research, please consider citing the following BibTeX entry.
+If you find the original work helpful for your research, please consider citing Roboflow's work:
 
 ```bibtex
 @software{rf-detr,
@@ -633,7 +643,6 @@ If you find our work helpful for your research, please consider citing the follo
   note = {SOTA Real-Time Object Detection Model}
 }
 ```
-
 
 ## Logging System
 
@@ -667,4 +676,4 @@ logger.error("This is an error message")
 
 ## Contribution
 
-We welcome and appreciate all contributions! If you notice any issues or bugs, have questions, or would like to suggest new features, please [open an issue](https://github.com/roboflow/rf-detr/issues/new) or pull request. By sharing your ideas and improvements, you help make RF-DETR better for everyone.
+We welcome and appreciate all contributions! If you notice any issues or bugs, have questions, or would like to suggest new features, please open an issue or pull request. By sharing your ideas and improvements, you help make this project better for everyone.
