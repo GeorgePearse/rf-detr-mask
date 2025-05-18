@@ -49,17 +49,17 @@ def get_vit_weight_decay_rate(name, weight_decay_rate=1.0):
 
 def get_param_dict(args, model_without_ddp: nn.Module):
     """Get parameter dictionaries for the optimizer with different learning rates.
-    
+
     Args:
         args: Training configuration/arguments
         model_without_ddp: Model without DDP wrapper
-        
+
     Returns:
         list: Parameter dictionaries for the optimizer
     """
     # First, collect all parameter names for backbone, decoder, and others
     all_param_names = {n: p for n, p in model_without_ddp.named_parameters() if p.requires_grad}
-    
+
     # Process backbone parameters
     assert isinstance(model_without_ddp.backbone, Joiner)
     backbone = model_without_ddp.backbone[0]
@@ -67,12 +67,12 @@ def get_param_dict(args, model_without_ddp: nn.Module):
     backbone_param_lr_pairs = [
         param_dict for _, param_dict in backbone_named_param_lr_pairs.items()
     ]
-    
+
     # Track which parameters have been included in a group
     included_params = set()
     for param_dict in backbone_param_lr_pairs:
         included_params.add(id(param_dict["params"]))
-    
+
     # Process decoder parameters
     decoder_key = "transformer.decoder"
     decoder_params = []
@@ -80,21 +80,21 @@ def get_param_dict(args, model_without_ddp: nn.Module):
         if decoder_key in n and id(p) not in included_params:
             decoder_params.append(p)
             included_params.add(id(p))
-    
+
     decoder_param_lr_pairs = [
         {"params": param, "lr": args.lr * args.lr_component_decay} for param in decoder_params
     ]
-    
+
     # Process other parameters
     other_params = []
     for n, p in all_param_names.items():
         if id(p) not in included_params:
             other_params.append(p)
             included_params.add(id(p))
-    
+
     other_param_dicts = [{"params": param, "lr": args.lr} for param in other_params]
-    
+
     # Combine all parameter groups
     final_param_dicts = other_param_dicts + backbone_param_lr_pairs + decoder_param_lr_pairs
-    
+
     return final_param_dicts

@@ -457,9 +457,13 @@ class RFDETRLightningModule(pl.LightningModule):
             self.coco_evaluator = None
 
         # Export model before validation if enabled
-        if hasattr(self, "export_on_validation") and self.export_on_validation:
-            current_epoch = self.trainer.current_epoch if self.trainer else 0
-            self.export_model(current_epoch)
+        try:
+            if hasattr(self, "export_on_validation") and self.export_on_validation:
+                current_epoch = self.trainer.current_epoch if self.trainer else 0
+                self.export_model(current_epoch)
+        except Exception as e:
+            print(f"Error during model export in on_validation_epoch_start: {e}")
+            # Continue with validation even if export fails
 
     def on_validation_batch_end(self, outputs, batch, batch_idx):
         """Process validation batch results."""

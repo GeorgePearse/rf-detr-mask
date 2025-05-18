@@ -120,11 +120,20 @@ class ONNXCheckpointHook(Callback):
         # Setup export directory
         if self.export_dir is None:
             # Default to exports dir under output_dir
-            output_dir = getattr(pl_module.args, "output_dir", "output")
+            # Check for various forms of config attribute
+            if hasattr(pl_module, "config"):
+                if isinstance(pl_module.config, dict):
+                    output_dir = pl_module.config.get("output_dir", "output")
+                else:
+                    output_dir = getattr(pl_module.config, "output_dir", "output")
+            else:
+                # Fallback to a default
+                output_dir = "output"
+                
             self.export_dir = Path(output_dir) / "exports"
         else:
             self.export_dir = Path(self.export_dir)
-        
+            
         self.export_dir.mkdir(parents=True, exist_ok=True)
         
         # Create timestamped directory for this export
@@ -150,9 +159,26 @@ class ONNXCheckpointHook(Callback):
             # Export PyTorch weights
             if self.export_torch:
                 torch_path = export_path / "model.pth"
+                
+                # Get config data properly
+                if hasattr(pl_module, "config"):
+                    if hasattr(pl_module.config, "model_dump"):
+                        config_data = pl_module.config.model_dump()
+                    elif isinstance(pl_module.config, dict):
+                        config_data = pl_module.config
+                    else:
+                        # Convert object to dict if needed
+                        config_data = {
+                            attr: getattr(pl_module.config, attr)
+                            for attr in dir(pl_module.config) 
+                            if not attr.startswith("_") and not callable(getattr(pl_module.config, attr))
+                        }
+                else:
+                    config_data = {}
+                
                 torch.save({
                     "model": model_to_export.state_dict(),
-                    "args": pl_module.args,
+                    "config": config_data,
                     "epoch": current_epoch,
                     "map": getattr(pl_module, "best_map", 0.0)
                 }, torch_path)
