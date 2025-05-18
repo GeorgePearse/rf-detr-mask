@@ -28,7 +28,8 @@ def get_vit_lr_decay_rate(name, lr_decay_rate=1.0, num_layers=12):
             layer_id = 0
         elif ".blocks." in name and ".residual." not in name:
             layer_id = int(name[name.find(".blocks.") :].split(".")[2]) + 1
-    print(f"name: {name}, lr_decay: {lr_decay_rate ** (num_layers + 1 - layer_id)}")
+    # Remove debug print
+    # print(f"name: {name}, lr_decay: {lr_decay_rate ** (num_layers + 1 - layer_id)}")
     return lr_decay_rate ** (num_layers + 1 - layer_id)
 
 
@@ -41,34 +42,59 @@ def get_vit_weight_decay_rate(name, weight_decay_rate=1.0):
         or ("norm" in name)
     ):
         weight_decay_rate = 0.0
-    print(f"name: {name}, weight_decay rate: {weight_decay_rate}")
+    # Remove debug print
+    # print(f"name: {name}, weight_decay rate: {weight_decay_rate}")
     return weight_decay_rate
 
 
 def get_param_dict(args, model_without_ddp: nn.Module):
+    """Get parameter dictionaries for the optimizer with different learning rates.
+    
+    Args:
+        args: Training configuration/arguments
+        model_without_ddp: Model without DDP wrapper
+        
+    Returns:
+        list: Parameter dictionaries for the optimizer
+    """
+    # First, collect all parameter names for backbone, decoder, and others
+    all_param_names = {n: p for n, p in model_without_ddp.named_parameters() if p.requires_grad}
+    
+    # Process backbone parameters
     assert isinstance(model_without_ddp.backbone, Joiner)
     backbone = model_without_ddp.backbone[0]
     backbone_named_param_lr_pairs = backbone.get_named_param_lr_pairs(args, prefix="backbone.0")
     backbone_param_lr_pairs = [
         param_dict for _, param_dict in backbone_named_param_lr_pairs.items()
     ]
-
+    
+    # Track which parameters have been included in a group
+    included_params = set()
+    for param_dict in backbone_param_lr_pairs:
+        included_params.add(id(param_dict["params"]))
+    
+    # Process decoder parameters
     decoder_key = "transformer.decoder"
-    decoder_params = [
-        p for n, p in model_without_ddp.named_parameters() if decoder_key in n and p.requires_grad
-    ]
-
+    decoder_params = []
+    for n, p in all_param_names.items():
+        if decoder_key in n and id(p) not in included_params:
+            decoder_params.append(p)
+            included_params.add(id(p))
+    
     decoder_param_lr_pairs = [
         {"params": param, "lr": args.lr * args.lr_component_decay} for param in decoder_params
     ]
-
-    other_params = [
-        p
-        for n, p in model_without_ddp.named_parameters()
-        if (n not in backbone_named_param_lr_pairs and decoder_key not in n and p.requires_grad)
-    ]
+    
+    # Process other parameters
+    other_params = []
+    for n, p in all_param_names.items():
+        if id(p) not in included_params:
+            other_params.append(p)
+            included_params.add(id(p))
+    
     other_param_dicts = [{"params": param, "lr": args.lr} for param in other_params]
-
+    
+    # Combine all parameter groups
     final_param_dicts = other_param_dicts + backbone_param_lr_pairs + decoder_param_lr_pairs
-
+    
     return final_param_dicts

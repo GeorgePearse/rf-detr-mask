@@ -129,7 +129,9 @@ def main():
         mode="max",
         save_top_k=3,
         save_last=True,
-        every_n_train_steps=config.checkpoint_frequency,
+        every_n_train_steps=getattr(config, "eval_save_frequency", 
+                                  getattr(config, "checkpoint_frequency", 
+                                        getattr(config, "val_frequency", 200))),
     )
     callbacks.append(checkpoint_callback)
 
@@ -155,7 +157,9 @@ def main():
             export_onnx=config.export_onnx,
             export_torch=config.export_torch,
             simplify_onnx=config.simplify_onnx,
-            export_frequency=config.checkpoint_frequency,
+            export_frequency=getattr(config, "eval_save_frequency", 
+                                  getattr(config, "checkpoint_frequency", 
+                                        getattr(config, "val_frequency", 200))),
             input_shape=(config.resolution, config.resolution),
             opset_version=config.opset_version
         )
@@ -200,7 +204,9 @@ def main():
         accumulate_grad_batches=config.grad_accum_steps,
         log_every_n_steps=10,
         default_root_dir=config.output_dir,
-        val_check_interval=config.val_frequency,
+        val_check_interval=getattr(config, "eval_save_frequency", 
+                                 getattr(config, "val_frequency", 
+                                       getattr(config, "checkpoint_frequency", 200))),
         accelerator=accelerator,
         devices=1,
     )

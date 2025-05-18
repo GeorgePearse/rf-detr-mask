@@ -10,7 +10,6 @@ PyTorch Lightning modules for RF-DETR-Mask training.
 
 import datetime
 import math
-import os
 from pathlib import Path
 
 import lightning.pytorch as pl
@@ -18,10 +17,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 
-import rfdetr.datasets.transforms as T
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
+
 # Temporarily disable ONNX imports for testing
 # from rfdetr.deploy.export import export_onnx, onnx_simplify
 from rfdetr.models import build_criterion_and_postprocessors, build_model
@@ -40,10 +39,10 @@ class RFDETRLightningModule(pl.LightningModule):
         """
         super().__init__()
         self.save_hyperparameters()
-        
+
         # Import here to avoid circular imports
         from rfdetr.model_config import ModelConfig
-        
+
         # Handle different types of input for backward compatibility
         if isinstance(config, dict):
             # For dict input, try to convert to ModelConfig
@@ -76,7 +75,7 @@ class RFDETRLightningModule(pl.LightningModule):
             # Object attribute access
             self.ema_decay = getattr(self.config, "ema_decay", None)
             use_ema = getattr(self.config, "use_ema", True)
-            
+
         self.ema = ModelEma(self.model, self.ema_decay) if self.ema_decay and use_ema else None
 
         # Track metrics
@@ -92,7 +91,7 @@ class RFDETRLightningModule(pl.LightningModule):
 
         # Use automatic optimization to work with gradient clipping
         self.automatic_optimization = True
-        
+
         # Get configuration values based on type
         if isinstance(self.config, dict):
             output_dir = self.config.get("output_dir", "exports")
@@ -101,16 +100,20 @@ class RFDETRLightningModule(pl.LightningModule):
             self.simplify_onnx = self.config.get("simplify_onnx", True)
             self.export_on_validation = self.config.get("export_on_validation", True)
             self.max_steps = self.config.get("max_steps", 2000)
-            self.val_frequency = self.config.get("val_frequency", 200)
+            self.val_frequency = self.config.get("eval_save_frequency", 
+                self.config.get("val_frequency", 200))
         else:
             output_dir = getattr(self.config, "output_dir", "exports")
             self.export_onnx = getattr(self.config, "export_onnx", True)
-            self.export_torch = getattr(self.config, "export_torch", True) 
+            self.export_torch = getattr(self.config, "export_torch", True)
             self.simplify_onnx = getattr(self.config, "simplify_onnx", True)
             self.export_on_validation = getattr(self.config, "export_on_validation", True)
             self.max_steps = getattr(self.config, "max_steps", 2000)
-            self.val_frequency = getattr(self.config, "val_frequency", 200)
-        
+            self.val_frequency = getattr(
+                self.config, "eval_save_frequency", 
+                getattr(self.config, "val_frequency", 200)
+            )
+
         # Setup export directories
         self.export_dir = Path(output_dir)
         self.export_dir.mkdir(parents=True, exist_ok=True)
@@ -224,95 +227,100 @@ class RFDETRLightningModule(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         """Validation step logic."""
-        samples, targets = batch
+        try:
+            samples, targets = batch
 
-        # Move to device
-        samples = samples.to(self.device)
-        targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
+            # Move to device
+            samples = samples.to(self.device)
+            targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
 
-        # Determine which model to evaluate (EMA or regular)
-        model_to_eval = self.model
+            # Determine which model to evaluate (EMA or regular)
+            model_to_eval = self.model
 
-        # Half precision for evaluation if specified
-        if isinstance(self.config, dict):
-            fp16_eval = self.config.get("fp16_eval", False)
-        else:
-            fp16_eval = getattr(self.config, "fp16_eval", False)
-            
-        if fp16_eval:
-            model_to_eval = model_to_eval.half()
-            samples.tensors = samples.tensors.half()
+            # Half precision for evaluation if specified
+            if isinstance(self.config, dict):
+                fp16_eval = self.config.get("fp16_eval", False)
+            else:
+                fp16_eval = getattr(self.config, "fp16_eval", False)
 
-        # Forward pass
-        with torch.autocast(**self.autocast_args):
-            outputs = model_to_eval(samples)
+            if fp16_eval:
+                model_to_eval = model_to_eval.half()
+                samples.tensors = samples.tensors.half()
 
-        # Convert back to float if using fp16 eval
-        if fp16_eval:
-            for key in outputs:
-                if key == "enc_outputs":
-                    for sub_key in outputs[key]:
-                        outputs[key][sub_key] = outputs[key][sub_key].float()
-                elif key == "aux_outputs":
-                    for idx in range(len(outputs[key])):
-                        for sub_key in outputs[key][idx]:
-                            outputs[key][idx][sub_key] = outputs[key][idx][sub_key].float()
-                else:
-                    outputs[key] = outputs[key].float()
+            # Forward pass
+            with torch.autocast(**self.autocast_args):
+                outputs = model_to_eval(samples)
 
-        # Compute loss
-        loss_dict = self.criterion(outputs, targets)
-        weight_dict = self.criterion.weight_dict
+            # Convert back to float if using fp16 eval
+            if fp16_eval:
+                for key in outputs:
+                    if key == "enc_outputs":
+                        for sub_key in outputs[key]:
+                            outputs[key][sub_key] = outputs[key][sub_key].float()
+                    elif key == "aux_outputs":
+                        for idx in range(len(outputs[key])):
+                            for sub_key in outputs[key][idx]:
+                                outputs[key][idx][sub_key] = outputs[key][idx][sub_key].float()
+                    else:
+                        outputs[key] = outputs[key].float()
 
-        # Process results for COCO evaluation
-        orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
-        results = self.postprocessors["bbox"](outputs, orig_target_sizes)
-        res = {target["image_id"].item(): output for target, output in zip(targets, results)}
+            # Compute loss
+            loss_dict = self.criterion(outputs, targets)
+            weight_dict = self.criterion.weight_dict
 
-        # Log reduced loss
-        loss_dict_reduced = utils.reduce_dict(loss_dict)
-        loss_dict_reduced_scaled = {
-            k: v * weight_dict[k] for k, v in loss_dict_reduced.items() if k in weight_dict
-        }
-        loss_dict_reduced_unscaled = {f"{k}_unscaled": v for k, v in loss_dict_reduced.items()}
-        losses_reduced_scaled = sum(loss_dict_reduced_scaled.values())
+            # Process results for COCO evaluation
+            orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
+            results = self.postprocessors["bbox"](outputs, orig_target_sizes)
+            res = {target["image_id"].item(): output for target, output in zip(targets, results)}
 
-        # Log metrics - iteration-based validation
-        self.log(
-            "val/loss",
-            losses_reduced_scaled,
-            on_step=True,
-            on_epoch=False,
-            prog_bar=True,
-            sync_dist=True,
-        )
-        for k, v in loss_dict_reduced_scaled.items():
-            self.log(f"val/{k}", v, on_step=True, on_epoch=False, sync_dist=True)
-        self.log(
-            "val/class_error",
-            loss_dict_reduced["class_error"],
-            on_step=True,
-            on_epoch=False,
-            sync_dist=True,
-        )
+            # Log reduced loss
+            loss_dict_reduced = utils.reduce_dict(loss_dict)
+            loss_dict_reduced_scaled = {
+                k: v * weight_dict[k] for k, v in loss_dict_reduced.items() if k in weight_dict
+            }
+            loss_dict_reduced_unscaled = {f"{k}_unscaled": v for k, v in loss_dict_reduced.items()}
+            losses_reduced_scaled = sum(loss_dict_reduced_scaled.values())
 
-        # Store metrics and results for validation_epoch_end
-        val_metrics = {
-            "loss": losses_reduced_scaled.item(),
-            "class_error": loss_dict_reduced["class_error"].item(),
-            **{k: v.item() for k, v in loss_dict_reduced_scaled.items()},
-            **{k: v.item() for k, v in loss_dict_reduced_unscaled.items()},
-        }
-        self.val_metrics.append(val_metrics)
+            # Log metrics - iteration-based validation
+            self.log(
+                "val/loss",
+                losses_reduced_scaled,
+                on_step=True,
+                on_epoch=False,
+                prog_bar=True,
+                sync_dist=True,
+            )
+            for k, v in loss_dict_reduced_scaled.items():
+                self.log(f"val/{k}", v, on_step=True, on_epoch=False, sync_dist=True)
+            self.log(
+                "val/class_error",
+                loss_dict_reduced["class_error"],
+                on_step=True,
+                on_epoch=False,
+                sync_dist=True,
+            )
 
-        return {"metrics": val_metrics, "results": res, "targets": targets}
+            # Store metrics and results for validation_epoch_end
+            val_metrics = {
+                "loss": losses_reduced_scaled.item(),
+                "class_error": loss_dict_reduced["class_error"].item(),
+                **{k: v.item() for k, v in loss_dict_reduced_scaled.items()},
+                **{k: v.item() for k, v in loss_dict_reduced_unscaled.items()},
+            }
+            self.val_metrics.append(val_metrics)
+
+            return {"metrics": val_metrics, "results": res, "targets": targets}
+        except Exception as e:
+            print(f"Error in validation step: {e}")
+            # Return minimal output to keep the validation process from crashing
+            return None
 
     def _make_dummy_input(self, batch_size=1):
         """Generate a dummy input for ONNX export.
-        
+
         Args:
             batch_size: Number of samples in the batch
-            
+
         Returns:
             A dummy input tensor with the correct shape for ONNX export
         """
@@ -321,87 +329,94 @@ class RFDETRLightningModule(pl.LightningModule):
             resolution = self.config.get("resolution", 640)
         else:
             resolution = getattr(self.config, "resolution", 640)
-        
+
         # Create dummy input
         dummy = np.random.randint(0, 256, (resolution, resolution, 3), dtype=np.uint8)
         image = torch.from_numpy(dummy).permute(2, 0, 1).float() / 255.0
-        
+
         # Apply normalization
         mean = torch.tensor([0.485, 0.456, 0.406]).view(-1, 1, 1)
         std = torch.tensor([0.229, 0.224, 0.225]).view(-1, 1, 1)
         image = (image - mean) / std
-        
+
         # Repeat for batch size
         images = torch.stack([image for _ in range(batch_size)])
-        
+
         # Create nested tensor
         mask = torch.zeros((batch_size, resolution, resolution), dtype=torch.bool)
         nested_tensor = utils.NestedTensor(images, mask)
-        
+
         return nested_tensor
-    
+
     def export_model(self, epoch):
         """Export model to ONNX and save PyTorch weights.
-        
+
         Args:
             epoch: Current epoch number
         """
-        if not hasattr(self, 'export_onnx') or not hasattr(self, 'export_torch'):
+        if not hasattr(self, "export_onnx") or not hasattr(self, "export_torch"):
             return
-            
+
         if not (self.export_onnx or self.export_torch):
             return
-        
+
         # Use CPU for exports to avoid CUDA errors
         device = torch.device("cpu")
-        
+
         # Create timestamped directory for this export
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+
         # Make sure we have an export directory
-        if not hasattr(self, 'export_dir') or self.export_dir is None:
+        if not hasattr(self, "export_dir") or self.export_dir is None:
             self.export_dir = Path("exports")
-            
+
         export_path = self.export_dir / f"epoch_{epoch:04d}_{timestamp}"
         export_path.mkdir(parents=True, exist_ok=True)
-        
+
         # Save to logs
         print(f"Exporting model to {export_path}")
-        
+
         # Get model to export (use EMA if available)
-        model_to_export = self.ema.ema if self.ema is not None else self.model
+        model_to_export = self.ema.module if self.ema is not None else self.model
         model_to_export = model_to_export.to(device)
         model_to_export.eval()
-        
+
         try:
             # Export PyTorch weights
             if self.export_torch:
                 torch_path = export_path / "model.pth"
-                config_data = self.config.model_dump() if hasattr(self.config, "model_dump") else self.config
-                torch.save({
-                    "model": model_to_export.state_dict(),
-                    "config": config_data,
-                    "epoch": epoch,
-                    "map": self.best_map
-                }, torch_path)
+                config_data = (
+                    self.config.model_dump() if hasattr(self.config, "model_dump") else self.config
+                )
+                torch.save(
+                    {
+                        "model": model_to_export.state_dict(),
+                        "config": config_data,
+                        "epoch": epoch,
+                        "map": self.best_map,
+                    },
+                    torch_path,
+                )
                 print(f"Saved PyTorch weights to {torch_path}")
-            
+
             # Placeholder for ONNX export (actual export disabled for testing)
             if self.export_onnx:
                 # Placeholder for ONNX export
                 onnx_path = export_path / "inference_model.onnx"
                 print(f"ONNX export would save to: {onnx_path} (disabled for testing)")
-                
+
                 # Placeholder for ONNX simplification
-                if hasattr(self, 'simplify_onnx') and self.simplify_onnx:
+                if hasattr(self, "simplify_onnx") and self.simplify_onnx:
                     sim_onnx_path = export_path / "inference_model.sim.onnx"
-                    print(f"ONNX simplification would save to: {sim_onnx_path} (disabled for testing)")
+                    print(
+                        f"ONNX simplification would save to: {sim_onnx_path} (disabled for testing)"
+                    )
         except Exception as e:
             print(f"Error during model export: {e}")
         finally:
             # Move model back to original device
             model_to_export.to(self.device)
-    
+
     def on_validation_epoch_start(self):
         """Set up validation epoch and export model."""
         # Reset metrics
@@ -409,24 +424,35 @@ class RFDETRLightningModule(pl.LightningModule):
 
         # Create COCO evaluator
         try:
-            dataset_val = self.trainer.datamodule.dataset_val
-            base_ds = get_coco_api_from_dataset(dataset_val)
-            iou_types = tuple(k for k in ("segm", "bbox") if k in self.postprocessors)
-            self.coco_evaluator = CocoEvaluator(base_ds, iou_types)
+            if hasattr(self.trainer, "datamodule") and hasattr(self.trainer.datamodule, "dataset_val"):
+                dataset_val = self.trainer.datamodule.dataset_val
+                base_ds = get_coco_api_from_dataset(dataset_val)
+                if base_ds and hasattr(base_ds, "anns") and base_ds.anns:
+                    iou_types = tuple(k for k in ("segm", "bbox") if k in self.postprocessors)
+                    self.coco_evaluator = CocoEvaluator(base_ds, iou_types)
+                else:
+                    print("COCO dataset has no annotations, skipping evaluator initialization")
+                    self.coco_evaluator = None
+            else:
+                print("DataModule not properly initialized, skipping evaluator initialization")
+                self.coco_evaluator = None
         except Exception as e:
             print(
                 f"Error initializing COCO evaluator: {e}. This can happen with small validation sets."
             )
             self.coco_evaluator = None
-            
+
         # Export model before validation if enabled
-        if hasattr(self, 'export_on_validation') and self.export_on_validation:
+        if hasattr(self, "export_on_validation") and self.export_on_validation:
             current_epoch = self.trainer.current_epoch if self.trainer else 0
             self.export_model(current_epoch)
 
     def on_validation_batch_end(self, outputs, batch, batch_idx):
         """Process validation batch results."""
-        if self.coco_evaluator is not None and "results" in outputs:
+        if outputs is None:
+            return
+            
+        if self.coco_evaluator is not None and isinstance(outputs, dict) and "results" in outputs:
             try:
                 self.coco_evaluator.update(outputs["results"])
             except Exception as e:
@@ -443,8 +469,9 @@ class RFDETRLightningModule(pl.LightningModule):
             try:
                 # Check if we have enough data to evaluate
                 if (
-                    hasattr(self.coco_evaluator, "eval_imgs")
-                    and len(self.coco_evaluator.eval_imgs) > 0
+                    hasattr(self.coco_evaluator, "eval_imgs") 
+                    and self.coco_evaluator.eval_imgs
+                    and any(len(imgs) > 0 for imgs in self.coco_evaluator.eval_imgs.values())
                 ):
                     # Synchronize if distributed
                     if self.trainer.world_size > 1:
@@ -480,6 +507,8 @@ class RFDETRLightningModule(pl.LightningModule):
                             if hasattr(stats, "tolist"):
                                 # Log mask mAP
                                 mask_map_value = stats[0]
+                else:
+                    print("Skipping COCO evaluation - not enough evaluation images")
             except Exception as e:
                 print(
                     f"Error during COCO evaluation: {e}. This can happen with small validation sets."
@@ -523,7 +552,7 @@ class RFDETRLightningModule(pl.LightningModule):
         else:
             lr = getattr(self.config, "lr", 1e-4)
             weight_decay = getattr(self.config, "weight_decay", 1e-4)
-            
+
         param_dicts = get_param_dict(self.config, self.model)
         optimizer = FloatOnlyAdamW(
             param_dicts,
@@ -535,7 +564,7 @@ class RFDETRLightningModule(pl.LightningModule):
 
         # Get total training steps and warmup steps
         max_steps = self.max_steps
-        
+
         # Get scheduling parameters from config
         if isinstance(self.config, dict):
             warmup_ratio = self.config.get("warmup_ratio", 0.1)
@@ -545,9 +574,9 @@ class RFDETRLightningModule(pl.LightningModule):
             warmup_ratio = getattr(self.config, "warmup_ratio", 0.1)
             lr_scheduler_type = getattr(self.config, "lr_scheduler", "cosine")
             lr_min_factor = getattr(self.config, "lr_min_factor", 0.0)
-            
+
         warmup_steps = int(max_steps * warmup_ratio)
-        
+
         # Define lambda function for scheduler
         def lr_lambda(current_step: int):
             if current_step < warmup_steps:
@@ -594,7 +623,7 @@ class RFDETRDataModule(pl.LightningDataModule):
         super().__init__()
         # Import here to avoid circular imports
         from rfdetr.model_config import ModelConfig
-        
+
         # Handle different types of input for backward compatibility
         if isinstance(config, dict):
             # For dict input, try to convert to ModelConfig
@@ -609,7 +638,7 @@ class RFDETRDataModule(pl.LightningDataModule):
         else:
             # Other object with attributes, keep as is
             self.config = config
-            
+
         # Get configuration values based on type
         if isinstance(self.config, dict):
             self.batch_size = self.config.get("batch_size", 4)

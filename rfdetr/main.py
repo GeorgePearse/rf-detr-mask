@@ -394,19 +394,19 @@ class Model:
         # Initialize global step counter
         global_step = getattr(args, "start_step", 0)
         
-        # Initialize validation frequency
-        val_frequency = getattr(args, "val_frequency", None)
-        if max_steps is not None and val_frequency is None:
-            # Default validation every 10% of total steps if not specified
-            val_frequency = max(1, max_steps // 10)
-            print(f"Validating every {val_frequency} steps")
+        # Initialize evaluation and checkpoint frequency
+        eval_save_frequency = getattr(args, "eval_save_frequency", 
+                                      getattr(args, "val_frequency", 
+                                              getattr(args, "checkpoint_frequency", None)))
+        
+        if max_steps is not None and eval_save_frequency is None:
+            # Default evaluation/checkpoint every 10% of total steps if not specified
+            eval_save_frequency = max(1, max_steps // 10)
+            print(f"Validating and saving checkpoint every {eval_save_frequency} steps")
             
-        # Initialize checkpoint frequency (in steps)
-        checkpoint_frequency = getattr(args, "checkpoint_frequency", None)
-        if max_steps is not None and checkpoint_frequency is None:
-            # Default checkpoint every 10% of total steps if not specified
-            checkpoint_frequency = max(1, max_steps // 10)
-            print(f"Saving checkpoint every {checkpoint_frequency} steps")
+        # For backward compatibility - all frequencies are now the same
+        val_frequency = eval_save_frequency
+        checkpoint_frequency = eval_save_frequency
 
         # Determine training mode: steps or epochs
         iter_based_training = max_steps is not None
@@ -994,10 +994,12 @@ def get_args_parser():
                        help="Number of epochs to train for (ignored if max_steps is provided)")
     parser.add_argument("--max_steps", default=None, type=int,
                        help="Maximum number of training steps (overrides epochs if provided)")
+    parser.add_argument("--eval_save_frequency", default=None, type=int,
+                       help="Run validation and save checkpoint every N steps (for iteration-based training)")
     parser.add_argument("--val_frequency", default=None, type=int,
-                       help="Run validation every N steps (for iteration-based training)")
+                       help="Run validation every N steps (deprecated, use eval_save_frequency)")
     parser.add_argument("--checkpoint_frequency", default=None, type=int,
-                       help="Save checkpoint every N steps (for iteration-based training)")
+                       help="Save checkpoint every N steps (deprecated, use eval_save_frequency)")
     parser.add_argument("--warmup_ratio", default=0.0, type=float,
                        help="Percentage of total training steps to use for warmup")
     
@@ -1306,6 +1308,7 @@ def populate_args(
     weight_decay=1e-4,
     epochs=12,
     max_steps=None,
+    eval_save_frequency=None,
     val_frequency=None,
     checkpoint_frequency=None,
     warmup_ratio=0.0,
@@ -1423,6 +1426,7 @@ def populate_args(
         weight_decay=weight_decay,
         epochs=epochs,
         max_steps=max_steps,
+        eval_save_frequency=eval_save_frequency,
         val_frequency=val_frequency,
         checkpoint_frequency=checkpoint_frequency,
         warmup_ratio=warmup_ratio,
