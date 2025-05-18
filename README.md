@@ -36,7 +36,7 @@ We validated the performance of RF-DETR on both Microsoft COCO and the RF100-VL 
 <summary>RF100-VL benchmark results</summary>
 
 <br>
-    
+
 <img src="https://github.com/user-attachments/assets/e61a7ba4-5294-40a9-8cd7-4fc924639924" alt="rf100-vl-map50">
 </details>
 
@@ -143,7 +143,7 @@ model = RFDETRBase()
 
 def callback(frame, index):
     detections = model.predict(frame[:, :, ::-1], threshold=0.5)
-        
+
     labels = [
         f"{COCO_CLASSES[class_id]} {confidence:.2f}"
         for class_id, confidence
@@ -184,7 +184,7 @@ while True:
         break
 
     detections = model.predict(frame[:, :, ::-1], threshold=0.5)
-    
+
     labels = [
         f"{COCO_CLASSES[class_id]} {confidence:.2f}"
         for class_id, confidence
@@ -226,7 +226,7 @@ while True:
         break
 
     detections = model.predict(frame[:, :, ::-1], threshold=0.5)
-    
+
     labels = [
         f"{COCO_CLASSES[class_id]} {confidence:.2f}"
         for class_id, confidence
@@ -250,7 +250,7 @@ cv2.destroyAllWindows()
 
 ### Batch Inference
 
-> [!IMPORTANT] 
+> [!IMPORTANT]
 > Batch inference isn't officially released yet.
 > Install from source to access it: `pip install git+https://github.com/roboflow/rf-detr.git`.
 
@@ -509,14 +509,14 @@ During training, two model checkpoints (the regular weights and an EMA-based set
     ```bash
     pip install "rfdetr[metrics]"
     ```
-  
+
 - To activate logging, pass the extra parameter `tensorboard=True` to `.train()`:
 
     ```python
     from rfdetr import RFDETRBase
-    
+
     model = RFDETRBase()
-    
+
     model.train(
         dataset_dir=<DATASET_PATH>,
         epochs=10,
@@ -542,7 +542,7 @@ During training, two model checkpoints (the regular weights and an EMA-based set
     %load_ext tensorboard
     %tensorboard --logdir <OUTPUT_DIR>
     ```
-      
+
 </details>
 
 ### Logging with Weights and Biases
@@ -572,9 +572,9 @@ During training, two model checkpoints (the regular weights and an EMA-based set
 
     ```python
     from rfdetr import RFDETRBase
-    
+
     model = RFDETRBase()
-    
+
     model.train(
         dataset_dir=<DATASET_PATH>,
         epochs=10,
@@ -589,7 +589,7 @@ During training, two model checkpoints (the regular weights and an EMA-based set
     ```
 
     In W&B, projects are collections of related machine learning experiments, and runs are individual sessions where training or evaluation happens. If you don't specify a name for a run, W&B will assign a random one automatically.
-  
+
 </details>
 
 ### Load and run fine-tuned model
@@ -605,7 +605,7 @@ detections = model.predict(<IMAGE_PATH>)
 ## ONNX export
 
 > [!IMPORTANT]
-> Starting with RF-DETR 1.2.0, you'll have to run `pip install rfdetr[onnxexport]` before exporting model weights to ONNX format.  
+> Starting with RF-DETR 1.2.0, you'll have to run `pip install rfdetr[onnxexport]` before exporting model weights to ONNX format.
 
 RF-DETR supports exporting models to the ONNX format, which enables interoperability with various inference frameworks and can improve deployment efficiency. To export your model, simply initialize it and call the `.export()` method.
 
@@ -673,6 +673,21 @@ logger.debug("This is a debug message")
 logger.warning("This is a warning message")
 logger.error("This is an error message")
 ```
+
+## Security
+
+### API Key Safety
+
+Never include API keys or secrets directly in your code or git repositories. This project uses Git's secret scanning to help prevent accidental commits of API keys. If you do accidentally commit sensitive information:
+
+1. Immediately revoke the exposed API key and create a new one
+2. Remove the key from your git history using a tool like BFG Repo-Cleaner or git-filter-repo
+3. Add patterns to your `.gitignore` file to prevent future issues
+
+For local development:
+- Store API keys in environment variables or a `.env` file (make sure it's in your `.gitignore`)
+- Use a secrets management solution for your CI/CD workflows
+- Consider using a pre-commit hook to check for sensitive information
 
 ## Contribution
 
