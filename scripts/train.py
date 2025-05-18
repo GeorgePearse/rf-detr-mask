@@ -86,7 +86,12 @@ def get_args_parser():
     )
     parser.add_argument("--lr_drop", default=50, type=int, help="lr_drop")
     parser.add_argument("--weight_decay", default=1e-4, type=float, help="Weight decay")
-    parser.add_argument("--batch_size", default=2, type=int, help="Batch size per device")
+    parser.add_argument(
+        "--train_batch_size", default=2, type=int, help="Training batch size per device"
+    )
+    parser.add_argument(
+        "--val_batch_size", default=1, type=int, help="Validation batch size per device"
+    )
     parser.add_argument("--epochs", default=100, type=int, help="Number of epochs to train for")
     parser.add_argument(
         "--clip_max_norm", default=0.5, type=float, help="Gradient clipping max norm"
@@ -295,7 +300,7 @@ def main(args):
 
     # Build data loaders
     batch_sampler_train = torch.utils.data.BatchSampler(
-        sampler_train, args.batch_size, drop_last=True
+        sampler_train, args.train_batch_size, drop_last=True
     )
 
     data_loader_train = DataLoader(
@@ -306,7 +311,7 @@ def main(args):
     )
     data_loader_val = DataLoader(
         dataset_val,
-        args.batch_size,
+        args.val_batch_size,
         sampler=sampler_val,
         drop_last=False,
         collate_fn=utils.collate_fn,
@@ -323,6 +328,17 @@ def main(args):
     # Create output directory
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create checkpoints directory with timestamp
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    checkpoints_dir = output_dir / f"checkpoints_{timestamp}"
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save configuration to JSON
+    config_file = checkpoints_dir / "config.json"
+    with open(config_file, "w") as f:
+        config_dict = {k: v for k, v in vars(args).items() if not k.startswith("_")}
+        json.dump(config_dict, f, indent=2)
 
     # Resume from checkpoint if specified
     if args.resume:
@@ -379,6 +395,23 @@ def main(args):
                     logger.info(f"Running validation at step {total_steps}")
                     model = callback_dict["model"]
 
+                    # Save checkpoint before validation
+                    step_checkpoint_path = (
+                        checkpoints_dir / f"checkpoint_step_{total_steps:06d}.pth"
+                    )
+                    step_checkpoint_dict = {
+                        "model": model_without_ddp.state_dict(),
+                        "optimizer": optimizer.state_dict(),
+                        "lr_scheduler": lr_scheduler.state_dict(),
+                        "epoch": epoch,
+                        "step": total_steps,
+                        "args": args,
+                    }
+                    if ema:
+                        step_checkpoint_dict["ema"] = ema.ema.state_dict()
+                    logger.info(f"Saving checkpoint before validation to {step_checkpoint_path}")
+                    utils.save_on_master(step_checkpoint_dict, step_checkpoint_path)
+
                     # Run evaluation
                     test_stats, coco_evaluator = evaluate(
                         model, criterion, postprocessors, data_loader_val, base_ds, device, args
@@ -406,7 +439,7 @@ def main(args):
             optimizer,
             device,
             epoch,
-            args.batch_size,
+            args.train_batch_size,
             args.clip_max_norm,
             num_training_steps_per_epoch=num_training_steps_per_epoch,
             vit_encoder_num_layers=args.vit_encoder_num_layers,
@@ -419,17 +452,35 @@ def main(args):
 
         # Save checkpoint periodically
         if (epoch + 1) % 10 == 0 or epoch == args.epochs - 1:
-            checkpoint_path = output_dir / f"checkpoint_{epoch:04d}.pth"
+            # This is different from the epoch checkpoint before validation
+            # It's saved after validation and at specific intervals
+            periodic_checkpoint_path = checkpoints_dir / f"checkpoint_periodic_{epoch:04d}.pth"
             checkpoint_dict = {
                 "model": model_without_ddp.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "lr_scheduler": lr_scheduler.state_dict(),
                 "epoch": epoch,
                 "args": args,
+                "metrics": test_stats,
             }
             if ema:
                 checkpoint_dict["ema"] = ema.ema.state_dict()
-            utils.save_on_master(checkpoint_dict, checkpoint_path)
+            logger.info(f"Saving periodic checkpoint to {periodic_checkpoint_path}")
+            utils.save_on_master(checkpoint_dict, periodic_checkpoint_path)
+
+        # Save checkpoint before end-of-epoch validation
+        epoch_checkpoint_path = checkpoints_dir / f"checkpoint_epoch_{epoch:04d}.pth"
+        epoch_checkpoint_dict = {
+            "model": model_without_ddp.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "lr_scheduler": lr_scheduler.state_dict(),
+            "epoch": epoch,
+            "args": args,
+        }
+        if ema:
+            epoch_checkpoint_dict["ema"] = ema.ema.state_dict()
+        logger.info(f"Saving checkpoint before epoch validation to {epoch_checkpoint_path}")
+        utils.save_on_master(epoch_checkpoint_dict, epoch_checkpoint_path)
 
         # Evaluate
         test_stats, coco_evaluator = evaluate(
@@ -443,17 +494,25 @@ def main(args):
         # Update best metrics
         _is_best = best_map_holder.update(map_regular, epoch, is_ema=False)
         if _is_best:
+            # Save to the main output directory for backwards compatibility
             checkpoint_path = output_dir / "checkpoint_best.pth"
+            # Also save to the timestamped checkpoints directory
+            best_checkpoint_path = checkpoints_dir / "checkpoint_best.pth"
+
             checkpoint_dict = {
                 "model": model_without_ddp.state_dict(),
                 "optimizer": optimizer.state_dict(),
                 "lr_scheduler": lr_scheduler.state_dict(),
                 "epoch": epoch,
                 "args": args,
+                "metrics": test_stats,
             }
             if ema:
                 checkpoint_dict["ema"] = ema.ema.state_dict()
+
+            logger.info(f"New best model with mAP: {map_regular:.4f} at epoch {epoch}")
             utils.save_on_master(checkpoint_dict, checkpoint_path)
+            utils.save_on_master(checkpoint_dict, best_checkpoint_path)
 
         # Log statistics
         log_stats = {

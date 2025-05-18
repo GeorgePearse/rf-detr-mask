@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Minimal test to verify RF-DETR-Mask model and training"""
 
+import typing
 import unittest
 
 import torch
@@ -13,16 +14,17 @@ from rfdetr.models import build_criterion_and_postprocessors, build_model
 
 class Config:
     """Configuration for minimal model test"""
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     num_classes = 69
     masks = True
     encoder = "dinov2_base"
     vit_encoder_num_layers = 12
     pretrained_encoder = True
-    window_block_indexes = []
+    window_block_indexes: typing.ClassVar[list] = []
     drop_path = 0.1
-    out_feature_indexes = [3, 7, 11]
-    projector_scale = ["P3", "P4", "P5"]
+    out_feature_indexes: typing.ClassVar[list[int]] = [3, 7, 11]
+    projector_scale: typing.ClassVar[list[str]] = ["P3", "P4", "P5"]
     use_cls_token = True
     position_embedding = "sine"
     freeze_encoder = False
@@ -75,7 +77,19 @@ class Config:
     square_resize = True
     square_resize_div_64 = False
     multi_scale = False
-    expanded_scales = [480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800]
+    expanded_scales: typing.ClassVar[list[int]] = [
+        480,
+        512,
+        544,
+        576,
+        608,
+        640,
+        672,
+        704,
+        736,
+        768,
+        800,
+    ]
 
 
 class TestMinimalModel(unittest.TestCase):
@@ -114,14 +128,14 @@ class TestMinimalModel(unittest.TestCase):
             print(f"Samples shape: {samples.tensors.shape}")
             print(f"Number of targets: {len(targets)}")
             print(f"First target keys: {targets[0].keys()}")
-            
+
             self.assertIsNotNone(samples)
             self.assertGreater(len(targets), 0)
-            
+
             # Check if masks are in the target
             if "masks" in targets[0]:
                 print(f"Target masks shape: {targets[0]['masks'].shape}")
-                self.assertIsNotNone(targets[0]['masks'])
+                self.assertIsNotNone(targets[0]["masks"])
             else:
                 print("No masks in target")
 
@@ -139,7 +153,7 @@ class TestMinimalModel(unittest.TestCase):
         print("\nTesting forward pass...")
         self.model.train()
         samples, targets = next(iter(dataloader))
-        
+
         # Move data to GPU if available
         device = self.args.device
         samples = samples.to(device)
@@ -148,10 +162,10 @@ class TestMinimalModel(unittest.TestCase):
         with torch.cuda.amp.autocast(enabled=False):
             outputs = self.model(samples, targets)
             print(f"Model output keys: {outputs.keys()}")
-            
+
             self.assertIn("pred_logits", outputs)
             self.assertIn("pred_boxes", outputs)
-            
+
             if "pred_masks" in outputs:
                 print(f"pred_masks shape: {outputs['pred_masks'].shape}")
                 self.assertIsNotNone(outputs["pred_masks"])
@@ -159,7 +173,7 @@ class TestMinimalModel(unittest.TestCase):
             loss_dict = self.criterion(outputs, targets)
             print(f"Loss dict keys: {loss_dict.keys()}")
             print(f"loss_mask: {loss_dict.get('loss_mask', 'Not found')}")
-            
+
             # Check if mask loss is computed
             if "loss_mask" in loss_dict:
                 self.assertIsNotNone(loss_dict["loss_mask"])

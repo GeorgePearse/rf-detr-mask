@@ -2,6 +2,7 @@
 """Test to verify mixed precision (fp16) evaluation works correctly"""
 
 import unittest
+
 import torch
 
 from rfdetr.models.transformer import MLP, gen_sineembed_for_position
@@ -68,10 +69,12 @@ class TestMixedPrecisionEval(unittest.TestCase):
 
         # This should work now
         pos_tensor_half = torch.randn(2, 100, 4).half().to(self.device)
-        sine_embed_half = gen_sineembed_for_position(pos_tensor_half, dim=128)  # Will output 512 dims
+        sine_embed_half = gen_sineembed_for_position(
+            pos_tensor_half, dim=128
+        )  # Will output 512 dims
         output = mlp_test(sine_embed_half)
         print(f"Success! Output dtype: {output.dtype}, shape: {output.shape}")
-        
+
         self.assertEqual(output.dtype, torch.float16)
         self.assertEqual(output.shape, (2, 100, 256))
 

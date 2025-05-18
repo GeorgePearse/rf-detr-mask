@@ -43,7 +43,7 @@ class TestCustomAnnotations(unittest.TestCase):
                 sample = train_dataset[0]
                 print(f"  Sample image shape: {sample[0].shape}")
                 print(f"  Sample target keys: {sample[1].keys()}")
-                
+
                 # Add assertions
                 self.assertIsNotNone(sample[0])
                 self.assertIn("boxes", sample[1])
@@ -63,7 +63,7 @@ class TestCustomAnnotations(unittest.TestCase):
                 sample = val_dataset[0]
                 print(f"  Sample image shape: {sample[0].shape}")
                 print(f"  Sample target keys: {sample[1].keys()}")
-                
+
                 # Add assertions
                 self.assertIsNotNone(sample[0])
                 self.assertIn("boxes", sample[1])
@@ -96,7 +96,9 @@ class TestCustomAnnotations(unittest.TestCase):
         args_default.expanded_scales = False
 
         try:
-            train_dataset_default = build_dataset(image_set="train", args=args_default, resolution=640)
+            train_dataset_default = build_dataset(
+                image_set="train", args=args_default, resolution=640
+            )
             print(
                 f"✓ Default train dataset loaded successfully with {len(train_dataset_default)} samples"
             )

@@ -5,7 +5,7 @@ import os
 import unittest
 
 import torch
-import torch.nn as nn
+
 from rfdetr.config_utils import load_config
 from rfdetr.models import build_model
 from rfdetr.util.misc import NestedTensor
@@ -19,10 +19,10 @@ class TestModelConstruction(unittest.TestCase):
         # Load configuration
         config_path = os.path.join("configs", "test_config.yaml")
         self.config = load_config(config_path)
-        
+
         # Convert to args for backward compatibility
         self.args = self.config.to_args()
-        
+
         # Adjust some parameters for simple test
         self.args.batch_size = 1
         self.args.resolution = 560  # Standard resolution for DINOv2
@@ -36,19 +36,19 @@ class TestModelConstruction(unittest.TestCase):
         print(f"  resolution: {self.args.resolution}")
         print(f"  amp: {self.args.amp}")
         print(f"  num_classes: {self.args.num_classes}")
-        
+
         # Build the model
         print("Building model...")
         model = build_model(self.args)
         model.to(self.args.device)
-        
+
         num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Model built with {num_params} parameters")
-        
+
         # Assert model was built correctly
         self.assertIsNotNone(model)
         self.assertGreater(num_params, 0)
-        
+
         # Return model for use in other tests
         return model
 
@@ -56,39 +56,46 @@ class TestModelConstruction(unittest.TestCase):
         """Test that a forward pass through the model succeeds"""
         # Build the model first
         model = self.test_model_construction()
-        
+
         # Create a dummy input
-        dummy_input = torch.randn(1, 3, self.args.resolution, self.args.resolution).to(self.args.device)
+        dummy_input = torch.randn(1, 3, self.args.resolution, self.args.resolution).to(
+            self.args.device
+        )
         dummy_targets = [
             {
                 "boxes": torch.tensor([[100, 100, 200, 200]], device=self.args.device),
                 "labels": torch.tensor([1], device=self.args.device),
                 "area": torch.tensor([10000.0], device=self.args.device),
                 "iscrowd": torch.tensor([0], device=self.args.device),
-                "masks": torch.ones((1, self.args.resolution, self.args.resolution), device=self.args.device),
+                "masks": torch.ones(
+                    (1, self.args.resolution, self.args.resolution), device=self.args.device
+                ),
             }
         ]
-        
+
         # Try a forward pass
         print("Testing forward pass...")
         try:
-            samples = NestedTensor(dummy_input, torch.ones_like(dummy_input[:,0,:,:], dtype=torch.bool))
+            samples = NestedTensor(
+                dummy_input, torch.ones_like(dummy_input[:, 0, :, :], dtype=torch.bool)
+            )
             outputs = model(samples, dummy_targets)
             print("Forward pass successful!")
             print(f"Output keys: {outputs.keys()}")
-            
+
             # Assert the outputs contain the expected keys
             self.assertIn("pred_logits", outputs)
             self.assertIn("pred_boxes", outputs)
             if "pred_masks" in outputs:
                 print("Model includes segmentation head")
-                
+
         except Exception as e:
             print(f"Forward pass failed with error: {e}")
             import traceback
+
             traceback.print_exc()
             self.fail(f"Forward pass failed: {e}")
-        
+
         print("Test complete")
 
 
