@@ -86,7 +86,7 @@ def get_args_parser():
     )
     parser.add_argument("--lr_drop", default=50, type=int, help="lr_drop")
     parser.add_argument("--weight_decay", default=1e-4, type=float, help="Weight decay")
-    parser.add_argument("--batch_size", default=2, type=int, help="Batch size per device")
+    parser.add_argument("--batch_size", default=1, type=int, help="Batch size per device")
     parser.add_argument("--epochs", default=100, type=int, help="Number of epochs to train for")
     parser.add_argument(
         "--clip_max_norm", default=0.5, type=float, help="Gradient clipping max norm"
@@ -208,6 +208,12 @@ def get_args_parser():
         action="store_true",
         help="use square resize with dimensions divisible by 64",
     )
+    parser.add_argument(
+        "--test_limit",
+        default=None,
+        type=int,
+        help="Limit dataset to first N samples for faster testing. If not specified, the full dataset is used.",
+    )
 
     return parser
 
@@ -247,7 +253,28 @@ def main(args):
     # Build optimizer
     param_dicts = get_param_dict(args, model_without_ddp)
     # Use fused=False and increased eps to handle mixed precision training correctly
-    optimizer = torch.optim.AdamW(
+    # And use a custom optimizer wrapper that fixes half precision issues
+    # Completely disable FP16 for optimizer at this point, it's a memory/precision tradeoff
+    args.use_fp16 = False
+    args.fp16_eval = False
+
+    class FloatOnlyAdamW(torch.optim.AdamW):
+        """AdamW optimizer that ensures everything happens in float32, regardless of input."""
+
+        def step(self, closure=None):
+            with torch.no_grad():
+                for group in self.param_groups:
+                    for p in group["params"]:
+                        if p.grad is None:
+                            continue
+
+                        # Convert gradients to float if they're half
+                        if p.grad.dtype == torch.float16:
+                            p.grad = p.grad.float()
+
+            return super().step(closure)
+
+    optimizer = FloatOnlyAdamW(
         param_dicts, lr=args.lr, weight_decay=args.weight_decay, fused=False, eps=1e-4
     )
 
