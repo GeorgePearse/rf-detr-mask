@@ -50,20 +50,28 @@ def get_args_parser():
     )
     parser.add_argument("--dataset_file", default="coco", type=str, help="Dataset file name")
     parser.add_argument("--resolution", default=644, type=int, help="Input resolution")
-    
+
     # Test limit parameter
     parser.add_argument(
         "--test_limit",
         default=None,
         type=int,
-        help="Limit dataset to first N samples for faster testing"
+        help="Limit dataset to first N samples for faster testing",
     )
-    
+
     # Model parameters required for build_dataset
     parser.add_argument("--multi_scale", action="store_true", help="Use multi-scale training")
-    parser.add_argument("--expanded_scales", action="store_true", help="Use expanded scales for multi-scale training")
-    parser.add_argument("--square_resize_div_64", action="store_true", help="Use square resize with dimensions divisible by 64")
-    
+    parser.add_argument(
+        "--expanded_scales",
+        action="store_true",
+        help="Use expanded scales for multi-scale training",
+    )
+    parser.add_argument(
+        "--square_resize_div_64",
+        action="store_true",
+        help="Use square resize with dimensions divisible by 64",
+    )
+
     return parser
 
 
@@ -77,25 +85,29 @@ def main(args):
     # Print dataset sizes
     logger.info(f"Training dataset size: {len(dataset_train)}")
     logger.info(f"Validation dataset size: {len(dataset_val)}")
-    
+
     # Print first few sample IDs to verify correct subsetting
     if hasattr(dataset_train, "dataset"):
         # If it's a Subset, get the first few indices
         logger.info(f"Training dataset is a Subset with indices: {dataset_train.indices[:5]}...")
     else:
         # Otherwise print the first few image IDs
-        logger.info(f"Training dataset first few image IDs: {[dataset_train.ids[i] for i in range(min(5, len(dataset_train.ids)))]}...")
-        
+        logger.info(
+            f"Training dataset first few image IDs: {[dataset_train.ids[i] for i in range(min(5, len(dataset_train.ids)))]}..."
+        )
+
     if hasattr(dataset_val, "dataset"):
         # If it's a Subset, get the first few indices
         logger.info(f"Validation dataset is a Subset with indices: {dataset_val.indices[:5]}...")
     else:
         # Otherwise print the first few image IDs
-        logger.info(f"Validation dataset first few image IDs: {[dataset_val.ids[i] for i in range(min(5, len(dataset_val.ids)))]}...")
+        logger.info(
+            f"Validation dataset first few image IDs: {[dataset_val.ids[i] for i in range(min(5, len(dataset_val.ids)))]}..."
+        )
 
 
 if __name__ == "__main__":
     parser = get_args_parser()
     args = parser.parse_args()
-    
+
     main(args)
