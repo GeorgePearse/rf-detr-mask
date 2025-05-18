@@ -9,6 +9,7 @@ import os
 
 # Import model classes
 from rfdetr.detr import RFDETRBase, RFDETRLarge
+from rfdetr.model_config import ModelConfig
 
 # Configure MPS fallback if needed
 if os.environ.get("PYTORCH_ENABLE_MPS_FALLBACK") is None:

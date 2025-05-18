@@ -12,6 +12,8 @@ When testing the train.py script make sure that you do use the GPU
 
 Always default to a pydantic class, and a YAML config file, instead of using argparse.
 
+Whenever you suggest that I run a script in a certain way, can you make sure that you've already tried to run that script.
+
 ## Build/Testing Commands
 
 - Install in dev mode: `pip install -e ".[dev]"`

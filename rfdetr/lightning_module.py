@@ -9,6 +9,7 @@ PyTorch Lightning modules for RF-DETR-Mask training.
 """
 
 import datetime
+import math
 import os
 from pathlib import Path
 
@@ -29,29 +30,54 @@ from rfdetr.util.utils import ModelEma
 
 
 class RFDETRLightningModule(pl.LightningModule):
-    """Lightning module for RF-DETR training."""
+    """Lightning module for RF-DETR training using iteration-based approach."""
 
-    def __init__(self, args):
+    def __init__(self, config):
         """Initialize the RF-DETR Lightning Module.
 
         Args:
-            args: Configuration arguments (can be from args namespace or config)
+            config: Configuration as a Pydantic model or compatible dict/object
         """
         super().__init__()
         self.save_hyperparameters()
-        self.args = args
+        
+        # Import here to avoid circular imports
+        from rfdetr.model_config import ModelConfig
+        
+        # Handle different types of input for backward compatibility
+        if isinstance(config, dict):
+            # For dict input, try to convert to ModelConfig
+            try:
+                self.config = ModelConfig(**config)
+            except Exception:
+                # If conversion fails, keep original dict
+                self.config = config
+        elif hasattr(config, "model_dump") and callable(config.model_dump):
+            # It's already a Pydantic model
+            self.config = config
+        else:
+            # Other object with attributes, keep as is
+            self.config = config
 
         # Build model, criterion, and postprocessors
-        self.model = build_model(args)
-        self.criterion, self.postprocessors = build_criterion_and_postprocessors(args)
+        self.model = build_model(self.config)
+        self.criterion, self.postprocessors = build_criterion_and_postprocessors(self.config)
 
         # Setup EMA if enabled
-        self.ema_decay = getattr(args, "ema_decay", None)
-        self.ema = (
-            ModelEma(self.model, self.ema_decay)
-            if self.ema_decay and getattr(args, "use_ema", True)
-            else None
-        )
+        if isinstance(self.config, ModelConfig):
+            # Direct attribute access for ModelConfig
+            self.ema_decay = self.config.ema_decay if hasattr(self.config, "ema_decay") else None
+            use_ema = self.config.use_ema if hasattr(self.config, "use_ema") else True
+        elif isinstance(self.config, dict):
+            # Dictionary access
+            self.ema_decay = self.config.get("ema_decay", None)
+            use_ema = self.config.get("use_ema", True)
+        else:
+            # Object attribute access
+            self.ema_decay = getattr(self.config, "ema_decay", None)
+            use_ema = getattr(self.config, "use_ema", True)
+            
+        self.ema = ModelEma(self.model, self.ema_decay) if self.ema_decay and use_ema else None
 
         # Track metrics
         self.train_metrics = []
@@ -67,19 +93,27 @@ class RFDETRLightningModule(pl.LightningModule):
         # Use automatic optimization to work with gradient clipping
         self.automatic_optimization = True
         
+        # Get configuration values based on type
+        if isinstance(self.config, dict):
+            output_dir = self.config.get("output_dir", "exports")
+            self.export_onnx = self.config.get("export_onnx", True)
+            self.export_torch = self.config.get("export_torch", True)
+            self.simplify_onnx = self.config.get("simplify_onnx", True)
+            self.export_on_validation = self.config.get("export_on_validation", True)
+            self.max_steps = self.config.get("max_steps", 2000)
+            self.val_frequency = self.config.get("val_frequency", 200)
+        else:
+            output_dir = getattr(self.config, "output_dir", "exports")
+            self.export_onnx = getattr(self.config, "export_onnx", True)
+            self.export_torch = getattr(self.config, "export_torch", True) 
+            self.simplify_onnx = getattr(self.config, "simplify_onnx", True)
+            self.export_on_validation = getattr(self.config, "export_on_validation", True)
+            self.max_steps = getattr(self.config, "max_steps", 2000)
+            self.val_frequency = getattr(self.config, "val_frequency", 200)
+        
         # Setup export directories
-        self.export_dir = Path(getattr(args, "output_dir", "exports"))
+        self.export_dir = Path(output_dir)
         self.export_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Flags for exports
-        self.export_onnx = getattr(args, "export_onnx", True)
-        self.export_torch = getattr(args, "export_torch", True)
-        self.simplify_onnx = getattr(args, "simplify_onnx", True)
-        self.export_on_validation = getattr(args, "export_on_validation", True)
-        
-        # Step-based training configuration
-        self.max_steps = getattr(args, "max_steps", None)
-        self.val_frequency = getattr(args, "val_frequency", None)
 
     def _setup_autocast_args(self):
         """Set up arguments for autocast (mixed precision training)."""
@@ -98,17 +132,21 @@ class RFDETRLightningModule(pl.LightningModule):
             # Fall back to cuda.amp if needed
             self.amp_backend = "cuda"
 
+        # Get amp setting from config
+        if isinstance(self.config, dict):
+            amp_enabled = self.config.get("amp", False)
+        else:
+            amp_enabled = getattr(self.config, "amp", False)
+
         if self.amp_backend == "torch":
             self.autocast_args = {
                 "device_type": "cuda" if torch.cuda.is_available() else "cpu",
-                # Disable autocast/mixed precision by default
-                "enabled": getattr(self.args, "amp", False),
+                "enabled": amp_enabled,
                 "dtype": self._dtype,
             }
         else:
             self.autocast_args = {
-                # Disable autocast/mixed precision by default
-                "enabled": getattr(self.args, "amp", False),
+                "enabled": amp_enabled,
                 "dtype": self._dtype,
             }
 
@@ -139,22 +177,22 @@ class RFDETRLightningModule(pl.LightningModule):
         }
         losses_reduced_scaled = sum(loss_dict_reduced_scaled.values())
 
-        # Log metrics
+        # Log metrics - iteration-based logging
         self.log(
             "train/loss",
             losses_reduced_scaled,
             on_step=True,
-            on_epoch=True,
+            on_epoch=False,
             prog_bar=True,
             sync_dist=True,
         )
         for k, v in loss_dict_reduced_scaled.items():
-            self.log(f"train/{k}", v, on_step=False, on_epoch=True, sync_dist=True)
+            self.log(f"train/{k}", v, on_step=True, on_epoch=False, sync_dist=True)
         self.log(
             "train/class_error",
             loss_dict_reduced["class_error"],
-            on_step=False,
-            on_epoch=True,
+            on_step=True,
+            on_epoch=False,
             sync_dist=True,
         )
 
@@ -196,7 +234,11 @@ class RFDETRLightningModule(pl.LightningModule):
         model_to_eval = self.model
 
         # Half precision for evaluation if specified
-        fp16_eval = getattr(self.args, "fp16_eval", False)
+        if isinstance(self.config, dict):
+            fp16_eval = self.config.get("fp16_eval", False)
+        else:
+            fp16_eval = getattr(self.config, "fp16_eval", False)
+            
         if fp16_eval:
             model_to_eval = model_to_eval.half()
             samples.tensors = samples.tensors.half()
@@ -235,22 +277,22 @@ class RFDETRLightningModule(pl.LightningModule):
         loss_dict_reduced_unscaled = {f"{k}_unscaled": v for k, v in loss_dict_reduced.items()}
         losses_reduced_scaled = sum(loss_dict_reduced_scaled.values())
 
-        # Log metrics
+        # Log metrics - iteration-based validation
         self.log(
             "val/loss",
             losses_reduced_scaled,
-            on_step=False,
-            on_epoch=True,
+            on_step=True,
+            on_epoch=False,
             prog_bar=True,
             sync_dist=True,
         )
         for k, v in loss_dict_reduced_scaled.items():
-            self.log(f"val/{k}", v, on_step=False, on_epoch=True, sync_dist=True)
+            self.log(f"val/{k}", v, on_step=True, on_epoch=False, sync_dist=True)
         self.log(
             "val/class_error",
             loss_dict_reduced["class_error"],
-            on_step=False,
-            on_epoch=True,
+            on_step=True,
+            on_epoch=False,
             sync_dist=True,
         )
 
@@ -274,8 +316,11 @@ class RFDETRLightningModule(pl.LightningModule):
         Returns:
             A dummy input tensor with the correct shape for ONNX export
         """
-        # Get resolution from args
-        resolution = getattr(self.args, "resolution", 640)
+        # Get resolution from config
+        if isinstance(self.config, dict):
+            resolution = self.config.get("resolution", 640)
+        else:
+            resolution = getattr(self.config, "resolution", 640)
         
         # Create dummy input
         dummy = np.random.randint(0, 256, (resolution, resolution, 3), dtype=np.uint8)
@@ -301,6 +346,9 @@ class RFDETRLightningModule(pl.LightningModule):
         Args:
             epoch: Current epoch number
         """
+        if not hasattr(self, 'export_onnx') or not hasattr(self, 'export_torch'):
+            return
+            
         if not (self.export_onnx or self.export_torch):
             return
         
@@ -309,6 +357,11 @@ class RFDETRLightningModule(pl.LightningModule):
         
         # Create timestamped directory for this export
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Make sure we have an export directory
+        if not hasattr(self, 'export_dir') or self.export_dir is None:
+            self.export_dir = Path("exports")
+            
         export_path = self.export_dir / f"epoch_{epoch:04d}_{timestamp}"
         export_path.mkdir(parents=True, exist_ok=True)
         
@@ -324,9 +377,10 @@ class RFDETRLightningModule(pl.LightningModule):
             # Export PyTorch weights
             if self.export_torch:
                 torch_path = export_path / "model.pth"
+                config_data = self.config.model_dump() if hasattr(self.config, "model_dump") else self.config
                 torch.save({
                     "model": model_to_export.state_dict(),
-                    "args": self.args,
+                    "config": config_data,
                     "epoch": epoch,
                     "map": self.best_map
                 }, torch_path)
@@ -339,7 +393,7 @@ class RFDETRLightningModule(pl.LightningModule):
                 print(f"ONNX export would save to: {onnx_path} (disabled for testing)")
                 
                 # Placeholder for ONNX simplification
-                if self.simplify_onnx:
+                if hasattr(self, 'simplify_onnx') and self.simplify_onnx:
                     sim_onnx_path = export_path / "inference_model.sim.onnx"
                     print(f"ONNX simplification would save to: {sim_onnx_path} (disabled for testing)")
         except Exception as e:
@@ -366,7 +420,7 @@ class RFDETRLightningModule(pl.LightningModule):
             self.coco_evaluator = None
             
         # Export model before validation if enabled
-        if self.export_on_validation:
+        if hasattr(self, 'export_on_validation') and self.export_on_validation:
             current_epoch = self.trainer.current_epoch if self.trainer else 0
             self.export_model(current_epoch)
 
@@ -431,15 +485,15 @@ class RFDETRLightningModule(pl.LightningModule):
                     f"Error during COCO evaluation: {e}. This can happen with small validation sets."
                 )
 
-        # Always log the metrics
-        self.log("val/mAP", map_value, on_epoch=True, sync_dist=True)
-        self.log("val/best_mAP", self.best_map, on_epoch=True, sync_dist=True)
+        # Always log the metrics at epoch end
+        self.log("val/mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val/best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
 
         if "segm" in self.postprocessors:
-            self.log("val/mask_mAP", mask_map_value, on_epoch=True, sync_dist=True)
+            self.log("val/mask_mAP", mask_map_value, on_step=False, on_epoch=True, sync_dist=True)
 
     def configure_optimizers(self):
-        """Configure optimizers and learning rate scheduler."""
+        """Configure optimizers and learning rate scheduler for iteration-based training."""
 
         # Use FloatOnlyAdamW optimizer for stability
         class FloatOnlyAdamW(torch.optim.AdamW):
@@ -462,25 +516,67 @@ class RFDETRLightningModule(pl.LightningModule):
 
                 return super().step(closure)
 
-        param_dicts = get_param_dict(self.args, self.model)
+        # Get parameters from config for optimizer
+        if isinstance(self.config, dict):
+            lr = self.config.get("lr", 1e-4)
+            weight_decay = self.config.get("weight_decay", 1e-4)
+        else:
+            lr = getattr(self.config, "lr", 1e-4)
+            weight_decay = getattr(self.config, "weight_decay", 1e-4)
+            
+        param_dicts = get_param_dict(self.config, self.model)
         optimizer = FloatOnlyAdamW(
             param_dicts,
-            lr=getattr(self.args, "lr", 1e-4),
-            weight_decay=getattr(self.args, "weight_decay", 1e-4),
+            lr=lr,
+            weight_decay=weight_decay,
             fused=False,
             eps=1e-4,
         )
 
-        # Build learning rate scheduler
-        lr_drop = getattr(self.args, "lr_drop", 100)
-        lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [lr_drop], gamma=0.1)
+        # Get total training steps and warmup steps
+        max_steps = self.max_steps
+        
+        # Get scheduling parameters from config
+        if isinstance(self.config, dict):
+            warmup_ratio = self.config.get("warmup_ratio", 0.1)
+            lr_scheduler_type = self.config.get("lr_scheduler", "cosine")
+            lr_min_factor = self.config.get("lr_min_factor", 0.0)
+        else:
+            warmup_ratio = getattr(self.config, "warmup_ratio", 0.1)
+            lr_scheduler_type = getattr(self.config, "lr_scheduler", "cosine")
+            lr_min_factor = getattr(self.config, "lr_min_factor", 0.0)
+            
+        warmup_steps = int(max_steps * warmup_ratio)
+        
+        # Define lambda function for scheduler
+        def lr_lambda(current_step: int):
+            if current_step < warmup_steps:
+                # Linear warmup
+                return float(current_step) / float(max(1, warmup_steps))
+            else:
+                # Cosine annealing from multiplier 1.0 down to lr_min_factor
+                if lr_scheduler_type == "cosine":
+                    progress = float(current_step - warmup_steps) / float(
+                        max(1, max_steps - warmup_steps)
+                    )
+                    return lr_min_factor + (1 - lr_min_factor) * 0.5 * (
+                        1 + math.cos(math.pi * progress)
+                    )
+                elif lr_scheduler_type == "step":
+                    # Default step schedule if not using cosine
+                    return 0.1 if current_step > (max_steps * 0.8) else 1.0
+                else:
+                    return 1.0
+
+        # Create LambdaLR scheduler
+        lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
 
         # Configure for Lightning
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": lr_scheduler,
-                "interval": "epoch",
+                "interval": "step",  # Step-based scheduling
                 "frequency": 1,
             },
         }
@@ -489,26 +585,49 @@ class RFDETRLightningModule(pl.LightningModule):
 class RFDETRDataModule(pl.LightningDataModule):
     """Lightning data module for RF-DETR-Mask."""
 
-    def __init__(self, args):
+    def __init__(self, config):
         """Initialize the RF-DETR data module.
 
         Args:
-            args: Configuration arguments
+            config: Configuration as a Pydantic model or compatible dict/object
         """
         super().__init__()
-        self.args = args
-        self.batch_size = getattr(args, "batch_size", 4)
-        self.num_workers = getattr(args, "num_workers", 2)
-        self.resolution = getattr(args, "resolution", 560)
+        # Import here to avoid circular imports
+        from rfdetr.model_config import ModelConfig
+        
+        # Handle different types of input for backward compatibility
+        if isinstance(config, dict):
+            # For dict input, try to convert to ModelConfig
+            try:
+                self.config = ModelConfig(**config)
+            except Exception:
+                # If conversion fails, keep original dict
+                self.config = config
+        elif hasattr(config, "model_dump") and callable(config.model_dump):
+            # It's already a Pydantic model
+            self.config = config
+        else:
+            # Other object with attributes, keep as is
+            self.config = config
+            
+        # Get configuration values based on type
+        if isinstance(self.config, dict):
+            self.batch_size = self.config.get("batch_size", 4)
+            self.num_workers = self.config.get("num_workers", 2)
+            self.resolution = self.config.get("resolution", 560)
+        else:
+            self.batch_size = getattr(self.config, "batch_size", 4)
+            self.num_workers = getattr(self.config, "num_workers", 2)
+            self.resolution = getattr(self.config, "resolution", 560)
 
     def setup(self, stage=None):
         """Set up datasets for training and validation."""
         # We need to set up datasets for all stages
         self.dataset_train = build_dataset(
-            image_set="train", args=self.args, resolution=self.resolution
+            image_set="train", args=self.config, resolution=self.resolution
         )
         self.dataset_val = build_dataset(
-            image_set="val", args=self.args, resolution=self.resolution
+            image_set="val", args=self.config, resolution=self.resolution
         )
 
     def train_dataloader(self):

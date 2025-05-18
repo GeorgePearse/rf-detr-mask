@@ -1,16 +1,14 @@
-# Iteration-based training configuration for RF-DETR-Mask
+# Test configuration for iteration-based training with a small dataset
 
 # Basic training parameters
-max_steps: 2000
-batch_size: 2
-grad_accum_steps: 4
+max_steps: 200
+batch_size: 1
+grad_accum_steps: 1
 
-# Training scheduling
-val_frequency: 200
-checkpoint_frequency: 200  # Match validation frequency
-early_stopping: true 
-early_stopping_patience: 5
-early_stopping_min_delta: 0.001
+# Training scheduling - identical frequency for validation and checkpoints
+val_frequency: 25
+checkpoint_frequency: 25
+early_stopping: false 
 
 # Learning rate and optimization
 lr: 5.0e-5
@@ -25,12 +23,6 @@ lr_component_decay: 1.0
 
 # Mixed precision
 amp: true
-fp16_eval: false
-
-# Training regularization
-clip_max_norm: 0.5
-dropout: 0.0
-drop_path: 0.1
 
 # Data parameters
 dataset_file: "coco"
@@ -38,53 +30,38 @@ coco_path: "/home/georgepearse/data/cmr/annotations"
 coco_train: "2025-05-15_12:38:23.077836_train_ordered.json"
 coco_val: "2025-05-15_12:38:38.270134_val_ordered.json"
 coco_img_path: "/home/georgepearse/data/images"
-num_workers: 4
-resolution: 336
-square_resize: true
-multi_scale: false
-expanded_scales: false
+num_workers: 2
+resolution: 518  # Must match dinov2_small.json image_size
+test_limit: 100  # Limit dataset size for faster testing
 
 # Model parameters
 num_classes: 69
-encoder: "dinov2_windowed_small"
-pretrain_weights: null
+encoder: "dinov2_small"  # Use non-windowed version
 layer_norm: true
 
 # Transformer parameters
-hidden_dim: 256
-dec_layers: 3
-dim_feedforward: 1024
+hidden_dim: 128  # Reduced for testing
+dec_layers: 2    # Reduced for testing
+dim_feedforward: 512
+num_queries: 100
 sa_nheads: 8
 ca_nheads: 8
 group_detr: 1
 two_stage: true
 lite_refpoint_refine: true
-num_queries: 100
 bbox_reparam: true
+dec_n_points: 4
+decoder_norm: "LN"
 
 # Feature extraction parameters
 out_feature_indexes: [9, 10, 11]  # Which layers to extract from backbone
 projector_scale: ["P3", "P4", "P5"]  # Feature pyramid levels
-
-# Loss parameters
-cls_loss_coef: 4.5
-bbox_loss_coef: 2.0
-giou_loss_coef: 1.0
-mask_loss_coef: 1.0 
-dice_loss_coef: 1.0
-aux_loss: true
-
-# Matcher parameters
-set_cost_class: 5.0
-set_cost_bbox: 2.0
-set_cost_giou: 1.0
-
-# EMA parameters
-use_ema: true
-ema_decay: 0.993
+window_block_indexes: null
+use_cls_token: false
+position_embedding: "sine"
 
 # Output parameters
-output_dir: "output_iter_training"
+output_dir: "output_test_iter_training"
 
 # Logging parameters
 tensorboard: true

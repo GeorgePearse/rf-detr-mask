@@ -87,6 +87,13 @@ class TrainingConfig(BaseModel):
     num_queries: int = Field(300, description="Number of query slots")
     bbox_reparam: bool = Field(True, description="Use bbox reparameterization")
     
+    # Feature extraction parameters
+    out_feature_indexes: List[int] = Field([9, 10, 11], description="Feature extraction layers from backbone")
+    projector_scale: List[Literal["P3", "P4", "P5", "P6"]] = Field(["P3", "P4", "P5"], description="Feature pyramid levels")
+    window_block_indexes: Optional[List[int]] = Field(None, description="Window block indexes for windowed attention")
+    use_cls_token: bool = Field(False, description="Use classification token from ViT")
+    position_embedding: Literal["sine", "learned"] = Field("sine", description="Type of position embedding")
+    
     # Loss parameters
     cls_loss_coef: float = Field(2.0, description="Classification loss coefficient")
     bbox_loss_coef: float = Field(5.0, description="Bbox loss coefficient")
