@@ -8,13 +8,21 @@
 PyTorch Lightning modules for RF-DETR-Mask training.
 """
 
+import datetime
+import os
+from pathlib import Path
+
 import lightning.pytorch as pl
+import numpy as np
 import torch
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 
+import rfdetr.datasets.transforms as T
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
+# Temporarily disable ONNX imports for testing
+# from rfdetr.deploy.export import export_onnx, onnx_simplify
 from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.get_param_dicts import get_param_dict
 from rfdetr.util.utils import ModelEma
@@ -58,17 +66,24 @@ class RFDETRLightningModule(pl.LightningModule):
 
         # Use automatic optimization to work with gradient clipping
         self.automatic_optimization = True
+        
+        # Setup export directories
+        self.export_dir = Path(getattr(args, "output_dir", "exports"))
+        self.export_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Flags for exports
+        self.export_onnx = getattr(args, "export_onnx", True)
+        self.export_torch = getattr(args, "export_torch", True)
+        self.simplify_onnx = getattr(args, "simplify_onnx", True)
+        self.export_on_validation = getattr(args, "export_on_validation", True)
 
     def _setup_autocast_args(self):
         """Set up arguments for autocast (mixed precision training)."""
-        # Prefer bfloat16 if available, otherwise use float16
+        # Use full precision (float32) by default
         import torch
 
-        self._dtype = (
-            torch.bfloat16
-            if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
-            else torch.float16
-        )
+        # Always use float32 for main training to avoid cdist_cuda issues
+        self._dtype = torch.float32
 
         try:
             # Check if torch.amp is available
@@ -82,12 +97,14 @@ class RFDETRLightningModule(pl.LightningModule):
         if self.amp_backend == "torch":
             self.autocast_args = {
                 "device_type": "cuda" if torch.cuda.is_available() else "cpu",
-                "enabled": getattr(self.args, "amp", True),
+                # Disable autocast/mixed precision by default
+                "enabled": getattr(self.args, "amp", False),
                 "dtype": self._dtype,
             }
         else:
             self.autocast_args = {
-                "enabled": getattr(self.args, "amp", True),
+                # Disable autocast/mixed precision by default
+                "enabled": getattr(self.args, "amp", False),
                 "dtype": self._dtype,
             }
 
@@ -244,8 +261,91 @@ class RFDETRLightningModule(pl.LightningModule):
 
         return {"metrics": val_metrics, "results": res, "targets": targets}
 
+    def _make_dummy_input(self, batch_size=1):
+        """Generate a dummy input for ONNX export.
+        
+        Args:
+            batch_size: Number of samples in the batch
+            
+        Returns:
+            A dummy input tensor with the correct shape for ONNX export
+        """
+        # Get resolution from args
+        resolution = getattr(self.args, "resolution", 640)
+        
+        # Create dummy input
+        dummy = np.random.randint(0, 256, (resolution, resolution, 3), dtype=np.uint8)
+        image = torch.from_numpy(dummy).permute(2, 0, 1).float() / 255.0
+        
+        # Apply normalization
+        mean = torch.tensor([0.485, 0.456, 0.406]).view(-1, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225]).view(-1, 1, 1)
+        image = (image - mean) / std
+        
+        # Repeat for batch size
+        images = torch.stack([image for _ in range(batch_size)])
+        
+        # Create nested tensor
+        mask = torch.zeros((batch_size, resolution, resolution), dtype=torch.bool)
+        nested_tensor = utils.NestedTensor(images, mask)
+        
+        return nested_tensor
+    
+    def export_model(self, epoch):
+        """Export model to ONNX and save PyTorch weights.
+        
+        Args:
+            epoch: Current epoch number
+        """
+        if not (self.export_onnx or self.export_torch):
+            return
+        
+        # Use CPU for exports to avoid CUDA errors
+        device = torch.device("cpu")
+        
+        # Create timestamped directory for this export
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_path = self.export_dir / f"epoch_{epoch:04d}_{timestamp}"
+        export_path.mkdir(parents=True, exist_ok=True)
+        
+        # Save to logs
+        print(f"Exporting model to {export_path}")
+        
+        # Get model to export (use EMA if available)
+        model_to_export = self.ema.ema if self.ema is not None else self.model
+        model_to_export = model_to_export.to(device)
+        model_to_export.eval()
+        
+        try:
+            # Export PyTorch weights
+            if self.export_torch:
+                torch_path = export_path / "model.pth"
+                torch.save({
+                    "model": model_to_export.state_dict(),
+                    "args": self.args,
+                    "epoch": epoch,
+                    "map": self.best_map
+                }, torch_path)
+                print(f"Saved PyTorch weights to {torch_path}")
+            
+            # Placeholder for ONNX export (actual export disabled for testing)
+            if self.export_onnx:
+                # Placeholder for ONNX export
+                onnx_path = export_path / "inference_model.onnx"
+                print(f"ONNX export would save to: {onnx_path} (disabled for testing)")
+                
+                # Placeholder for ONNX simplification
+                if self.simplify_onnx:
+                    sim_onnx_path = export_path / "inference_model.sim.onnx"
+                    print(f"ONNX simplification would save to: {sim_onnx_path} (disabled for testing)")
+        except Exception as e:
+            print(f"Error during model export: {e}")
+        finally:
+            # Move model back to original device
+            model_to_export.to(self.device)
+    
     def on_validation_epoch_start(self):
-        """Set up validation epoch."""
+        """Set up validation epoch and export model."""
         # Reset metrics
         self.val_metrics = []
 
@@ -260,6 +360,11 @@ class RFDETRLightningModule(pl.LightningModule):
                 f"Error initializing COCO evaluator: {e}. This can happen with small validation sets."
             )
             self.coco_evaluator = None
+            
+        # Export model before validation if enabled
+        if self.export_on_validation:
+            current_epoch = self.trainer.current_epoch if self.trainer else 0
+            self.export_model(current_epoch)
 
     def on_validation_batch_end(self, outputs, batch, batch_idx):
         """Process validation batch results."""

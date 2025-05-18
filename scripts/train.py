@@ -22,6 +22,7 @@ from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 
 import rfdetr.util.misc as utils
+from rfdetr.hooks import ONNXCheckpointHook
 from rfdetr.lightning_module import RFDETRDataModule, RFDETRLightningModule
 from rfdetr.util.logging_config import get_logger
 
@@ -214,6 +215,13 @@ def get_args_parser():
         type=int,
         help="Limit dataset to first N samples for faster testing. If not specified, the full dataset is used.",
     )
+    
+    # Model export options
+    parser.add_argument("--export_onnx", action="store_true", default=True, help="Export to ONNX format before validation")
+    parser.add_argument("--export_torch", action="store_true", default=True, help="Export PyTorch weights before validation")
+    parser.add_argument("--simplify_onnx", action="store_true", default=True, help="Simplify ONNX model after export")
+    parser.add_argument("--export_frequency", default=1, type=int, help="Export model every N epochs")
+    parser.add_argument("--opset_version", default=17, type=int, help="ONNX opset version for export")
 
     return parser
 
@@ -321,6 +329,29 @@ def main(args):
     )
     callbacks.append(best_checkpoint_callback)
 
+    # ONNX and torch checkpoint hook
+    export_frequency = getattr(args, "export_frequency", 1)
+    export_onnx = getattr(args, "export_onnx", True)
+    export_torch = getattr(args, "export_torch", True)
+    simplify_onnx = getattr(args, "simplify_onnx", True)
+    
+    # Create export directory
+    export_dir = Path(args.output_dir) / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    
+    opset_version = getattr(args, "opset_version", 17)
+    
+    onnx_hook = ONNXCheckpointHook(
+        export_dir=export_dir,
+        export_onnx=export_onnx,
+        export_torch=export_torch,
+        simplify_onnx=simplify_onnx,
+        export_frequency=export_frequency,
+        input_shape=(args.resolution, args.resolution),
+        opset_version=opset_version
+    )
+    callbacks.append(onnx_hook)
+    
     # Learning rate monitor
     lr_monitor = LearningRateMonitor(logging_interval="step")
     callbacks.append(lr_monitor)
@@ -359,7 +390,7 @@ def main(args):
         callbacks=callbacks,
         logger=loggers,
         strategy=strategy,
-        precision="16-mixed" if getattr(args, "amp", True) and accelerator != "cpu" else "32-true",
+        precision="32-true",  # Always use full precision (32-bit) to avoid cdist_cuda issues
         gradient_clip_val=getattr(args, "clip_max_norm", 0.0)
         if getattr(args, "clip_max_norm", 0.0) > 0
         else None,
@@ -510,9 +541,13 @@ if __name__ == "__main__":
     )  # Disable early stopping by default
     args.batch_size = getattr(args, "train_batch_size", 2)  # Use train_batch_size for batch_size
 
+    # Disable half precision training by default to avoid cdist_cuda issues
+    args.use_fp16 = False
+    args.amp = False
+
     # Additional parameter mapping
     args.grad_accum_steps = args.gradient_accumulation_steps
-    args.fp16_eval = args.use_fp16 and args.device != "cpu"  # Use FP16 for evaluation only on GPU
+    args.fp16_eval = False  # Disable FP16 for evaluation
 
     # Logging
     logger.info(f"git:\n  {utils.get_sha()}\n")
