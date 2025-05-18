@@ -76,6 +76,10 @@ class RFDETRLightningModule(pl.LightningModule):
         self.export_torch = getattr(args, "export_torch", True)
         self.simplify_onnx = getattr(args, "simplify_onnx", True)
         self.export_on_validation = getattr(args, "export_on_validation", True)
+        
+        # Step-based training configuration
+        self.max_steps = getattr(args, "max_steps", None)
+        self.val_frequency = getattr(args, "val_frequency", None)
 
     def _setup_autocast_args(self):
         """Set up arguments for autocast (mixed precision training)."""

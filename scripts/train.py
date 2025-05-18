@@ -88,7 +88,19 @@ def get_args_parser():
     parser.add_argument(
         "--val_batch_size", default=1, type=int, help="Validation batch size per device"
     )
-    parser.add_argument("--epochs", default=100, type=int, help="Number of epochs to train for")
+    
+    # Training duration parameters - either epochs or max_steps
+    parser.add_argument("--epochs", default=100, type=int, 
+                       help="Number of epochs to train for (ignored if max_steps is provided)")
+    parser.add_argument("--max_steps", default=None, type=int,
+                       help="Maximum number of training steps (overrides epochs if provided)")
+    parser.add_argument("--val_frequency", default=None, type=int,
+                       help="Run validation every N steps (for iteration-based training)")
+    parser.add_argument("--checkpoint_frequency", default=None, type=int,
+                       help="Save checkpoint every N steps (for iteration-based training)")
+    parser.add_argument("--warmup_ratio", default=0.0, type=float,
+                       help="Percentage of total training steps to use for warmup")
+    
     parser.add_argument(
         "--clip_max_norm", default=0.5, type=float, help="Gradient clipping max norm"
     )
@@ -384,9 +396,21 @@ def main(args):
 
     # Create Trainer
     accelerator = "cpu" if args.device == "cpu" else "auto"
+    
+    # Set up trainer based on max_steps or epochs
+    max_steps = getattr(args, "max_steps", None)
+    max_epochs = None if max_steps else args.epochs
+    
+    if max_steps:
+        logger.info(f"Training for {max_steps} steps (iteration-based training)")
+    else:
+        logger.info(f"Training for {args.epochs} epochs (epoch-based training)")
+    
+    val_check_interval = getattr(args, "val_frequency", steps_per_val) if max_steps else val_check_interval
 
     trainer = pl.Trainer(
-        max_epochs=args.epochs,
+        max_epochs=max_epochs,
+        max_steps=max_steps,
         callbacks=callbacks,
         logger=loggers,
         strategy=strategy,

@@ -10,6 +10,8 @@ Never fix an import error with sys.path.append
 Make sure to run `bash kill.sh` between consecutive runs of training to make sure that the GPU memory is completely flushed
 When testing the train.py script make sure that you do use the GPU
 
+Always default to a pydantic class, and a YAML config file, instead of using argparse.
+
 ## Build/Testing Commands
 
 - Install in dev mode: `pip install -e ".[dev]"`
