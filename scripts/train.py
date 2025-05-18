@@ -24,8 +24,6 @@ from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 from torch.utils.data import DataLoader, DistributedSampler
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.lightning_module import RFDETRDataModule, RFDETRLightningModule
@@ -255,21 +253,31 @@ def main(args):
     loggers = []
     use_tensorboard = getattr(args, "tensorboard", True)  # Default to True if not specified
     if use_tensorboard:
-        tb_logger = TensorBoardLogger(
-            save_dir=args.output_dir,
-            name="lightning_logs"
-        )
-        loggers.append(tb_logger)
+        try:
+            tb_logger = TensorBoardLogger(
+                save_dir=args.output_dir,
+                name="lightning_logs"
+            )
+            loggers.append(tb_logger)
+        except ModuleNotFoundError:
+            logger.warning("TensorBoard not installed. Skipping TensorBoard logging.")
+            # Set tensorboard to False so future code doesn't try to use it
+            args.tensorboard = False
     
     use_wandb = getattr(args, "wandb", False)  # Default to False if not specified
     if use_wandb:
-        wandb_logger = WandbLogger(
-            project=getattr(args, "project", "rfdetr-mask"),
-            name=getattr(args, "run", None),
-            save_dir=args.output_dir,
-            log_model="all"
-        )
-        loggers.append(wandb_logger)
+        try:
+            wandb_logger = WandbLogger(
+                project=getattr(args, "project", "rfdetr-mask"),
+                name=getattr(args, "run", None),
+                save_dir=args.output_dir,
+                log_model="all"
+            )
+            loggers.append(wandb_logger)
+        except ModuleNotFoundError:
+            logger.warning("Weights & Biases not installed. Skipping W&B logging.")
+            # Set wandb to False so future code doesn't try to use it
+            args.wandb = False
     
     # Always add CSV logger
     csv_logger = CSVLogger(
@@ -326,7 +334,7 @@ def main(args):
         callbacks.append(early_stopping_cb)
     
     # Setup strategy for distributed training
-    strategy = None
+    strategy = "auto"  # Default to auto strategy
     if torch.cuda.device_count() > 1:
         strategy = DDPStrategy(
             find_unused_parameters=True,
@@ -338,17 +346,21 @@ def main(args):
     val_check_interval = steps_per_val if steps_per_val > 0 else 1.0
     
     # Create Trainer
+    accelerator = "cpu" if args.device == "cpu" else "auto"
+    
     trainer = pl.Trainer(
         max_epochs=args.epochs,
         callbacks=callbacks,
         logger=loggers,
         strategy=strategy,
-        precision="16-mixed" if getattr(args, "amp", True) else "32-true",
+        precision="16-mixed" if getattr(args, "amp", True) and accelerator != "cpu" else "32-true",
         gradient_clip_val=getattr(args, "clip_max_norm", 0.0) if getattr(args, "clip_max_norm", 0.0) > 0 else None,
         accumulate_grad_batches=getattr(args, "grad_accum_steps", 1),
         log_every_n_steps=10,
         default_root_dir=args.output_dir,
-        val_check_interval=val_check_interval
+        val_check_interval=val_check_interval,
+        accelerator=accelerator,
+        devices=1
     )
     
     # Resume from checkpoint if specified
@@ -395,7 +407,9 @@ def main(args):
 if __name__ == "__main__":
     parser = get_args_parser()
     args = parser.parse_args()
-
+    
+    # Process CLI arguments and add defaults
+    
     # Set some defaults for compatibility
     args.focal_loss = True
     args.focal_alpha = 0.25
@@ -476,8 +490,20 @@ if __name__ == "__main__":
     args.square_resize = True  # Use square resize to ensure compatibility with Dinov2
     args.square_resize_div_64 = False  # Don't force div 64, we'll handle Dinov2 div 14
 
+    # Lightning-specific parameters
+    args.tensorboard = getattr(args, "tensorboard", True)  # Enable TensorBoard by default
+    args.wandb = getattr(args, "wandb", False)  # Disable WandB by default
+    args.early_stopping = getattr(args, "early_stopping", False)  # Disable early stopping by default
+    args.batch_size = getattr(args, "train_batch_size", 2)  # Use train_batch_size for batch_size
+
     # Additional parameter mapping
     args.grad_accum_steps = args.gradient_accumulation_steps
     args.fp16_eval = args.use_fp16  # Use FP16 for evaluation
-
+    
+    # Logging
+    logger.info(f"git:\n  {utils.get_sha()}\n")
+    logger.info(f"Arguments: {args}")
+    logger.info(f"Starting training with PyTorch Lightning")
+    
+    # Call the main training function
     main(args)

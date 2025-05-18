@@ -64,7 +64,8 @@ class RFDETRLightningModule(pl.LightningModule):
     def _setup_autocast_args(self):
         """Set up arguments for autocast (mixed precision training)."""
         # Prefer bfloat16 if available, otherwise use float16
-        self.dtype = (
+        import torch
+        self._dtype = (
             torch.bfloat16
             if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
             else torch.float16
@@ -83,12 +84,12 @@ class RFDETRLightningModule(pl.LightningModule):
             self.autocast_args = {
                 "device_type": "cuda" if torch.cuda.is_available() else "cpu",
                 "enabled": getattr(self.args, "amp", True),
-                "dtype": self.dtype,
+                "dtype": self._dtype,
             }
         else:
             self.autocast_args = {
                 "enabled": getattr(self.args, "amp", True),
-                "dtype": self.dtype,
+                "dtype": self._dtype,
             }
 
     def forward(self, samples, targets=None):
@@ -386,13 +387,13 @@ class RFDETRDataModule(pl.LightningDataModule):
 
     def setup(self, stage=None):
         """Set up datasets for training and validation."""
-        if stage == "fit" or stage is None:
-            self.dataset_train = build_dataset(
-                image_set="train", args=self.args, resolution=self.resolution
-            )
-            self.dataset_val = build_dataset(
-                image_set="val", args=self.args, resolution=self.resolution
-            )
+        # We need to set up datasets for all stages
+        self.dataset_train = build_dataset(
+            image_set="train", args=self.args, resolution=self.resolution
+        )
+        self.dataset_val = build_dataset(
+            image_set="val", args=self.args, resolution=self.resolution
+        )
 
     def train_dataloader(self):
         """Create training data loader."""
