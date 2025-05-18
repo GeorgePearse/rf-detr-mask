@@ -1,0 +1,81 @@
+# Test Configuration for RF-DETR-Mask (quick run)
+
+# Model Configuration
+model:
+  encoder: "dinov2_windowed_base"
+  out_feature_indexes: [2, 5, 8, 11]
+  dec_layers: 6
+  two_stage: true
+  projector_scale: ["P3", "P4", "P5"]
+  hidden_dim: 384
+  sa_nheads: 12
+  ca_nheads: 24
+  dec_n_points: 4
+  bbox_reparam: true
+  lite_refpoint_refine: true
+  layer_norm: true
+  amp: true
+  num_classes: 69  # CMR has 69 classes
+  pretrain_weights: "rf-detr-large.pth"
+  device: "cuda"
+  resolution: 672  # Must be divisible by 14 for DINOv2 and 16*4
+  group_detr: 13
+  gradient_checkpointing: false
+  num_queries: 900
+  num_select: 300
+
+# Training Configuration
+training:
+  lr: 5e-5
+  lr_encoder: 5e-6
+  batch_size: 1  # Small batch size for quick test
+  grad_accum_steps: 1  # Reduced from 4 for quicker iterations
+  epochs: 2  # Reduced from 100 for quick test
+  ema_decay: 0.993
+  ema_tau: 100
+  lr_drop: 1  # Reduced to test LR scheduler
+  checkpoint_interval: 1  # Save checkpoint every epoch
+  warmup_epochs: 0.1  # Reduced for faster testing
+  lr_vit_layer_decay: 0.8
+  lr_component_decay: 0.7
+  drop_path: 0.1
+  group_detr: 13
+  ia_bce_loss: false
+  cls_loss_coef: 4.5
+  bbox_loss_coef: 2.0
+  giou_loss_coef: 1.0
+  num_select: 300
+  dataset_file: "coco"
+  square_resize_div_64: false
+  output_dir: "output_test_cmr"
+  multi_scale: true
+  expanded_scales: true
+  use_ema: true
+  num_workers: 2  # Reduced for less resource usage
+  weight_decay: 1e-4
+  early_stopping: true
+  early_stopping_patience: 3  # Reduced for quick test
+  early_stopping_min_delta: 0.001
+  early_stopping_use_ema: true
+  
+# Dataset Configuration
+dataset:
+  coco_path: "/home/georgepearse/data/cmr/annotations"
+  coco_train: "2025-05-15_12:38:23.077836_train_ordered.json"
+  coco_val: "2025-05-15_12:38:38.270134_val_ordered.json"
+  coco_img_path: "/home/georgepearse/data/images"
+  
+# Mask Configuration
+mask:
+  enabled: true
+  loss_mask_coef: 1.0
+  loss_dice_coef: 1.0
+
+# Other Configuration
+other:
+  seed: 42
+  device: "cuda"
+  world_size: 1
+  dist_url: "env://"
+  clip_max_norm: 0.5
+  steps_per_validation: 10  # Validate more frequently

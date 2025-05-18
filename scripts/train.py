@@ -86,7 +86,7 @@ def get_args_parser():
     )
     parser.add_argument("--lr_drop", default=50, type=int, help="lr_drop")
     parser.add_argument("--weight_decay", default=1e-4, type=float, help="Weight decay")
-    parser.add_argument("--batch_size", default=1, type=int, help="Batch size per device")
+    parser.add_argument("--batch_size", default=2, type=int, help="Batch size per device")
     parser.add_argument("--epochs", default=100, type=int, help="Number of epochs to train for")
     parser.add_argument(
         "--clip_max_norm", default=0.5, type=float, help="Gradient clipping max norm"
