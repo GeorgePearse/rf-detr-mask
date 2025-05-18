@@ -58,10 +58,14 @@ def compute_multi_scale_scales(resolution, expanded_scales=False):
 
 
 class CocoDetection(torchvision.datasets.CocoDetection):
-    def __init__(self, img_folder, ann_file, transforms):
+    def __init__(self, img_folder, ann_file, transforms, test_limit=None):
         super().__init__(img_folder, ann_file)
         self._transforms = transforms
         self.prepare = ConvertCoco()
+
+        # Limit dataset size for testing if specified
+        if test_limit is not None and test_limit > 0:
+            self.ids = self.ids[: min(test_limit, len(self.ids))]
 
     def __getitem__(self, idx):
         img, target = super().__getitem__(idx)
@@ -284,6 +288,9 @@ def build(image_set, args, resolution):
 
     square_resize_div_64 = getattr(args, "square_resize_div_64", False)
 
+    # Get test_limit from args if available
+    test_limit = getattr(args, "test_limit", None)
+
     if square_resize_div_64:
         dataset = CocoDetection(
             img_folder,
@@ -294,6 +301,7 @@ def build(image_set, args, resolution):
                 multi_scale=args.multi_scale,
                 expanded_scales=args.expanded_scales,
             ),
+            test_limit=test_limit,
         )
     else:
         dataset = CocoDetection(
@@ -305,6 +313,7 @@ def build(image_set, args, resolution):
                 multi_scale=args.multi_scale,
                 expanded_scales=args.expanded_scales,
             ),
+            test_limit=test_limit,
         )
     return dataset
 
@@ -322,6 +331,9 @@ def build_roboflow(image_set, args, resolution):
 
     square_resize_div_64 = getattr(args, "square_resize_div_64", False)
 
+    # Get test_limit from args if available
+    test_limit = getattr(args, "test_limit", None)
+
     if square_resize_div_64:
         dataset = CocoDetection(
             img_folder,
@@ -329,11 +341,13 @@ def build_roboflow(image_set, args, resolution):
             transforms=make_coco_transforms_square_div_64(
                 image_set, resolution, multi_scale=args.multi_scale
             ),
+            test_limit=test_limit,
         )
     else:
         dataset = CocoDetection(
             img_folder,
             ann_file,
             transforms=make_coco_transforms(image_set, resolution, multi_scale=args.multi_scale),
+            test_limit=test_limit,
         )
     return dataset

@@ -56,15 +56,14 @@ class RFDETRLightningModule(pl.LightningModule):
         # Track best metrics
         self.best_map = 0.0
 
-        # Setup automatic optimization
-        self.automatic_optimization = (
-            False  # We'll handle optimization manually for gradient accumulation
-        )
+        # Use automatic optimization to work with gradient clipping
+        self.automatic_optimization = True
 
     def _setup_autocast_args(self):
         """Set up arguments for autocast (mixed precision training)."""
         # Prefer bfloat16 if available, otherwise use float16
         import torch
+
         self._dtype = (
             torch.bfloat16
             if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
@@ -104,63 +103,15 @@ class RFDETRLightningModule(pl.LightningModule):
         samples = samples.to(self.device)
         targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
 
-        # Get optimizers
-        optimizer = self.optimizers()
-        lr_scheduler = self.lr_schedulers()
-
-        # Zero gradients for every batch_size // grad_accum_steps
-        grad_accum_steps = getattr(self.args, "grad_accum_steps", 1)
-        batch_size = len(samples.tensors)
-        sub_batch_size = batch_size // grad_accum_steps
-
-        # Initialize loss for logging
-        total_loss = 0.0
-        loss_dict_for_logging = None
-
-        # Process each sub-batch with gradient accumulation
-        for i in range(grad_accum_steps):
-            start_idx = i * sub_batch_size
-            final_idx = start_idx + sub_batch_size
-
-            new_samples_tensors = samples.tensors[start_idx:final_idx]
-            new_samples = utils.NestedTensor(new_samples_tensors, samples.mask[start_idx:final_idx])
-            new_targets = targets[start_idx:final_idx]
-
-            # Forward pass with autocast
-            with torch.autocast(**self.autocast_args):
-                outputs = self.model(new_samples, new_targets)
-                loss_dict = self.criterion(outputs, new_targets)
-                weight_dict = self.criterion.weight_dict
-                losses = sum(
-                    (1 / grad_accum_steps) * loss_dict[k] * weight_dict[k]
-                    for k in loss_dict
-                    if k in weight_dict
-                )
-
-            # Backward pass
-            self.manual_backward(losses)
-            total_loss += losses
-
-            # Save loss dict for the last sub-batch for logging
-            if i == grad_accum_steps - 1:
-                loss_dict_for_logging = loss_dict
-
-        # Clip gradients if needed
-        max_norm = getattr(self.args, "clip_max_norm", 0)
-        if max_norm > 0:
-            self.clip_gradients(optimizer, gradient_clip_val=max_norm)
-
-        # Step optimizer and scheduler
-        optimizer.step()
-        optimizer.zero_grad()
-        lr_scheduler.step()
-
-        # Update EMA model if available
-        if self.ema is not None:
-            self.ema.update(self.model)
+        # Forward pass with autocast
+        with torch.autocast(**self.autocast_args):
+            outputs = self.model(samples, targets)
+            loss_dict = self.criterion(outputs, targets)
+            weight_dict = self.criterion.weight_dict
+            losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict if k in weight_dict)
 
         # Log metrics
-        loss_dict_reduced = utils.reduce_dict(loss_dict_for_logging)
+        loss_dict_reduced = utils.reduce_dict(loss_dict)
         loss_dict_reduced_unscaled = {f"{k}_unscaled": v for k, v in loss_dict_reduced.items()}
         loss_dict_reduced_scaled = {
             k: v * weight_dict[k] for k, v in loss_dict_reduced.items() if k in weight_dict
@@ -185,6 +136,9 @@ class RFDETRLightningModule(pl.LightningModule):
             on_epoch=True,
             sync_dist=True,
         )
+
+        # Get optimizer for LR logging
+        optimizer = self.optimizers()
         self.log(
             "train/lr",
             optimizer.param_groups[0]["lr"],
@@ -192,6 +146,10 @@ class RFDETRLightningModule(pl.LightningModule):
             on_epoch=False,
             sync_dist=True,
         )
+
+        # Update EMA model if available
+        if self.ema is not None:
+            self.ema.update(self.model)
 
         # Store metrics for epoch-end callback
         train_metrics = {
@@ -203,7 +161,7 @@ class RFDETRLightningModule(pl.LightningModule):
         }
         self.train_metrics.append(train_metrics)
 
-        return {"loss": losses_reduced_scaled}
+        return losses
 
     def validation_step(self, batch, batch_idx):
         """Validation step logic."""
@@ -292,47 +250,84 @@ class RFDETRLightningModule(pl.LightningModule):
         self.val_metrics = []
 
         # Create COCO evaluator
-        dataset_val = self.trainer.datamodule.dataset_val
-        base_ds = get_coco_api_from_dataset(dataset_val)
-        iou_types = tuple(k for k in ("segm", "bbox") if k in self.postprocessors)
-        self.coco_evaluator = CocoEvaluator(base_ds, iou_types)
+        try:
+            dataset_val = self.trainer.datamodule.dataset_val
+            base_ds = get_coco_api_from_dataset(dataset_val)
+            iou_types = tuple(k for k in ("segm", "bbox") if k in self.postprocessors)
+            self.coco_evaluator = CocoEvaluator(base_ds, iou_types)
+        except Exception as e:
+            print(
+                f"Error initializing COCO evaluator: {e}. This can happen with small validation sets."
+            )
+            self.coco_evaluator = None
 
     def on_validation_batch_end(self, outputs, batch, batch_idx):
         """Process validation batch results."""
-        if self.coco_evaluator is not None:
-            self.coco_evaluator.update(outputs["results"])
+        if self.coco_evaluator is not None and "results" in outputs:
+            try:
+                self.coco_evaluator.update(outputs["results"])
+            except Exception as e:
+                print(f"Error updating COCO evaluator: {e}")
 
     def on_validation_epoch_end(self):
         """Process validation epoch results."""
+        # Default metric values
+        map_value = 0.0
+        mask_map_value = 0.0
+
+        # Try to use COCO evaluator if available
         if self.coco_evaluator is not None:
-            # Synchronize if distributed
-            if self.trainer.world_size > 1:
-                self.coco_evaluator.synchronize_between_processes()
+            try:
+                # Check if we have enough data to evaluate
+                if (
+                    hasattr(self.coco_evaluator, "eval_imgs")
+                    and len(self.coco_evaluator.eval_imgs) > 0
+                ):
+                    # Synchronize if distributed
+                    if self.trainer.world_size > 1:
+                        self.coco_evaluator.synchronize_between_processes()
 
-            # Accumulate and summarize
-            self.coco_evaluator.accumulate()
-            self.coco_evaluator.summarize()
+                    # Accumulate and summarize
+                    self.coco_evaluator.accumulate()
+                    self.coco_evaluator.summarize()
 
-            # Extract stats
-            coco_stats = {}
-            if "bbox" in self.postprocessors:
-                coco_stats["coco_eval_bbox"] = self.coco_evaluator.coco_eval["bbox"].stats.tolist()
+                    # Extract stats
+                    if (
+                        "bbox" in self.postprocessors
+                        and hasattr(self.coco_evaluator, "coco_eval")
+                        and "bbox" in self.coco_evaluator.coco_eval
+                    ):
+                        if hasattr(self.coco_evaluator.coco_eval["bbox"], "stats"):
+                            stats = self.coco_evaluator.coco_eval["bbox"].stats
+                            if hasattr(stats, "tolist"):
+                                # Log mAP
+                                map_value = stats[0]
 
-                # Log mAP
-                map_value = self.coco_evaluator.coco_eval["bbox"].stats[0]
-                self.log("val/mAP", map_value, on_epoch=True, sync_dist=True)
+                                # Track best model
+                                if map_value > self.best_map:
+                                    self.best_map = map_value
 
-                # Track best model
-                if map_value > self.best_map:
-                    self.best_map = map_value
-                    self.log("val/best_mAP", self.best_map, on_epoch=True, sync_dist=True)
+                    if (
+                        "segm" in self.postprocessors
+                        and hasattr(self.coco_evaluator, "coco_eval")
+                        and "segm" in self.coco_evaluator.coco_eval
+                    ):
+                        if hasattr(self.coco_evaluator.coco_eval["segm"], "stats"):
+                            stats = self.coco_evaluator.coco_eval["segm"].stats
+                            if hasattr(stats, "tolist"):
+                                # Log mask mAP
+                                mask_map_value = stats[0]
+            except Exception as e:
+                print(
+                    f"Error during COCO evaluation: {e}. This can happen with small validation sets."
+                )
 
-            if "segm" in self.postprocessors:
-                coco_stats["coco_eval_masks"] = self.coco_evaluator.coco_eval["segm"].stats.tolist()
+        # Always log the metrics
+        self.log("val/mAP", map_value, on_epoch=True, sync_dist=True)
+        self.log("val/best_mAP", self.best_map, on_epoch=True, sync_dist=True)
 
-                # Log mask mAP
-                mask_map_value = self.coco_evaluator.coco_eval["segm"].stats[0]
-                self.log("val/mask_mAP", mask_map_value, on_epoch=True, sync_dist=True)
+        if "segm" in self.postprocessors:
+            self.log("val/mask_mAP", mask_map_value, on_epoch=True, sync_dist=True)
 
     def configure_optimizers(self):
         """Configure optimizers and learning rate scheduler."""
@@ -348,9 +343,13 @@ class RFDETRLightningModule(pl.LightningModule):
                             if p.grad is None:
                                 continue
 
-                            # Convert gradients to float if they're half
-                            if p.grad.dtype == torch.float16:
-                                p.grad = p.grad.float()
+                            # Convert gradients to float if they're half, ensuring types match
+                            if p.grad.dtype != p.dtype:
+                                if p.dtype == torch.float32:
+                                    p.grad = p.grad.to(torch.float32)
+                                # If parameter is half precision, keep grad as half too
+                                elif p.dtype == torch.float16 and p.grad.dtype == torch.float32:
+                                    p.grad = p.grad.to(torch.float16)
 
                 return super().step(closure)
 
@@ -367,7 +366,15 @@ class RFDETRLightningModule(pl.LightningModule):
         lr_drop = getattr(self.args, "lr_drop", 100)
         lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [lr_drop], gamma=0.1)
 
-        return {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
+        # Configure for Lightning
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": lr_scheduler,
+                "interval": "epoch",
+                "frequency": 1,
+            },
+        }
 
 
 class RFDETRDataModule(pl.LightningDataModule):

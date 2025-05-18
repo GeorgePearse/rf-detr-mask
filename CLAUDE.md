@@ -7,6 +7,9 @@ we need is already avaiable.
 
 Never fix an import error with sys.path.append
 
+Make sure to run `bash kill.sh` between consecutive runs of training to make sure that the GPU memory is completely flushed
+When testing the train.py script make sure that you do use the GPU
+
 ## Build/Testing Commands
 
 - Install in dev mode: `pip install -e ".[dev]"`
