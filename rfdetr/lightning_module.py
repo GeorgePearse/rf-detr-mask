@@ -64,7 +64,11 @@ class RFDETRLightningModule(pl.LightningModule):
     def _setup_autocast_args(self):
         """Set up arguments for autocast (mixed precision training)."""
         # Prefer bfloat16 if available, otherwise use float16
-        self.dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
+        self.dtype = (
+            torch.bfloat16
+            if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+            else torch.float16
+        )
 
         try:
             # Check if torch.amp is available
