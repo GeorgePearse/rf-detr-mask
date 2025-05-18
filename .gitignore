@@ -99,3 +99,8 @@ coverage.xml
 
 # Other
 .cache/
+
+# Aider
+.aider/
+.aider*
+aider-*
