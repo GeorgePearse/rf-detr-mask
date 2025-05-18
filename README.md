@@ -635,6 +635,36 @@ If you find our work helpful for your research, please consider citing the follo
 ```
 
 
+## Logging System
+
+RF-DETR-MASK includes a comprehensive logging system that helps track training progress and diagnose issues. The logging system includes:
+
+- Hierarchical log levels (DEBUG, INFO, WARNING, ERROR)
+- Log file rotation with configurable size limits
+- Separate log files for different severity levels
+- A dedicated file for exceptions with full tracebacks
+- Console output for immediate feedback
+
+All logs are stored in the `logs/` directory at the root of the project. The logs are organized by severity level:
+
+- `debug.log`: Contains all debug messages and higher severity logs
+- `info.log`: Contains information messages and higher severity logs
+- `warning.log`: Contains warning messages and errors
+- `error.log`: Contains only error messages
+- `exception.log`: Contains full tracebacks for exceptions
+
+The logging system is automatically initialized when the package is imported. You can access the logger from any module using:
+
+```python
+from rfdetr.util.logging_config import get_logger
+
+logger = get_logger(__name__)
+logger.info("This is an informational message")
+logger.debug("This is a debug message")
+logger.warning("This is a warning message")
+logger.error("This is an error message")
+```
+
 ## Contribution
 
 We welcome and appreciate all contributions! If you notice any issues or bugs, have questions, or would like to suggest new features, please [open an issue](https://github.com/roboflow/rf-detr/issues/new) or pull request. By sharing your ideas and improvements, you help make RF-DETR better for everyone.

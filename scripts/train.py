@@ -27,7 +27,10 @@ from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.engine import evaluate, train_one_epoch
 from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.get_param_dicts import get_param_dict
+from rfdetr.util.logging_config import get_logger
 from rfdetr.util.utils import BestMetricHolder, ModelEma
+
+logger = get_logger(__name__)
 
 
 def get_args_parser():
@@ -171,6 +174,12 @@ def get_args_parser():
         "--dist_url", default="env://", help="url used to set up distributed training"
     )
     parser.add_argument("--device", default="cuda", help="device to use for training / testing")
+    parser.add_argument(
+        "--steps_per_validation",
+        default=0,
+        type=int,
+        help="Run validation every N steps during training. 0 means validate only at epoch end",
+    )
     parser.add_argument("--resume", default="", help="resume from checkpoint")
     parser.add_argument(
         "--dropout",
@@ -206,8 +215,8 @@ def get_args_parser():
 def main(args):
     # Initialize distributed mode
     utils.init_distributed_mode(args)
-    print(f"git:\n  {utils.get_sha()}\n")
-    print(args)
+    logger.info(f"git:\n  {utils.get_sha()}\n")
+    logger.info(f"Arguments: {args}")
 
     device = torch.device(args.device)
 
@@ -233,11 +242,14 @@ def main(args):
             model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total trainable parameters: {n_parameters}")
+    logger.info(f"Total trainable parameters: {n_parameters}")
 
     # Build optimizer
     param_dicts = get_param_dict(args, model_without_ddp)
-    optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
+    # Use fused=False and increased eps to handle mixed precision training correctly
+    optimizer = torch.optim.AdamW(
+        param_dicts, lr=args.lr, weight_decay=args.weight_decay, fused=False, eps=1e-4
+    )
 
     # Build learning rate scheduler
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [args.lr_drop], gamma=0.1)
@@ -303,17 +315,17 @@ def main(args):
         )
         if args.output_dir:
             utils.save_on_master(coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval.pth")
-        print("\nEvaluation Results:")
+        logger.info("\nEvaluation Results:")
         for k, v in test_stats.items():
             if isinstance(v, list):
-                print(f"{k}: {v}")
+                logger.info(f"{k}: {v}")
         return
 
     # Create metrics holders
     best_map_holder = BestMetricHolder(use_ema=False)
 
     # Training loop
-    print("Starting training")
+    logger.info("Starting training")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         # Set epoch for sampler
@@ -321,12 +333,42 @@ def main(args):
             sampler_train.set_epoch(epoch)
 
         # Calculate number of training steps per epoch
-        num_training_steps_per_epoch = len(data_loader_train)
+        num_training_steps_per_epoch = 50  # len(data_loader_train)
 
         # Create empty callbacks dictionary
         from collections import defaultdict
 
         callbacks = defaultdict(list)
+
+        # Add validation callback if steps_per_validation is specified
+        if args.steps_per_validation > 0:
+            total_steps = 0
+
+            def validation_callback(callback_dict):
+                nonlocal total_steps
+                total_steps += 1
+
+                if total_steps % args.steps_per_validation == 0:
+                    logger.info(f"Running validation at step {total_steps}")
+                    model = callback_dict["model"]
+
+                    # Run evaluation
+                    test_stats, coco_evaluator = evaluate(
+                        model, criterion, postprocessors, data_loader_val, base_ds, device, args
+                    )
+
+                    # Log validation results
+                    logger.info(f"Validation at step {total_steps}:")
+                    for k, v in test_stats.items():
+                        if isinstance(v, (list, tuple)) and len(v) > 0:
+                            logger.info(f"  {k}: {v[0]:.4f}")
+                        else:
+                            logger.info(f"  {k}: {v}")
+
+                    # Put model back to training mode
+                    model.train()
+
+            callbacks["on_train_batch_start"].append(validation_callback)
 
         # Train for one epoch
         train_stats = train_one_epoch(
@@ -400,7 +442,7 @@ def main(args):
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print(f"Training completed in {total_time_str}")
+    logger.info(f"Training completed in {total_time_str}")
 
 
 if __name__ == "__main__":

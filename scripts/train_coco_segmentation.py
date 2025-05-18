@@ -30,7 +30,10 @@ from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.engine import evaluate, train_one_epoch
 from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.get_param_dicts import get_param_dict
+from rfdetr.util.logging_config import get_logger
 from rfdetr.util.utils import BestMetricHolder
+
+logger = get_logger(__name__)
 
 
 def get_args_parser():
@@ -87,10 +90,10 @@ def get_args_parser():
     parser.add_argument("--eval_only", action="store_true", help="Only run evaluation")
     parser.add_argument("--device", default="cuda", help="Device to use for training / testing")
     parser.add_argument(
-        "--val_start", 
-        default=0, 
-        type=int, 
-        help="Start validation after this many steps (0 for validation every epoch)"
+        "--val_start",
+        default=0,
+        type=int,
+        help="Start validation after this many steps (0 for validation every epoch)",
     )
 
     # Distributed training parameters
@@ -109,8 +112,8 @@ def main(args):
     # Initialize distributed mode if needed
     utils.init_distributed_mode(args)
 
-    # Print arguments
-    print(args)
+    # Log arguments
+    logger.info(f"Arguments: {args}")
 
     # Set device
     device = torch.device(args.device)
@@ -142,13 +145,16 @@ def main(args):
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
         model_without_ddp = model.module
 
-    # Print number of parameters
+    # Log number of parameters
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print("Number of parameters:", n_parameters)
+    logger.info(f"Number of parameters: {n_parameters}")
 
     # Create parameter groups for optimizer
     param_dicts = get_param_dict(args, model_without_ddp)
-    optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
+    # Use fused=False and increased eps to handle mixed precision training correctly
+    optimizer = torch.optim.AdamW(
+        param_dicts, lr=args.lr, weight_decay=args.weight_decay, fused=False, eps=1e-4
+    )
 
     # Create learning rate scheduler
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
@@ -210,18 +216,18 @@ def main(args):
             model, criterion, postprocessors, data_loader_val, base_ds, device, args
         )
 
-        # Print evaluation results
+        # Log evaluation results
         if utils.is_main_process():
-            print("Test results:")
+            logger.info("Test results:")
             for k, v in test_stats.items():
-                print(f"{k}: {v}")
+                logger.info(f"{k}: {v}")
         return
 
     # Create metrics holders
     best_map_holder = BestMetricHolder(use_ema=False)
 
     # Training loop
-    print("Starting training")
+    logger.info("Starting training")
     start_epoch = getattr(args, "start_epoch", 0)
     start_time = time.time()
     for epoch in range(start_epoch, args.epochs):
@@ -274,7 +280,7 @@ def main(args):
             # Skip evaluation before val_start steps
             test_stats = {"loss": 0}
             coco_evaluator = None
-            print(f"Skipping validation (step {current_step} < val_start {args.val_start})")
+            logger.info(f"Skipping validation (step {current_step} < val_start {args.val_start})")
 
         # Check if this is the best model so far (only if we evaluated)
         if coco_evaluator is not None:
@@ -326,10 +332,10 @@ def main(args):
                         output_dir / "eval" / f"segm_{epoch:03}.pth",
                     )
 
-    # Print total training time
+    # Log total training time
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-    print(f"Training time {total_time_str}")
+    logger.info(f"Training time {total_time_str}")
 
 
 if __name__ == "__main__":

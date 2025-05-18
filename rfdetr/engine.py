@@ -25,6 +25,9 @@ import torch
 
 import rfdetr.util.misc as utils
 from rfdetr.datasets.coco_eval import CocoEvaluator
+from rfdetr.util.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 try:
     from torch.amp import GradScaler, autocast
@@ -80,8 +83,8 @@ def train_one_epoch(
     print_freq = 10
     start_steps = epoch * num_training_steps_per_epoch
 
-    print("Grad accum steps: ", args.grad_accum_steps)
-    print("Total batch size: ", batch_size * utils.get_world_size())
+    logger.info(f"Grad accum steps: {args.grad_accum_steps}")
+    logger.info(f"Total batch size: {batch_size * utils.get_world_size()}")
 
     # Add gradient scaler for AMP
     if DEPRECATED_AMP:
@@ -92,7 +95,7 @@ def train_one_epoch(
     optimizer.zero_grad()
     assert batch_size % args.grad_accum_steps == 0
     sub_batch_size = batch_size // args.grad_accum_steps
-    print("LENGTH OF DATA LOADER:", len(data_loader))
+    logger.info(f"LENGTH OF DATA LOADER: {len(data_loader)}")
     for data_iter_step, (samples, targets) in enumerate(
         metric_logger.log_every(data_loader, print_freq, header)
     ):
@@ -148,7 +151,7 @@ def train_one_epoch(
         loss_value = losses_reduced_scaled.item()
 
         if not math.isfinite(loss_value):
-            print(loss_dict_reduced)
+            logger.error(f"Loss dict reduced: {loss_dict_reduced}")
             raise ValueError(f"Loss is {loss_value}, stopping training")
 
         if max_norm > 0:
@@ -168,7 +171,7 @@ def train_one_epoch(
         metric_logger.update(lr=optimizer.param_groups[0]["lr"])
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
+    logger.info(f"Averaged stats: {metric_logger}")
     return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
@@ -232,7 +235,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
+    logger.info(f"Averaged stats: {metric_logger}")
     if coco_evaluator is not None:
         coco_evaluator.synchronize_between_processes()
 

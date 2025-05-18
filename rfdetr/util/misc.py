@@ -209,6 +209,11 @@ class MetricLogger:
         self.meters[name] = meter
 
     def log_every(self, iterable, print_freq, header=None):
+        # Import logging at the function level to avoid circular imports
+        from rfdetr.util.logging_config import get_logger
+
+        logger = get_logger(__name__)
+
         i = 0
         if not header:
             header = ""
@@ -252,7 +257,7 @@ class MetricLogger:
                     log_dict = {k: v.value for k, v in self.meters.items()}
                     self.wandb.log(log_dict)
                 if torch.cuda.is_available():
-                    print(
+                    logger.info(
                         log_msg.format(
                             i,
                             len(iterable),
@@ -264,7 +269,7 @@ class MetricLogger:
                         )
                     )
                 else:
-                    print(
+                    logger.info(
                         log_msg.format(
                             i,
                             len(iterable),
@@ -278,7 +283,9 @@ class MetricLogger:
             end = time.time()
         total_time = time.time() - start_time
         total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-        print(f"{header} Total time: {total_time_str} ({total_time / len(iterable):.4f} s / it)")
+        logger.info(
+            f"{header} Total time: {total_time_str} ({total_time / len(iterable):.4f} s / it)"
+        )
 
 
 def get_sha():
