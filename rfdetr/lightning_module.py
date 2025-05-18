@@ -100,8 +100,9 @@ class RFDETRLightningModule(pl.LightningModule):
             self.simplify_onnx = self.config.get("simplify_onnx", True)
             self.export_on_validation = self.config.get("export_on_validation", True)
             self.max_steps = self.config.get("max_steps", 2000)
-            self.val_frequency = self.config.get("eval_save_frequency", 
-                self.config.get("val_frequency", 200))
+            self.val_frequency = self.config.get(
+                "eval_save_frequency", self.config.get("val_frequency", 200)
+            )
         else:
             output_dir = getattr(self.config, "output_dir", "exports")
             self.export_onnx = getattr(self.config, "export_onnx", True)
@@ -110,8 +111,7 @@ class RFDETRLightningModule(pl.LightningModule):
             self.export_on_validation = getattr(self.config, "export_on_validation", True)
             self.max_steps = getattr(self.config, "max_steps", 2000)
             self.val_frequency = getattr(
-                self.config, "eval_save_frequency", 
-                getattr(self.config, "val_frequency", 200)
+                self.config, "eval_save_frequency", getattr(self.config, "val_frequency", 200)
             )
 
         # Setup export directories
@@ -385,9 +385,21 @@ class RFDETRLightningModule(pl.LightningModule):
             # Export PyTorch weights
             if self.export_torch:
                 torch_path = export_path / "model.pth"
-                config_data = (
-                    self.config.model_dump() if hasattr(self.config, "model_dump") else self.config
-                )
+                
+                # Get config data properly
+                if hasattr(self.config, "model_dump"):
+                    config_data = self.config.model_dump()
+                elif isinstance(self.config, dict):
+                    config_data = self.config
+                else:
+                    # Convert object to dict if needed
+                    config_data = {
+                        attr: getattr(self.config, attr)
+                        for attr in dir(self.config) 
+                        if not attr.startswith("_") and not callable(getattr(self.config, attr))
+                    }
+                
+                # Save the model weights and config
                 torch.save(
                     {
                         "model": model_to_export.state_dict(),
@@ -424,7 +436,9 @@ class RFDETRLightningModule(pl.LightningModule):
 
         # Create COCO evaluator
         try:
-            if hasattr(self.trainer, "datamodule") and hasattr(self.trainer.datamodule, "dataset_val"):
+            if hasattr(self.trainer, "datamodule") and hasattr(
+                self.trainer.datamodule, "dataset_val"
+            ):
                 dataset_val = self.trainer.datamodule.dataset_val
                 base_ds = get_coco_api_from_dataset(dataset_val)
                 if base_ds and hasattr(base_ds, "anns") and base_ds.anns:
@@ -451,7 +465,7 @@ class RFDETRLightningModule(pl.LightningModule):
         """Process validation batch results."""
         if outputs is None:
             return
-            
+
         if self.coco_evaluator is not None and isinstance(outputs, dict) and "results" in outputs:
             try:
                 self.coco_evaluator.update(outputs["results"])
@@ -469,7 +483,7 @@ class RFDETRLightningModule(pl.LightningModule):
             try:
                 # Check if we have enough data to evaluate
                 if (
-                    hasattr(self.coco_evaluator, "eval_imgs") 
+                    hasattr(self.coco_evaluator, "eval_imgs")
                     and self.coco_evaluator.eval_imgs
                     and any(len(imgs) > 0 for imgs in self.coco_evaluator.eval_imgs.values())
                 ):
