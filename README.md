@@ -9,6 +9,10 @@ This repository is a customized fork of the excellent [RF-DETR](https://github.c
 
 **Special thanks to the Roboflow team** for their foundational work on RF-DETR, which made this adaptation possible.
 
+## Useful Resources 
+
+- https://paperswithcode.com/paper/mask-frozen-detr-high-quality-instance
+
 ## What's Different in This Fork
 
 - Extended RF-DETR with a mask prediction head for instance segmentation
