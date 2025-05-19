@@ -340,6 +340,13 @@ class WindowedDinov2WithRegistersEmbeddings(nn.Module):
             pixel_tokens_with_pos_embed = pixel_tokens_with_pos_embed.view(
                 batch_size, num_h_patches, num_w_patches, -1
             )
+            # Ensure patches are divisible by the number of windows
+            if num_w_patches % self.config.num_windows != 0 or num_h_patches % self.config.num_windows != 0:
+                raise ValueError(
+                    f"Number of patches ({num_h_patches}x{num_w_patches}) must be divisible "
+                    f"by num_windows ({self.config.num_windows})"
+                )
+            
             num_w_patches_per_window = num_w_patches // self.config.num_windows
             num_h_patches_per_window = num_h_patches // self.config.num_windows
             num_windows = self.config.num_windows
@@ -348,7 +355,7 @@ class WindowedDinov2WithRegistersEmbeddings(nn.Module):
                 num_windows,
                 num_h_patches_per_window,
                 num_windows,
-                num_h_patches_per_window,
+                num_w_patches_per_window,  # Fixed: This was incorrectly using num_h_patches_per_window
                 -1,
             )
             windowed_pixel_tokens = windowed_pixel_tokens.permute(0, 1, 3, 2, 4, 5)
@@ -1205,14 +1212,23 @@ class WindowedDinov2WithRegistersBackbone(
                         hidden_state = hidden_state.reshape(
                             B // num_windows_squared, num_windows_squared * HW, C
                         )
-                        hidden_state = hidden_state.view(
-                            B // num_windows_squared,
-                            self.config.num_windows,
-                            self.config.num_windows,
-                            num_h_patches_per_window,
-                            num_w_patches_per_window,
-                            C,
-                        )
+                        try:
+                            hidden_state = hidden_state.view(
+                                B // num_windows_squared,
+                                self.config.num_windows,
+                                self.config.num_windows,
+                                num_h_patches_per_window,
+                                num_w_patches_per_window,
+                                C,
+                            )
+                        except RuntimeError as e:
+                            # More detailed error message to help debug
+                            raise RuntimeError(
+                                f"Failed to reshape tensor of shape {hidden_state.shape} to"
+                                f" [{B // num_windows_squared}, {self.config.num_windows}, {self.config.num_windows},"
+                                f" {num_h_patches_per_window}, {num_w_patches_per_window}, {C}]."
+                                f" Total elements: {hidden_state.numel()}. Error: {e}"
+                            )
                         hidden_state = hidden_state.permute(0, 1, 3, 2, 4, 5)
 
                     hidden_state = hidden_state.reshape(

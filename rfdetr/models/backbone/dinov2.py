@@ -11,7 +11,7 @@ import types
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as torch_functional
 from transformers import AutoBackbone
 
 from .dinov2_with_windowed_attn import (
@@ -94,17 +94,38 @@ class DinoV2(nn.Module):
             dino_config["return_dict"] = False
             dino_config["out_features"] = [f"stage{i}" for i in out_feature_indexes]
 
+            # Calculate the number of patches based on shape and patch size
+            patch_size = dino_config.get("patch_size", 16)
+            # Make sure resolution is divisible by patch_size
+            if shape[0] % patch_size != 0 or shape[1] % patch_size != 0:
+                print(
+                    f"Warning: Image dimensions {shape} not divisible by patch size {patch_size}."
+                )
+                # Adjust to closest divisible size
+                h = (shape[0] // patch_size) * patch_size
+                w = (shape[1] // patch_size) * patch_size
+                print(f"Adjusting to {h}x{w}")
+                shape = (h, w)
+
+            h_patches, w_patches = shape[0] // patch_size, shape[1] // patch_size
+
+            # Choose a number of windows that divides the patches evenly
+            # Try to get as close to 4 as possible, but ensure it's a divisor
+            for num_windows in [4, 5, 7, 1]:
+                if h_patches % num_windows == 0 and w_patches % num_windows == 0:
+                    break
+
             if use_registers:
                 windowed_dino_config = WindowedDinov2WithRegistersConfig(
                     **dino_config,
-                    num_windows=4,
+                    num_windows=num_windows,
                     window_block_indexes=window_block_indexes,
                     gradient_checkpointing=gradient_checkpointing,
                 )
             else:
                 windowed_dino_config = WindowedDinov2WithRegistersConfig(
                     **dino_config,
-                    num_windows=4,
+                    num_windows=num_windows,
                     window_block_indexes=window_block_indexes,
                     num_register_tokens=0,
                     gradient_checkpointing=gradient_checkpointing,
@@ -143,7 +164,7 @@ class DinoV2(nn.Module):
             patch_pos_embed = patch_pos_embed.permute(0, 3, 1, 2)
 
             # Use bilinear interpolation without antialias
-            patch_pos_embed = F.interpolate(
+            patch_pos_embed = torch_functional.interpolate(
                 patch_pos_embed,
                 size=(height, width),
                 mode="bicubic",
@@ -186,6 +207,28 @@ class DinoV2(nn.Module):
         pad_w = (14 - w % 14) % 14
         if pad_h > 0 or pad_w > 0:
             x = torch.nn.functional.pad(x, (0, pad_w, 0, pad_h))
+
+        # Additional checks for windowed attention
+        if hasattr(self.encoder.config, "num_windows") and self.encoder.config.num_windows > 1:
+            # Also ensure divisibility by patch_size * num_windows
+            new_h, new_w = x.shape[2], x.shape[3]
+            patch_size = self.encoder.config.patch_size
+            num_windows = self.encoder.config.num_windows
+
+            # Check if the number of patches is divisible by num_windows
+            h_patches, w_patches = new_h // patch_size, new_w // patch_size
+            if h_patches % num_windows != 0 or w_patches % num_windows != 0:
+                # Adjust padding to make it divisible
+                h_patches_target = ((h_patches + num_windows - 1) // num_windows) * num_windows
+                w_patches_target = ((w_patches + num_windows - 1) // num_windows) * num_windows
+                new_h_target = h_patches_target * patch_size
+                new_w_target = w_patches_target * patch_size
+
+                extra_pad_h = new_h_target - new_h
+                extra_pad_w = new_w_target - new_w
+
+                if extra_pad_h > 0 or extra_pad_w > 0:
+                    x = torch.nn.functional.pad(x, (0, extra_pad_w, 0, extra_pad_h))
 
         assert (
             x.shape[2] % 14 == 0 and x.shape[3] % 14 == 0
