@@ -14,6 +14,8 @@ Always default to a pydantic class, and a YAML config file, instead of using arg
 
 Whenever you suggest that I run a script in a certain way, can you make sure that you've already tried to run that script.
 
+Use "hasattr" very sparingly. It is often over-used by LLMs
+
 ## Build/Testing Commands
 
 - Install in dev mode: `pip install -e ".[dev]"`
