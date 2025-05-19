@@ -10,7 +10,7 @@ import functools
 import logging
 import sys
 import traceback
-from typing import Any, Callable, Optional, Type, TypeVar, cast
+from typing import Any, Callable, Optional, TypeVar, cast
 
 from rfdetr.util.logging_config import get_logger
 
@@ -81,7 +81,7 @@ def log_exception(
 
 
 def handle_exception(
-    exception_type: Type[Exception] = Exception,
+    exception_type: type[Exception] = Exception,
     message: str = "An error occurred",
     reraise: bool = True,
     fallback_return: Any = None,
@@ -133,7 +133,7 @@ def handle_exception(
 def try_except(
     operation: str,
     logger: Optional[logging.Logger] = None,
-    exception_types: tuple[Type[Exception], ...] = (Exception,),
+    exception_types: tuple[type[Exception], ...] = (Exception,),
     reraise: bool = True,
     fallback: Any = None,
     log_level: int = logging.ERROR,
@@ -167,9 +167,12 @@ def try_except(
         def __enter__(self) -> Result:
             return result
 
-        def __exit__(self, exc_type: Optional[Type[BaseException]], 
-                    exc_val: Optional[BaseException], 
-                    exc_tb: Optional[traceback.TracebackType]) -> bool:
+        def __exit__(
+            self,
+            exc_type: Optional[type[BaseException]],
+            exc_val: Optional[BaseException],
+            exc_tb: Optional[traceback.TracebackType],
+        ) -> bool:
             if exc_type is not None and issubclass(exc_type, exception_types):
                 # Get the logger if not provided
                 nonlocal logger

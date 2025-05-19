@@ -10,7 +10,7 @@ import logging.handlers
 import os
 import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 
 def setup_logging(
@@ -21,7 +21,7 @@ def setup_logging(
     debug_backup_count: int = 3,
     error_backup_count: int = 10,
     console_level: int = logging.INFO,
-) -> Dict[str, logging.Handler]:
+) -> dict[str, logging.Handler]:
     """
     Set up logging configuration for the project.
 

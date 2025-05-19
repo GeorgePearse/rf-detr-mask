@@ -7,9 +7,10 @@ the logs directory is created and accessible.
 
 import os
 from pathlib import Path
+from typing import Optional
 
 
-def init_logs_directory(base_dir: str | None = None) -> str:
+def init_logs_directory(base_dir: Optional[str] = None) -> str:
     """
     Create the logs directory structure if it doesn't exist.
 
