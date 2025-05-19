@@ -2,7 +2,14 @@ import requests
 from tqdm import tqdm
 
 
-def download_file(url, filename):
+def download_file(url: str, filename: str) -> None:
+    """
+    Download a file from a URL with a progress bar.
+
+    Args:
+        url: The URL to download from
+        filename: The local file path to save to
+    """
     response = requests.get(url, stream=True)
     total_size = int(response.headers["content-length"])
     with (

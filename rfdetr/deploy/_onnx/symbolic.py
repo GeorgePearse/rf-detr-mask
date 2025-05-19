@@ -13,7 +13,7 @@ CustomOpSymbolicRegistry class
 
 class CustomOpSymbolicRegistry:
     # _SYMBOLICS = {}
-    _OPTIMIZER = []
+    _OPTIMIZER: list[str] = []
 
     @classmethod
     def optimizer(cls, fn):
@@ -26,3 +26,8 @@ def register_optimizer():
         return fn
 
     return optimizer_wrapper
+
+
+def register_custom_op_symbolic() -> None:
+    """Register custom operators for ONNX export"""
+    pass

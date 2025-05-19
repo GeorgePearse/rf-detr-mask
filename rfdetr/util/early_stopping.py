@@ -19,7 +19,14 @@ class EarlyStoppingCallback:
         verbose (bool): Whether to print early stopping messages
     """
 
-    def __init__(self, model, patience=5, min_delta=0.001, use_ema=False, verbose=True):
+    def __init__(
+        self,
+        model,
+        patience: int = 5,
+        min_delta: float = 0.001,
+        use_ema: bool = False,
+        verbose: bool = True,
+    ) -> None:
         self.patience = patience
         self.min_delta = min_delta
         self.use_ema = use_ema
@@ -28,7 +35,7 @@ class EarlyStoppingCallback:
         self.counter = 0
         self.model = model
 
-    def update(self, log_stats):
+    def update(self, log_stats: dict) -> None:
         """Update early stopping state based on epoch validation metrics"""
         regular_map = None
         ema_map = None

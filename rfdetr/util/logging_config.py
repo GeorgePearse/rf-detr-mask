@@ -104,7 +104,7 @@ def setup_logging(
 
     # Create a filter to only log records with exc_info
     class ExceptionFilter(logging.Filter):
-        def filter(self, record):
+        def filter(self, record: logging.LogRecord) -> bool:
             return record.exc_info is not None
 
     exception_handler.addFilter(ExceptionFilter())
