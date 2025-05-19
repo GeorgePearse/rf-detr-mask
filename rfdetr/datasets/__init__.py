@@ -10,9 +10,10 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 # ------------------------------------------------------------------------
 
+from pathlib import Path
+
 import torch.utils.data
 import torchvision
-from pathlib import Path
 
 from .coco import build as build_coco
 from .coco import build_roboflow
@@ -32,47 +33,57 @@ def build_dataset(image_set, args, resolution):
     if hasattr(args, "training_width") and hasattr(args, "training_height"):
         # Import the function only when needed to avoid circular imports
         from .fixed_size_transforms import make_training_dimensions_transforms
-        
+
         if args.dataset_file == "coco":
             from .coco import CocoDetection
-            
+
             # Build the dataset with custom transforms using training dimensions
             if image_set == "train":
                 img_folder = (
-                    Path(args.coco_img_path) if hasattr(args, "coco_img_path") else Path(args.coco_path) / "train2017"
+                    Path(args.coco_img_path)
+                    if hasattr(args, "coco_img_path")
+                    else Path(args.coco_path) / "train2017"
                 )
                 ann_file = (
                     Path(args.coco_path) / args.coco_train
-                    if hasattr(args, "coco_train") and args.coco_train and not Path(args.coco_train).is_absolute()
-                    else Path(args.coco_train) if hasattr(args, "coco_train") and args.coco_train
+                    if hasattr(args, "coco_train")
+                    and args.coco_train
+                    and not Path(args.coco_train).is_absolute()
+                    else Path(args.coco_train)
+                    if hasattr(args, "coco_train") and args.coco_train
                     else Path(args.coco_path) / "annotations" / "instances_train2017.json"
                 )
             elif image_set == "val":
                 img_folder = (
-                    Path(args.coco_img_path) if hasattr(args, "coco_img_path") else Path(args.coco_path) / "val2017"
+                    Path(args.coco_img_path)
+                    if hasattr(args, "coco_img_path")
+                    else Path(args.coco_path) / "val2017"
                 )
                 ann_file = (
                     Path(args.coco_path) / args.coco_val
-                    if hasattr(args, "coco_val") and args.coco_val and not Path(args.coco_val).is_absolute()
-                    else Path(args.coco_val) if hasattr(args, "coco_val") and args.coco_val
+                    if hasattr(args, "coco_val")
+                    and args.coco_val
+                    and not Path(args.coco_val).is_absolute()
+                    else Path(args.coco_val)
+                    if hasattr(args, "coco_val") and args.coco_val
                     else Path(args.coco_path) / "annotations" / "instances_val2017.json"
                 )
             else:
                 raise ValueError(f"Unknown image_set: {image_set}")
-                
+
             # Ensure the paths exist
             assert img_folder.exists(), f"Image folder {img_folder} does not exist"
             assert ann_file.exists(), f"Annotation file {ann_file} does not exist"
-            
+
             # Get test_limit/val_limit from args if available
             test_limit = getattr(args, "test_limit", None)
             val_limit = getattr(args, "val_limit", None)
             limit = val_limit if image_set == "val" and val_limit is not None else test_limit
-            
+
             # Build dataset with the fixed training dimensions
             transforms = make_training_dimensions_transforms(image_set, args)
             return CocoDetection(img_folder, ann_file, transforms=transforms, test_limit=limit)
-            
+
     # Fall back to original implementation if no training dimensions or for other dataset types
     if args.dataset_file == "coco":
         return build_coco(image_set, args, resolution)
