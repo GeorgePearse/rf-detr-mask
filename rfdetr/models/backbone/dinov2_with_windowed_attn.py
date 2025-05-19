@@ -343,12 +343,14 @@ class WindowedDinov2WithRegistersEmbeddings(nn.Module):
             num_w_patches_per_window = num_w_patches // self.config.num_windows
             num_h_patches_per_window = num_h_patches // self.config.num_windows
             num_windows = self.config.num_windows
+            # Fixed issue #148: Use num_w_patches_per_window instead of num_h_patches_per_window
+            # for the width dimension, which is essential for rectangular (non-square) images
             windowed_pixel_tokens = pixel_tokens_with_pos_embed.view(
                 batch_size,
                 num_windows,
                 num_h_patches_per_window,
                 num_windows,
-                num_h_patches_per_window,
+                num_w_patches_per_window,
                 -1,
             )
             windowed_pixel_tokens = windowed_pixel_tokens.permute(0, 1, 3, 2, 4, 5)
