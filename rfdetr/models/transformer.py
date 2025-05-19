@@ -158,6 +158,7 @@ class Transformer(nn.Module):
         lite_refpoint_refine=False,
         decoder_norm_type="LN",
         bbox_reparam=False,
+        two_stage=True,
     ):
         super().__init__()
         self.encoder = None
@@ -197,6 +198,14 @@ class Transformer(nn.Module):
             [nn.Linear(d_model, d_model) for _ in range(group_detr)]
         )
         self.enc_output_norm = nn.ModuleList([nn.LayerNorm(d_model) for _ in range(group_detr)])
+        
+        # Add required attributes for two-stage version
+        self.enc_out_class_embed = nn.ModuleList(
+            [nn.Linear(d_model, 1) for _ in range(group_detr)]
+        )
+        self.enc_out_bbox_embed = nn.ModuleList(
+            [MLP(d_model, d_model, 4, 3) for _ in range(group_detr)]
+        )
 
         self._reset_parameters()
 
@@ -206,6 +215,7 @@ class Transformer(nn.Module):
         self.group_detr = group_detr
         self.num_feature_levels = num_feature_levels
         self.bbox_reparam = bbox_reparam
+        self.two_stage = two_stage
 
         self._export = False
 
@@ -679,6 +689,7 @@ def build_transformer(args):
         lite_refpoint_refine=args.lite_refpoint_refine,
         decoder_norm_type=args.decoder_norm,
         bbox_reparam=args.bbox_reparam,
+        two_stage=getattr(args, "two_stage", True),
     )
 
 

@@ -345,6 +345,7 @@ class WindowedDinov2WithRegistersEmbeddings(nn.Module):
             num_windows = self.config.num_windows
             # Fixed issue #148: Use num_w_patches_per_window instead of num_h_patches_per_window
             # for the width dimension, which is essential for rectangular (non-square) images
+            # See: https://github.com/roboflow/rf-detr/issues/148
             windowed_pixel_tokens = pixel_tokens_with_pos_embed.view(
                 batch_size,
                 num_windows,

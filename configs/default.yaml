@@ -19,10 +19,13 @@ model:
   pretrain_weights: null
   device: "cuda"
   resolution: 448
+  training_width: 560  # Divisible by 56
+  training_height: 672  # Divisible by 56
   group_detr: 13
   gradient_checkpointing: true
   num_queries: 100
   num_select: 100
+  two_stage: true
 
 # Training Configuration
 training:

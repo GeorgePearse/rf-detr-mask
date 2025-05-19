@@ -40,10 +40,13 @@ class ModelConfig(BaseModel):
     pretrain_weights: Optional[str] = None
     device: Literal["cpu", "cuda", "mps"] = DEVICE
     resolution: int = Field(default=560, gt=0)
+    training_width: int = Field(..., gt=0, description="Width during training, must be divisible by 56")  # Required field, no default value
+    training_height: int = Field(..., gt=0, description="Height during training, must be divisible by 56")  # Required field, no default value
     group_detr: int = Field(default=13, gt=0)
     gradient_checkpointing: bool = False
     num_queries: int = Field(default=300, gt=0)
     num_select: int = Field(default=300, gt=0)
+    two_stage: bool = False
 
     @field_validator("resolution")
     @classmethod
@@ -51,6 +54,17 @@ class ModelConfig(BaseModel):
         """Validate that resolution is divisible by 14 for DINOv2."""
         if v % 14 != 0:
             error_msg = f"Resolution {v} must be divisible by 14 for DINOv2"
+            logger.error(error_msg)
+            raise ConfigurationError(error_msg)
+        return v
+        
+    @field_validator("training_width", "training_height")
+    @classmethod
+    def validate_training_dimensions(cls, v, info):
+        """Validate that training dimensions are divisible by 56."""
+        if v % 56 != 0:
+            field_name = info.field_name
+            error_msg = f"{field_name} {v} must be divisible by 56"
             logger.error(error_msg)
             raise ConfigurationError(error_msg)
         return v
@@ -172,10 +186,13 @@ class RFDETRConfig(BaseModel):
             "pretrain_weights": self.model.pretrain_weights,
             "device": self.model.device,
             "resolution": self.model.resolution,
+            "training_width": self.model.training_width,
+            "training_height": self.model.training_height,
             "group_detr": self.model.group_detr,
             "gradient_checkpointing": self.model.gradient_checkpointing,
             "num_queries": self.model.num_queries,
             "num_select": self.model.num_select,
+            "two_stage": self.model.two_stage,
             # Training parameters
             "lr": self.training.lr,
             "lr_encoder": self.training.lr_encoder,

@@ -915,88 +915,145 @@ def build_model(args):
     num_classes = args.num_classes + 1
     torch.device(args.device)
 
+    # Debug prints to understand what's happening
+    print(f"DEBUG: args has shape? {hasattr(args, 'shape')}")
+    if hasattr(args, 'shape'):
+        print(f"DEBUG: args.shape = {args.shape}, type: {type(args.shape)}")
+    print(f"DEBUG: args has resolution? {hasattr(args, 'resolution')}")
+    if hasattr(args, 'resolution'):
+        print(f"DEBUG: args.resolution = {args.resolution}")
+    
+    # Calculate target_shape 
+    if hasattr(args, "shape") and args.shape is not None:
+        target_shape = tuple(args.shape) if isinstance(args.shape, list) else args.shape
+    elif hasattr(args, "training_width") and hasattr(args, "training_height"):
+        # Ensure training dimensions override resolution
+        training_width = args.training_width
+        training_height = args.training_height
+        print(f"Using training dimensions: {training_height}x{training_width}")
+        # DinoV2 expects (height, width)
+        target_shape = (training_height, training_width)
+    elif hasattr(args, "resolution"):
+        target_shape = (args.resolution, args.resolution)
+    else:
+        target_shape = (640, 640)
+        
+    print(f"DEBUG: target_shape = {target_shape}")
+    
     backbone = build_backbone(
         encoder=args.encoder,
-        vit_encoder_num_layers=args.vit_encoder_num_layers,
-        pretrained_encoder=args.pretrained_encoder,
-        window_block_indexes=args.window_block_indexes,
-        drop_path=args.drop_path,
+        vit_encoder_num_layers=getattr(args, "vit_encoder_num_layers", None),
+        pretrained_encoder=getattr(args, "pretrained_encoder", None),
+        window_block_indexes=getattr(args, "window_block_indexes", None),
+        drop_path=getattr(args, "drop_path", 0.0),
         out_channels=args.hidden_dim,
         out_feature_indexes=args.out_feature_indexes,
         projector_scale=args.projector_scale,
-        use_cls_token=args.use_cls_token,
+        use_cls_token=getattr(args, "use_cls_token", False),
         hidden_dim=args.hidden_dim,
-        position_embedding=args.position_embedding,
-        freeze_encoder=args.freeze_encoder,
-        layer_norm=args.layer_norm,
-        target_shape=args.shape
-        if hasattr(args, "shape")
-        else (args.resolution, args.resolution)
-        if hasattr(args, "resolution")
-        else (640, 640),
-        rms_norm=args.rms_norm,
-        backbone_lora=args.backbone_lora,
-        force_no_pretrain=args.force_no_pretrain,
-        gradient_checkpointing=args.gradient_checkpointing,
-        load_dinov2_weights=args.pretrain_weights is None,
+        position_embedding=getattr(args, "position_embedding", "sine"),
+        freeze_encoder=getattr(args, "freeze_encoder", False),
+        layer_norm=getattr(args, "layer_norm", True),
+        target_shape=target_shape,
+        rms_norm=getattr(args, "rms_norm", False),
+        backbone_lora=getattr(args, "backbone_lora", False),
+        force_no_pretrain=getattr(args, "force_no_pretrain", False),
+        gradient_checkpointing=getattr(args, "gradient_checkpointing", False),
+        load_dinov2_weights=getattr(args, "pretrain_weights", None) is None,
     )
-    if args.encoder_only:
+    # Check if encoder_only is defined and True
+    if hasattr(args, 'encoder_only') and args.encoder_only:
         return backbone[0].encoder, None, None
-    if args.backbone_only:
+    # Check if backbone_only is defined and True
+    if hasattr(args, 'backbone_only') and args.backbone_only:
         return backbone, None, None
 
-    args.num_feature_levels = len(args.projector_scale)
-    transformer = build_transformer(args)
+    # Use variable instead of modifying args directly
+    num_feature_levels = len(args.projector_scale)
+    
+    # Create a dictionary of args for the transformer with num_feature_levels
+    transformer_args = {
+        "hidden_dim": args.hidden_dim,
+        "sa_nheads": getattr(args, "sa_nheads", 8),
+        "ca_nheads": getattr(args, "ca_nheads", 8),
+        "num_queries": args.num_queries,
+        "dropout": getattr(args, "dropout", 0.0),
+        "dim_feedforward": getattr(args, "dim_feedforward", 2048),
+        "dec_layers": args.dec_layers,
+        "return_intermediate_dec": True,
+        "group_detr": args.group_detr,
+        "num_feature_levels": num_feature_levels,
+        "dec_n_points": args.dec_n_points,
+        "lite_refpoint_refine": getattr(args, "lite_refpoint_refine", False),
+        "decoder_norm": getattr(args, "decoder_norm_type", "LN"),  # Match the parameter name expected in build_transformer
+        "bbox_reparam": getattr(args, "bbox_reparam", False),
+    }
+    
+    # Build the transformer with the args dictionary
+    transformer = build_transformer(type('Args', (), transformer_args))
 
-    model = LWDETR(
-        backbone,
-        transformer,
-        num_classes=num_classes,
-        num_queries=args.num_queries,
-        aux_loss=args.aux_loss,
-        group_detr=args.group_detr,
-        two_stage=args.two_stage,
-        lite_refpoint_refine=args.lite_refpoint_refine,
-        bbox_reparam=args.bbox_reparam,
-    )
+    # Create a model with the collected args
+    model_args = {
+        'backbone': backbone,
+        'transformer': transformer,
+        'num_classes': num_classes,
+        'num_queries': args.num_queries,
+        'aux_loss': getattr(args, 'aux_loss', False),
+        'group_detr': args.group_detr,
+        'two_stage': getattr(args, 'two_stage', False),
+        'lite_refpoint_refine': getattr(args, 'lite_refpoint_refine', False),
+        'bbox_reparam': getattr(args, 'bbox_reparam', False),
+    }
+    
+    model = LWDETR(**model_args)
     return model
 
 
 def build_criterion_and_postprocessors(args):
-    device = torch.device(args.device)
+    device = torch.device(getattr(args, "device", "cuda"))
     matcher = build_matcher(args)
-    weight_dict = {"loss_ce": args.cls_loss_coef, "loss_bbox": args.bbox_loss_coef}
-    weight_dict["loss_giou"] = args.giou_loss_coef
-    weight_dict["loss_mask"] = 1.0  # Add weight for mask loss
-    # TODO this is a hack
-    if args.aux_loss:
+    
+    # Get loss coefficients with defaults
+    cls_loss_coef = getattr(args, "cls_loss_coef", 1.0)
+    bbox_loss_coef = getattr(args, "bbox_loss_coef", 5.0)
+    giou_loss_coef = getattr(args, "giou_loss_coef", 2.0)
+    mask_loss_coef = getattr(args, "loss_mask_coef", 1.0)
+    
+    weight_dict = {
+        "loss_ce": cls_loss_coef, 
+        "loss_bbox": bbox_loss_coef,
+        "loss_giou": giou_loss_coef,
+        "loss_mask": mask_loss_coef
+    }
+    
+    # Optional auxiliary losses
+    if getattr(args, "aux_loss", False):
         aux_weight_dict = {}
-        for i in range(args.dec_layers - 1):
+        for i in range(getattr(args, "dec_layers", 6) - 1):
             aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
-        if args.two_stage:
+        if getattr(args, "two_stage", False):
             aux_weight_dict.update({k + "_enc": v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
     losses = ["labels", "boxes", "cardinality", "masks"]
 
-    try:
-        sum_group_losses = args.sum_group_losses
-    except:
-        sum_group_losses = False
+    # Optional group loss settings
+    sum_group_losses = getattr(args, "sum_group_losses", False)
+    
     criterion = SetCriterion(
-        args.num_classes + 1,
+        getattr(args, "num_classes", 90) + 1,
         matcher=matcher,
         weight_dict=weight_dict,
-        focal_alpha=args.focal_alpha,
+        focal_alpha=getattr(args, "focal_alpha", 0.25),
         losses=losses,
-        group_detr=args.group_detr,
+        group_detr=getattr(args, "group_detr", 1),
         sum_group_losses=sum_group_losses,
-        use_varifocal_loss=args.use_varifocal_loss,
-        use_position_supervised_loss=args.use_position_supervised_loss,
-        ia_bce_loss=args.ia_bce_loss,
+        use_varifocal_loss=getattr(args, "use_varifocal_loss", False),
+        use_position_supervised_loss=getattr(args, "use_position_supervised_loss", False),
+        ia_bce_loss=getattr(args, "ia_bce_loss", False),
     )
     criterion.to(device)
-    postprocessors = {"bbox": PostProcess(num_select=args.num_select)}
+    postprocessors = {"bbox": PostProcess(num_select=getattr(args, "num_select", 100))}
 
     # Add segmentation postprocessor
     postprocessors.update({"segm": PostProcessSegm()})

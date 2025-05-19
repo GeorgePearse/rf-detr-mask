@@ -18,10 +18,13 @@ model:
   pretrain_weights: "rf-detr-base.pth"
   device: "cuda"
   resolution: 560
+  training_width: 560  # Divisible by 56
+  training_height: 672  # Divisible by 56
   group_detr: 13
   gradient_checkpointing: false
   num_queries: 300
   num_select: 300
+  two_stage: true
 
 # Training Configuration
 training:
