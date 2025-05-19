@@ -4,6 +4,7 @@ and missing mask parameters.
 """
 
 import os
+import types
 import unittest
 from pathlib import Path
 
@@ -41,27 +42,30 @@ class TestCheckpointLoading(unittest.TestCase):
         We need to match the architecture parameters with the checkpoint to
         ensure loading works correctly.
         """
-        return ModelConfig(
+        # Create a config with the needed parameters
+        config = ModelConfig(
             encoder="dinov2_windowed_small",
             out_feature_indexes=[11],  # Use the last layer index (11 for small model)
             projector_scale=["P4"],
             num_classes=num_classes,
-            two_stage=True,
             hidden_dim=256,
-            position_embedding="sine",
-            dec_layers=3,
-            vit_encoder_num_layers=12,
-            # These values need to match the checkpoint architecture
             sa_nheads=8,
-            ca_nheads=16,  # Increased to match checkpoint
-            dec_n_points=4,  # Important for cross-attention sampling
-            dim_feedforward=2048,  # Increased to match checkpoint
+            ca_nheads=16,
+            dec_n_points=4,
             bbox_reparam=True,
             layer_norm=True,
-            dropout=0.0,
             lite_refpoint_refine=True,
-            aux_loss=True,
+            dec_layers=3,
+            num_queries=100,
+            num_select=100,
+            resolution=560,
         )
+
+        # Convert to a namespace object to allow adding attributes dynamically
+        args = types.SimpleNamespace(**config.dict_for_model_build())
+
+        # Return the namespace object
+        return args
 
     def test_detection_head_reinitialization(self):
         """Test detection head reinitialization for class size mismatch."""

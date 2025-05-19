@@ -54,6 +54,7 @@ def get_args_parser():
     parser.add_argument("--device", default="cuda", help="Device to run evaluation on (cuda/cpu)")
     parser.add_argument("--fp16_eval", action="store_true", help="Use FP16 precision for evaluation")
     parser.add_argument("--detailed", action="store_true", help="Show detailed per-class metrics and confidence thresholds")
+    parser.add_argument("--test_limit", type=int, help="Limit the number of samples in the validation dataset")
     
     return parser
 
@@ -245,6 +246,11 @@ def main(args):
     model_args.num_workers = args.num_workers
     model_args.fp16_eval = args.fp16_eval
     model_args.eval = True
+    
+    # Add test_limit parameter if provided
+    if args.test_limit is not None:
+        model_args.test_limit = args.test_limit
+        logger.info(f"Limiting validation dataset to {args.test_limit} samples")
     
     # Build model
     logger.info("Building model...")

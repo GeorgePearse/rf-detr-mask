@@ -67,8 +67,8 @@ class TestFixedSize(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test environment"""
-        # Load configuration
-        cls.config_path = os.path.join("configs", "test_config.yaml")
+        # Load default configuration
+        cls.config_path = os.path.join("configs", "default.yaml")
         cls.config = load_config(cls.config_path)
 
         # Convert to args for backward compatibility
@@ -76,10 +76,8 @@ class TestFixedSize(unittest.TestCase):
 
         # Adjust some parameters for the test
         cls.args.batch_size = 1
-        cls.args.resolution = 560  # Standard resolution for DINOv2
         cls.args.amp = False
         cls.args.epochs = 1
-        cls.args.num_classes = 69
 
         # Set device
         cls.device = torch.device(cls.args.device)
@@ -177,7 +175,7 @@ class TestFixedSize(unittest.TestCase):
 
                     epoch_loss += losses.item()
 
-                    logger.info(f"Batch {i+1}/{len(dataloader)}, Loss: {losses.item():.4f}")
+                    logger.info(f"Batch {i + 1}/{len(dataloader)}, Loss: {losses.item():.4f}")
 
                     # Print some output properties
                     if i == 0:
@@ -194,7 +192,7 @@ class TestFixedSize(unittest.TestCase):
 
             epoch_time = time.time() - start_time
             logger.info(
-                f"Epoch {epoch+1}, Loss: {epoch_loss/len(dataloader):.4f}, Time: {epoch_time:.2f}s"
+                f"Epoch {epoch + 1}, Loss: {epoch_loss / len(dataloader):.4f}, Time: {epoch_time:.2f}s"
             )
 
         logger.info("Test training complete!")

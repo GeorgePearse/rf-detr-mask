@@ -29,7 +29,7 @@ def test_segmentation():
 
     # Initialize model on CPU to avoid memory issues
     print("Initializing model on CPU...")
-    model = RFDETRBase(device="cpu")
+    model = RFDETRBase(device="cpu", num_queries=100, num_select=100, pretrain_weights=None)
 
     # Test without masks
     print("\nTesting detection without masks...")

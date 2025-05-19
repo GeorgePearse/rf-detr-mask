@@ -44,6 +44,7 @@ training:
   cls_loss_coef: 1.0
   bbox_loss_coef: 5.0
   giou_loss_coef: 2.0
+  num_select: 100  # Must match model.num_select
   dataset_file: "coco"
   square_resize_div_64: true
   output_dir: "output_default"

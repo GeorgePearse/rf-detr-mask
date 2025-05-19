@@ -19,28 +19,26 @@ Train and eval functions used in main.py
 """
 
 import math
+from collections import defaultdict
 from collections.abc import Iterable
+from typing import Callable, Optional
 
 import torch
 
 import rfdetr.util.misc as utils
 from rfdetr.datasets.coco_eval import CocoEvaluator
+from rfdetr.util.error_handling import TrainingError
 from rfdetr.util.logging_config import get_logger
+from rfdetr.util.misc import NestedTensor
 
 logger = get_logger(__name__)
 
 try:
     from torch.amp import GradScaler, autocast
-
     DEPRECATED_AMP = False
 except ImportError:
     from torch.cuda.amp import GradScaler, autocast
-
     DEPRECATED_AMP = True
-from collections import defaultdict
-from typing import Callable, Optional
-
-from rfdetr.util.misc import NestedTensor
 
 
 def get_autocast_args(args):
@@ -73,6 +71,8 @@ def train_one_epoch(
     vit_encoder_num_layers=None,
     args=None,
     callbacks: Optional[defaultdict[str, list[Callable]]] = None,
+    max_steps: Optional[int] = None,
+    current_step: Optional[int] = 0,
 ):
     if schedules is None:
         schedules = {}
@@ -96,14 +96,24 @@ def train_one_epoch(
     assert batch_size % args.grad_accum_steps == 0
     sub_batch_size = batch_size // args.grad_accum_steps
     logger.info(f"LENGTH OF DATA LOADER: {len(data_loader)}")
+    
+    # If max_steps is specified, track steps and limit accordingly
+    step_counter = current_step
+    
     for data_iter_step, (samples, targets) in enumerate(
         metric_logger.log_every(data_loader, print_freq, header)
     ):
+        # Check if we've reached max_steps (if specified)
+        if max_steps is not None and step_counter >= max_steps:
+            logger.info(f"Reached max_steps ({max_steps}), stopping training")
+            break
+            
         it = start_steps + data_iter_step
         callback_dict = {
             "step": it,
             "model": model,
             "epoch": epoch,
+            "global_step": step_counter,
         }
         for callback in callbacks["on_train_batch_start"]:
             callback(callback_dict)
@@ -117,6 +127,9 @@ def train_one_epoch(
                 model.module.update_dropout(schedules["do"][it])
             else:
                 model.update_dropout(schedules["do"][it])
+                
+        # Update step counter
+        step_counter += 1
 
         for i in range(args.grad_accum_steps):
             start_idx = i * sub_batch_size
@@ -152,7 +165,7 @@ def train_one_epoch(
 
         if not math.isfinite(loss_value):
             logger.error(f"Loss dict reduced: {loss_dict_reduced}")
-            raise ValueError(f"Loss is {loss_value}, stopping training")
+            raise TrainingError(f"Loss is {loss_value} (not finite). Loss components: {loss_dict_reduced}")
 
         if max_norm > 0:
             scaler.unscale_(optimizer)
@@ -172,7 +185,12 @@ def train_one_epoch(
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     logger.info(f"Averaged stats: {metric_logger}")
-    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
+    
+    # Include global step in the return
+    stats["global_step"] = step_counter
+    
+    return stats
 
 
 def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, args=None):

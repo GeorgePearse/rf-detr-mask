@@ -16,8 +16,8 @@ class TestModelConstruction(unittest.TestCase):
 
     def setUp(self):
         """Set up the test environment"""
-        # Load configuration
-        config_path = os.path.join("configs", "test_config.yaml")
+        # Load default configuration
+        config_path = os.path.join("configs", "default.yaml")
         self.config = load_config(config_path)
 
         # Convert to args for backward compatibility
@@ -25,7 +25,6 @@ class TestModelConstruction(unittest.TestCase):
 
         # Adjust some parameters for simple test
         self.args.batch_size = 1
-        self.args.resolution = 560  # Standard resolution for DINOv2
         self.args.amp = False
 
     def test_model_construction(self):

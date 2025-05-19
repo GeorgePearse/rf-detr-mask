@@ -48,7 +48,7 @@ class TestQuickTraining(unittest.TestCase):
     def setUpClass(cls):
         """Set up test configuration"""
         # Define default arguments
-        cls.config_path = "configs/fixed_test_config.yaml"
+        cls.config_path = "configs/default.yaml"
         cls.train_limit = 2
         cls.val_limit = 2
         cls.epochs = 1
@@ -172,7 +172,7 @@ class TestQuickTraining(unittest.TestCase):
                     ]
 
                     # Forward pass
-                    logger.info(f"Running step {step_counter+1}/{num_steps}")
+                    logger.info(f"Running step {step_counter + 1}/{num_steps}")
                     logger.info(f"Input shape: {samples.tensors.shape}")
 
                     # Print sample properties for debugging in first step
@@ -204,7 +204,7 @@ class TestQuickTraining(unittest.TestCase):
                     if ema:
                         ema.update(model)
 
-                    logger.info(f"Step {step_counter+1} completed with loss: {losses.item():.4f}")
+                    logger.info(f"Step {step_counter + 1} completed with loss: {losses.item():.4f}")
                     self.assertGreater(losses.item(), 0, "Loss should be positive")
 
                     if step_counter == 0:
@@ -264,7 +264,7 @@ def parse_args():
     parser.add_argument(
         "--config",
         type=str,
-        default="configs/fixed_test_config.yaml",
+        default="configs/default.yaml",
         help="Path to YAML configuration file",
     )
     parser.add_argument(
