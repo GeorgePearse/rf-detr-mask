@@ -22,10 +22,11 @@ from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, Sequ
 
 # Import autocast for mixed precision training
 try:
-    from torch.amp import GradScaler, autocast
+    from torch.amp import autocast  # GradScaler is not directly used
 
     DEPRECATED_AMP = False
 except ImportError:
+    from torch.cuda.amp import autocast  # Fallback to older API
     DEPRECATED_AMP = True
 
 import rfdetr.util.misc as utils
@@ -103,7 +104,7 @@ class RFDETRFabricModule:
         else:
             # Object attribute access
             self.ema_decay = getattr(self.config, "ema_decay", None)
-            use_ema = getattr(self.config, "use_ema", True)
+            # Note: use_ema setting is applied when building the model with fabric.setup
 
         self.ema = None  # Will be initialized after model is setup with fabric
 
@@ -335,9 +336,8 @@ class RFDETRFabricModule:
             samples = samples.half()
 
         # Forward pass
-        with torch.no_grad():
-            with torch.autocast(**self.autocast_args):
-                outputs = model_to_eval(samples)
+        with torch.no_grad(), torch.autocast(**self.autocast_args):
+            outputs = model_to_eval(samples)
 
         # Convert back to float if using fp16 eval
         if fp16_eval:

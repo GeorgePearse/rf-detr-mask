@@ -23,10 +23,17 @@ import torch
 import torch.nn as nn
 from PIL import Image
 
-import rfdetr.datasets.transforms as T
 import rfdetr.util.misc as utils
+from rfdetr.datasets.transforms import Compose, Normalize, SquareResize, ToTensor
 from rfdetr.deploy._onnx import OnnxOptimizer
 from rfdetr.models import build_model
+
+# Create transforms namespace for compatibility with existing code
+class T:
+    Compose = Compose
+    SquareResize = SquareResize
+    ToTensor = ToTensor
+    Normalize = Normalize
 
 
 def run_command_shell(command, dry_run: bool = False) -> int:

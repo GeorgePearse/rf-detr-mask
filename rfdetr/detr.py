@@ -9,7 +9,7 @@ import json
 import os
 from collections import defaultdict
 from logging import getLogger
-from typing import Union
+from typing import ClassVar, Union
 
 import numpy as np
 import supervision as sv
@@ -26,8 +26,8 @@ logger = getLogger(__name__)
 
 
 class RFDETR:
-    means = [0.485, 0.456, 0.406]
-    stds = [0.229, 0.224, 0.225]
+    means: ClassVar[list[float]] = [0.485, 0.456, 0.406]
+    stds: ClassVar[list[float]] = [0.229, 0.224, 0.225]
 
     def __init__(self, **kwargs):
         self.model_config = self.get_model_config(**kwargs)

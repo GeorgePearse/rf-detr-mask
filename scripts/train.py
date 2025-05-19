@@ -48,6 +48,11 @@ def main():
         default=None,
         help="Override output directory from config",
     )
+    parser.add_argument(
+        "--test_mode",
+        action="store_true",
+        help="Run in test mode with reduced sizes for rapid testing",
+    )
     args = parser.parse_args()
 
     # Load configuration
@@ -79,12 +84,20 @@ def main():
     # Convert config to args dict for compatibility with existing code
     args_dict = config.to_args_dict()
 
-    # For test_limit, adjust parameters for faster evaluation
-    if config.test_limit is not None and config.test_limit > 0:
-        config.num_queries = min(100, config.num_queries)
-        config.hidden_dim = min(128, config.hidden_dim)
-        config.dec_layers = min(3, config.dec_layers)
+    # For test_limit or test_mode, adjust parameters for faster evaluation
+    if (config.test_limit is not None and config.test_limit > 0) or args.test_mode:
+        logger.info("Running in test mode with reduced parameters")
+        config.num_queries = min(100, getattr(config, "num_queries", 100))
+        config.hidden_dim = min(128, getattr(config, "hidden_dim", 256))
+        config.dec_layers = min(2, getattr(config, "dec_layers", 3))
         config.batch_size = 1
+        config.grad_accum_steps = 1
+
+        # Set a shorter run
+        if args.test_mode:
+            config.max_steps = min(10, getattr(config, "max_steps", 1000))
+            config.val_frequency = 5
+            config.checkpoint_frequency = 5
 
     # Create Lightning Module and Data Module
     model = RFDETRLightningModule(args_dict)
@@ -269,6 +282,12 @@ if __name__ == "__main__":
     # Make sure GPU memory is properly cleaned up before starting
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+        # Set memory allocation strategy to avoid fragmentation
+        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+        # Log GPU memory info
+        for i in range(torch.cuda.device_count()):
+            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+            print(f"Memory: {torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB")
 
     # Run main training function
     main()

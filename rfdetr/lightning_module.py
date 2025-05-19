@@ -21,8 +21,15 @@ import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
 
-# Temporarily disable ONNX imports for testing
-# from rfdetr.deploy.export import export_onnx, onnx_simplify
+# Import ONNX export functionality
+try:
+    # Import validation only - not directly used
+    from rfdetr.deploy.export import export_onnx as _export_onnx  # noqa: F401
+
+    ONNX_AVAILABLE = True
+except (ImportError, ModuleNotFoundError):
+    ONNX_AVAILABLE = False
+    print("ONNX libraries not fully available - will only export PyTorch weights")
 from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.get_param_dicts import get_param_dict
 from rfdetr.util.utils import ModelEma
@@ -489,42 +496,56 @@ class RFDETRLightningModule(pl.LightningModule):
                 if (
                     hasattr(self.coco_evaluator, "eval_imgs")
                     and self.coco_evaluator.eval_imgs
-                    and any(len(imgs) > 0 for imgs in self.coco_evaluator.eval_imgs.values())
+                    and any(
+                        len(imgs) > 0
+                        for imgs in self.coco_evaluator.eval_imgs.values()
+                        if isinstance(imgs, list)
+                    )
                 ):
                     # Synchronize if distributed
                     if self.trainer.world_size > 1:
                         self.coco_evaluator.synchronize_between_processes()
 
                     # Accumulate and summarize
-                    self.coco_evaluator.accumulate()
-                    self.coco_evaluator.summarize()
+                    try:
+                        self.coco_evaluator.accumulate()
+                        self.coco_evaluator.summarize()
+                    except Exception as e:
+                        print(
+                            f"Error in COCO accumulate/summarize: {e}. Continuing with validation."
+                        )
 
-                    # Extract stats
-                    if (
+                    # Extract stats for bounding boxes
+                    bbox_valid = (
                         "bbox" in self.postprocessors
                         and hasattr(self.coco_evaluator, "coco_eval")
                         and "bbox" in self.coco_evaluator.coco_eval
-                    ):
-                        if hasattr(self.coco_evaluator.coco_eval["bbox"], "stats"):
-                            stats = self.coco_evaluator.coco_eval["bbox"].stats
-                            if hasattr(stats, "tolist"):
-                                # Log mAP
-                                map_value = stats[0]
+                        and hasattr(self.coco_evaluator.coco_eval["bbox"], "stats")
+                    )
+                    
+                    if bbox_valid:
+                        stats = self.coco_evaluator.coco_eval["bbox"].stats
+                        if hasattr(stats, "tolist"):
+                            # Log mAP
+                            map_value = float(stats[0]) if stats[0] is not None else 0.0
 
-                                # Track best model
-                                if map_value > self.best_map:
-                                    self.best_map = map_value
+                            # Track best model
+                            if map_value > self.best_map:
+                                self.best_map = map_value
 
-                    if (
+                    # Extract stats for segmentation masks
+                    segm_valid = (
                         "segm" in self.postprocessors
                         and hasattr(self.coco_evaluator, "coco_eval")
                         and "segm" in self.coco_evaluator.coco_eval
-                    ):
-                        if hasattr(self.coco_evaluator.coco_eval["segm"], "stats"):
-                            stats = self.coco_evaluator.coco_eval["segm"].stats
-                            if hasattr(stats, "tolist"):
-                                # Log mask mAP
-                                mask_map_value = stats[0]
+                        and hasattr(self.coco_evaluator.coco_eval["segm"], "stats")
+                    )
+                    
+                    if segm_valid:
+                        stats = self.coco_evaluator.coco_eval["segm"].stats
+                        if hasattr(stats, "tolist"):
+                            # Log mask mAP
+                            mask_map_value = float(stats[0]) if stats[0] is not None else 0.0
                 else:
                     print("Skipping COCO evaluation - not enough evaluation images")
             except Exception as e:

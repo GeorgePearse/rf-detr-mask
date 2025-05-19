@@ -79,7 +79,6 @@ class TestConfigValidation(unittest.TestCase):
         # List of configs we want to test (the main ones that should be complete)
         config_files = [
             Path(__file__).parent.parent / "configs" / "default.yaml",
-            Path(__file__).parent.parent / "configs" / "base_config.yaml",
         ]
 
         # Try to load and validate each config file

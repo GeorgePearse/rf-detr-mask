@@ -8,7 +8,9 @@
 Comprehensive Pydantic model configuration for RF-DETR models.
 """
 
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal, Optional
+# Use modern type annotation style
+from typing_extensions import ClassVar
 
 import torch
 from pydantic import BaseModel, Field, field_validator
@@ -26,9 +28,9 @@ class ModelConfig(BaseModel):
 
     # Core model parameters
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base", "dinov2_small", "dinov2_base"]
-    out_feature_indexes: List[int]
+    out_feature_indexes: list[int]
     dec_layers: int = Field(default=3, ge=1)
-    projector_scale: List[Literal["P3", "P4", "P5", "P6"]]
+    projector_scale: list[Literal["P3", "P4", "P5", "P6"]]
     hidden_dim: int = Field(default=256, gt=0)
 
     # Attention & transformer parameters
@@ -66,7 +68,7 @@ class ModelConfig(BaseModel):
     # Dataset and preprocessing
     num_classes: int = Field(default=90, gt=0)
     resolution: int = Field(default=560, gt=0)
-    shape: Optional[Tuple[int, int]] = None
+    shape: Optional[tuple[int, int]] = None
     dataset_file: Literal["coco", "o365", "roboflow"] = "coco"
     coco_path: str = ""
     coco_train: str = ""
@@ -116,19 +118,19 @@ class ModelConfig(BaseModel):
     set_cost_giou: float = Field(default=2.0, ge=0.0)
 
     @field_validator("resolution")
-    def validate_resolution(cls, v):
+    def validate_resolution(self, v):
         """Validate that resolution is divisible by 14 for DINOv2."""
         if v % 14 != 0:
             raise ValueError(f"Resolution {v} must be divisible by 14 for DINOv2")
         return v
 
-    def dict_for_model_build(self) -> Dict[str, Any]:
+    def dict_for_model_build(self) -> dict[str, Any]:
         """
         Convert this Pydantic model to a dictionary for backward compatibility
         with code that expects a dict-like object.
         """
         return self.model_dump()
 
-    def to_args_dict(self) -> Dict[str, Any]:
+    def to_args_dict(self) -> dict[str, Any]:
         """Alias for dict_for_model_build."""
         return self.dict_for_model_build()

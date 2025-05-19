@@ -25,7 +25,7 @@ import math
 from typing import Callable
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as transforms_f
 from torch import nn
 
 from rfdetr.models.backbone import build_backbone

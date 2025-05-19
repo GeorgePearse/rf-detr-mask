@@ -20,10 +20,44 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
+from einops import rearrange
 from torch import Tensor
 from torch.nn.init import constant_, xavier_normal_, xavier_uniform_
 from torch.nn.modules.linear import NonDynamicallyQuantizableLinear
+
+
+def unpad_input(x: Tensor, mask: Tensor) -> tuple[Tensor, Tensor, Tensor, int]:
+    """Unpad input tensor based on provided mask.
+
+    Args:
+        x: Input tensor to unpad
+        mask: Boolean mask where True indicates positions to keep
+
+    Returns:
+        tuple containing:
+        - Unpadded tensor
+        - Indices of unpadded positions
+        - Cumulative sequence lengths
+        - Maximum sequence length
+    """
+    # Get indices where mask is True (positions to keep)
+    indices = torch.nonzero(mask.reshape(-1), as_tuple=False).squeeze(1)
+
+    # Gather values from input tensor at these indices
+    x_unpad = torch.index_select(x.reshape(-1, *x.shape[2:]), 0, indices)
+
+    # Calculate cumulative sequence lengths
+    seqlen = mask.sum(dim=1, dtype=torch.int32)
+    cu_seqlens = torch.cat(
+        [torch.zeros(1, dtype=torch.int32, device=seqlen.device), torch.cumsum(seqlen, dim=0)],
+        dim=0,
+    )
+
+    # Maximum sequence length
+    max_seqlen = seqlen.max().item()
+
+    return x_unpad, indices, cu_seqlens, max_seqlen
 
 
 class MultiheadAttention(nn.Module):
@@ -59,7 +93,7 @@ class MultiheadAttention(nn.Module):
         >>> attn_output, attn_output_weights = multihead_attn(query, key, value)
     """
 
-    __constants__ = ["batch_first"]
+    __constants__: list[str] = ["batch_first"]
     bias_k: Optional[torch.Tensor]
     bias_v: Optional[torch.Tensor]
 
@@ -610,25 +644,26 @@ def _in_projection(
          - v': :math:`[Vdims..., Eq]`
 
     """
-    Eq, Ek, Ev = q.size(-1), k.size(-1), v.size(-1)
+    # Using descriptive variable names instead of single capitals
+    dim_q, dim_k, dim_v = q.size(-1), k.size(-1), v.size(-1)  # noqa: N806
     assert w_q.shape == (
-        Eq,
-        Eq,
-    ), f"expecting query weights shape of {(Eq, Eq)}, but got {w_q.shape}"
-    assert w_k.shape == (Eq, Ek), f"expecting key weights shape of {(Eq, Ek)}, but got {w_k.shape}"
+        dim_q,
+        dim_q,
+    ), f"expecting query weights shape of {(dim_q, dim_q)}, but got {w_q.shape}"
+    assert w_k.shape == (dim_q, dim_k), f"expecting key weights shape of {(dim_q, dim_k)}, but got {w_k.shape}"
     assert w_v.shape == (
-        Eq,
-        Ev,
-    ), f"expecting value weights shape of {(Eq, Ev)}, but got {w_v.shape}"
+        dim_q,
+        dim_v,
+    ), f"expecting value weights shape of {(dim_q, dim_v)}, but got {w_v.shape}"
     assert b_q is None or b_q.shape == (
-        Eq,
-    ), f"expecting query bias shape of {(Eq,)}, but got {b_q.shape}"
+        dim_q,
+    ), f"expecting query bias shape of {(dim_q,)}, but got {b_q.shape}"
     assert b_k is None or b_k.shape == (
-        Eq,
-    ), f"expecting key bias shape of {(Eq,)}, but got {b_k.shape}"
+        dim_q,
+    ), f"expecting key bias shape of {(dim_q,)}, but got {b_k.shape}"
     assert b_v is None or b_v.shape == (
-        Eq,
-    ), f"expecting value bias shape of {(Eq,)}, but got {b_v.shape}"
+        dim_q,
+    ), f"expecting value bias shape of {(dim_q,)}, but got {b_v.shape}"
     return F.linear(q, w_q, b_q), F.linear(k, w_k, b_k), F.linear(v, w_v, b_v)
 
 
@@ -666,7 +701,7 @@ def _in_projection_packed(
         - in output list :math:`[q', k', v']`, each output tensor will have the
             same shape as the corresponding input tensor.
     """
-    E = q.size(-1)
+    embedding_dim = q.size(-1)  # Using descriptive name instead of single capital
     if k is v:
         if q is k:
             # self-attention
@@ -720,9 +755,9 @@ def _scaled_dot_product_attention(
         - Output: attention values have shape :math:`(B, Nt, E)`; attention weights
             have shape :math:`(B, Nt, Ns)`
     """
-    B, Nt, E = q.shape
-    q = q / math.sqrt(E)
-    # (B, Nt, E) x (B, E, Ns) -> (B, Nt, Ns)
+    batch_size, tgt_len, embed_dim = q.shape  # Using descriptive names instead of B, Nt, E
+    q = q / math.sqrt(embed_dim)
+    # (batch_size, tgt_len, embed_dim) x (batch_size, embed_dim, src_len) -> (batch_size, tgt_len, src_len)
     attn = torch.bmm(q, k.transpose(-2, -1))
     if attn_mask is not None:
         attn += attn_mask

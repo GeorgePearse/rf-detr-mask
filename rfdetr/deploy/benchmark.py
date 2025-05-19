@@ -29,11 +29,12 @@ import onnxruntime as nxrun
 import pycuda.driver as cuda
 import tensorrt as trt
 import torch
-import torchvision.transforms.functional as F
 import tqdm
 from PIL import Image
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
+
+from rfdetr.util.box_ops import box_xyxy_to_cxcywh
 
 
 def parser_args():
@@ -157,26 +158,26 @@ def evaluate(self):
 
     self._prepare()
     # loop through images, area range, max detection number
-    catIds = p.catIds if p.useCats else [-1]
+    cat_ids = p.catIds if p.useCats else [-1]
 
     if p.iouType == "segm" or p.iouType == "bbox":
-        computeIoU = self.computeIoU
+        compute_iou = self.computeIoU
     elif p.iouType == "keypoints":
-        computeIoU = self.computeOks
-    self.ious = {(imgId, catId): computeIoU(imgId, catId) for imgId in p.imgIds for catId in catIds}
+        compute_iou = self.computeOks
+    self.ious = {(img_id, cat_id): compute_iou(img_id, cat_id) for img_id in p.imgIds for cat_id in cat_ids}
 
-    evaluateImg = self.evaluateImg
-    maxDet = p.maxDets[-1]
-    evalImgs = [
-        evaluateImg(imgId, catId, areaRng, maxDet)
-        for catId in catIds
-        for areaRng in p.areaRng
-        for imgId in p.imgIds
+    evaluate_img = self.evaluateImg
+    max_det = p.maxDets[-1]
+    eval_imgs = [
+        evaluate_img(img_id, cat_id, area_rng, max_det)
+        for cat_id in cat_ids
+        for area_rng in p.areaRng
+        for img_id in p.imgIds
     ]
     # this is NOT in the pycocotools code, but could be done outside
-    evalImgs = np.asarray(evalImgs).reshape(len(catIds), len(p.areaRng), len(p.imgIds))
+    eval_imgs = np.asarray(eval_imgs).reshape(len(cat_ids), len(p.areaRng), len(p.imgIds))
     self._paramsEval = copy.deepcopy(self.params)
-    return p.imgIds, evalImgs
+    return p.imgIds, eval_imgs
 
 
 def convert_to_xywh(boxes):
@@ -211,6 +212,8 @@ class Compose:
         format_string += "\n)"
         return format_string
 
+
+import torchvision.transforms.functional as F
 
 class ToTensor:
     def __call__(self, img, target):
@@ -308,7 +311,10 @@ def post_process(outputs, target_sizes):
     scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
     boxes = boxes * scale_fct[:, None, :]
 
-    results = [{"scores": s, "labels": l, "boxes": b} for s, l, b in zip(scores, labels, boxes)]
+    results = [
+        {"scores": score, "labels": label, "boxes": box}
+        for score, label, box in zip(scores, labels, boxes)
+    ]
 
     return results
 

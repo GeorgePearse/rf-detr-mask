@@ -649,6 +649,42 @@ If you find the original work helpful for your research, please consider citing 
 }
 ```
 
+## Evaluation
+
+RF-DETR-MASK includes tools for model evaluation and comparison. You can evaluate model performance on validation sets and view detailed per-class metrics.
+
+### Standard Evaluation
+
+To evaluate a trained model on a validation dataset:
+
+```bash
+python scripts/evaluate.py \
+  --checkpoint path/to/your/checkpoint.pth \
+  --coco_path path/to/your/coco/annotations \
+  --coco_val instances_val2017.json \
+  --output_dir eval_results
+```
+
+This will produce metrics including mAP, mAP50, mAP75, and per-class results.
+
+### Test Prediction Evaluation
+
+We've also added a feature to create and evaluate modified annotations for testing prediction quality. This is useful for simulating model performance on variations of your data:
+
+```bash
+python scripts/evaluate.py \
+  --checkpoint path/to/your/checkpoint.pth \
+  --coco_path path/to/your/coco/annotations \
+  --coco_val instances_val2017.json \
+  --create_test_predictions \
+  --flip_ratio 0.3 \
+  --output_dir test_eval_results
+```
+
+The `create_test_predictions` flag automatically generates a modified version of your validation annotations with randomly flipped classifications based on the specified `flip_ratio`. This allows you to test how well your model handles uncertainty in classification.
+
+Evaluation results are saved to the specified output directory as JSON files.
+
 ## Logging System
 
 RF-DETR-MASK includes a comprehensive logging system that helps track training progress and diagnose issues. The logging system includes:

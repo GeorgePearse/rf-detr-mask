@@ -93,9 +93,9 @@ def bmm_flop_jit(inputs, outputs):
     # input_shapes[1]: [batch size, output feature dimension]
     assert len(input_shapes[0]) == 3
     assert len(input_shapes[1]) == 3
-    T, batch_size, input_dim = input_shapes[0]
+    seq_len, batch_size, input_dim = input_shapes[0]
     output_dim = input_shapes[1][2]
-    flop = T * batch_size * input_dim * output_dim
+    flop = seq_len * batch_size * input_dim * output_dim
     flop_counter = Counter({"bmm": flop})
     return flop_counter
 
@@ -160,10 +160,10 @@ def conv_flop_count(
         Counter: A Counter dictionary that records the number of flops for each
             operation.
     """
-    batch_size, Cin_dim, Cout_dim = x_shape[0], w_shape[1], out_shape[1]
+    batch_size, cin_dim, cout_dim = x_shape[0], w_shape[1], out_shape[1]
     out_size = prod(out_shape[2:])
     kernel_size = prod(w_shape[2:])
-    flop = batch_size * out_size * Cout_dim * Cin_dim * kernel_size
+    flop = batch_size * out_size * cout_dim * cin_dim * kernel_size
     flop_counter = Counter({"conv": flop})
     return flop_counter
 
@@ -538,19 +538,19 @@ def flop_count(
     return final_count
 
 
-def warmup(model, inputs, N=10):
-    for _i in range(N):
+def warmup(model, inputs, n=10):
+    for _i in range(n):
         model(inputs)
     torch.cuda.synchronize()
 
 
-def measure_time(model, inputs, N=10):
+def measure_time(model, inputs, n=10):
     warmup(model, inputs)
     s = time.time()
-    for _i in range(N):
+    for _i in range(n):
         model(inputs)
     torch.cuda.synchronize()
-    t = (time.time() - s) / N
+    t = (time.time() - s) / n
     return t
 
 

@@ -60,8 +60,16 @@ class TestQuickTraining(unittest.TestCase):
         # Load configuration
         config = load_config(self.config_path)
 
-        # Convert to args for backward compatibility
-        config_args = config.to_args()
+        # Create args directly without going through to_args() which causes duplicates
+        config_args = argparse.Namespace(
+            device="cpu",
+            num_classes=config.model.num_classes,
+            resolution=config.model.resolution,
+            encoder=config.model.encoder,
+            out_feature_indexes=config.model.out_feature_indexes,
+            hidden_dim=config.model.hidden_dim,
+            projector_scale=config.model.projector_scale,
+        )
 
         # Override with test-specific settings
         config_args.batch_size = 1

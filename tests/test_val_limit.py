@@ -9,6 +9,7 @@
 Test script to verify the validation dataset can be limited to a specific number of samples.
 """
 
+import argparse
 import unittest
 from pathlib import Path
 
@@ -24,7 +25,12 @@ class TestValLimit(unittest.TestCase):
         # Load the default config
         config_path = Path(__file__).parent.parent / "configs" / "default.yaml"
         config = load_config(config_path)
-        args = config.to_args()
+        args = argparse.Namespace(
+            device="cpu",
+            num_classes=config.model.num_classes,
+            resolution=config.model.resolution,
+            val_limit=10,  # Set a specific validation limit for testing
+        )
 
         # Set val_limit to a small number
         val_limit = 50

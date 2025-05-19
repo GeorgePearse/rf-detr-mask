@@ -43,6 +43,29 @@ except ImportError:
     DEPRECATED_AMP = True
 
 
+def do_evaluation_during_training(
+    model, criterion, postprocessors, val_data_loader, base_ds, device, args, step_counter, logger
+):
+    """Helper function to evaluate model during training."""
+    logger.info(f"Running evaluation at step {step_counter}")
+    model.eval()
+    with torch.no_grad():
+        eval_stats, coco_evaluator = evaluate(
+            model,
+            criterion,
+            postprocessors,
+            val_data_loader,
+            base_ds,
+            device,
+            args=args,
+        )
+        logger.info(
+            f"Step {step_counter} evaluation: mAP={eval_stats['coco_eval_bbox'][0]:.4f}"
+        )
+    model.train()
+    return eval_stats, coco_evaluator
+
+
 def get_autocast_args(args):
     # Prefer bfloat16 if available, otherwise use float16
     dtype = (
@@ -120,24 +143,20 @@ def train_one_epoch(
             and val_data_loader is not None
             and base_ds is not None
             and postprocessors is not None
+            and step_counter > 0 
+            and step_counter % eval_freq == 0
         ):
-            if step_counter > 0 and step_counter % eval_freq == 0:
-                logger.info(f"Running evaluation at step {step_counter}")
-                model.eval()
-                with torch.no_grad():
-                    eval_stats, coco_evaluator = evaluate(
-                        model,
-                        criterion,
-                        postprocessors,
-                        val_data_loader,
-                        base_ds,
-                        device,
-                        args=args,
-                    )
-                    logger.info(
-                        f"Step {step_counter} evaluation: mAP={eval_stats['coco_eval_bbox'][0]:.4f}"
-                    )
-                model.train()
+            do_evaluation_during_training(
+                model=model,
+                criterion=criterion,
+                postprocessors=postprocessors,
+                val_data_loader=val_data_loader,
+                base_ds=base_ds,
+                device=device,
+                args=args,
+                step_counter=step_counter,
+                logger=logger
+            )
 
         it = start_steps + data_iter_step
         callback_dict = {

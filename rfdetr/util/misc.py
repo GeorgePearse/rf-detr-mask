@@ -245,7 +245,7 @@ class MetricLogger:
                     "data: {data}",
                 ]
             )
-        MB = 1024.0 * 1024.0
+        mb = 1024.0 * 1024.0
         for obj in iterable:
             data_time.update(time.time() - end)
             yield obj
@@ -265,7 +265,7 @@ class MetricLogger:
                             meters=str(self),
                             time=str(iter_time),
                             data=str(data_time),
-                            memory=torch.cuda.max_memory_allocated() / MB,
+                            memory=torch.cuda.max_memory_allocated() / mb,
                         )
                     )
                 else:

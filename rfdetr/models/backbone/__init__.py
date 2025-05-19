@@ -7,7 +7,8 @@
 # Copyright (c) 2024 Baidu. All Rights Reserved.
 # ------------------------------------------------------------------------
 
-from typing import Callable, Dict, List
+from typing import Callable
+from collections.abc import Dict, List
 
 import torch
 from torch import nn

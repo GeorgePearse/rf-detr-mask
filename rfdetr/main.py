@@ -76,89 +76,126 @@ def download_pretrain_weights(pretrain_weights: str, redownload=False):
 class Model:
     def __init__(self, **kwargs):
         args = populate_args(**kwargs)
+        self._initialize_model_structure(args)
+        self._load_pretrained_weights(args)
+        self._apply_lora_if_needed(args)
+        self._finalize_model_setup(args)
+
+    def _initialize_model_structure(self, args):
+        """Initialize the base model structure."""
         self.resolution = args.resolution
         self.model = build_model(args)
         self.device = torch.device(args.device)
         _, self.postprocessors = build_criterion_and_postprocessors(args)
-        if args.pretrain_weights is not None:
-            print("Loading pretrain weights")
-            try:
-                checkpoint = torch.load(
-                    args.pretrain_weights, map_location="cpu", weights_only=False
-                )
-            except Exception as e:
-                print(f"Failed to load pretrain weights: {e}")
-                # re-download weights if they are corrupted
-                print("Failed to load pretrain weights, re-downloading")
-                download_pretrain_weights(args.pretrain_weights, redownload=True)
-                checkpoint = torch.load(
-                    args.pretrain_weights, map_location="cpu", weights_only=False
-                )
+        self.stop_early = False
 
-            # Extract class_names from checkpoint if available
-            if "args" in checkpoint and hasattr(checkpoint["args"], "class_names"):
-                self.class_names = checkpoint["args"].class_names
+    def _load_pretrained_weights(self, args):
+        """Load pretrained weights if specified."""
+        if args.pretrain_weights is None:
+            return
 
-            checkpoint_num_classes = checkpoint["model"]["class_embed.bias"].shape[0]
-            if checkpoint_num_classes != args.num_classes + 1:
-                logger.warning(
-                    f"num_classes mismatch: pretrain weights has {checkpoint_num_classes - 1} classes, but your model has {args.num_classes} classes\n"
-                    f"reinitializing detection head with {checkpoint_num_classes - 1} classes"
-                )
-                self.reinitialize_detection_head(checkpoint_num_classes)
-            # add support to exclude_keys
-            # e.g., when load object365 pretrain, do not load `class_embed.[weight, bias]`
-            if args.pretrain_exclude_keys is not None:
-                assert isinstance(args.pretrain_exclude_keys, list)
-                for exclude_key in args.pretrain_exclude_keys:
-                    checkpoint["model"].pop(exclude_key)
-            if args.pretrain_keys_modify_to_load is not None:
-                from util.obj365_to_coco_model import get_coco_pretrain_from_obj365
+        print("Loading pretrain weights")
+        checkpoint = self._load_checkpoint(args.pretrain_weights)
 
-                assert isinstance(args.pretrain_keys_modify_to_load, list)
-                for modify_key_to_load in args.pretrain_keys_modify_to_load:
-                    try:
-                        checkpoint["model"][modify_key_to_load] = get_coco_pretrain_from_obj365(
-                            self.model.state_dict()[modify_key_to_load],
-                            checkpoint["model"][modify_key_to_load],
-                        )
-                    except Exception as e:
-                        print(f"Failed to load {modify_key_to_load}, deleting from checkpoint: {e}")
-                        checkpoint["model"].pop(modify_key_to_load)
+        # Extract class_names from checkpoint if available
+        if "args" in checkpoint and hasattr(checkpoint["args"], "class_names"):
+            self.class_names = checkpoint["args"].class_names
 
-            # we may want to resume training with a smaller number of groups for group detr
-            num_desired_queries = args.num_queries * args.group_detr
-            query_param_names = ["refpoint_embed.weight", "query_feat.weight"]
-            for name, state in checkpoint["model"].items():
-                if any(name.endswith(x) for x in query_param_names):
-                    checkpoint["model"][name] = state[:num_desired_queries]
+        # Handle class mismatch
+        self._handle_class_mismatch(args, checkpoint)
 
-            self.model.load_state_dict(checkpoint["model"], strict=False)
+        # Process exclude keys
+        self._process_exclude_keys(args, checkpoint)
 
-        if args.backbone_lora:
-            print("Applying LORA to backbone")
-            lora_config = LoraConfig(
-                r=16,
-                lora_alpha=16,
-                use_dora=True,
-                target_modules=[
-                    "q_proj",
-                    "v_proj",
-                    "k_proj",  # covers OWL-ViT
-                    "qkv",  # covers open_clip ie Siglip2
-                    "query",
-                    "key",
-                    "value",
-                    "cls_token",
-                    "register_tokens",  # covers Dinov2 with windowed attn
-                ],
+        # Process keys to modify
+        self._process_keys_to_modify(args, checkpoint)
+
+        # Update query parameters for group detr
+        self._update_query_params(args, checkpoint)
+
+        # Load state dict
+        self.model.load_state_dict(checkpoint["model"], strict=False)
+
+    def _load_checkpoint(self, weights_path):
+        """Load checkpoint with retry on failure."""
+        try:
+            return torch.load(weights_path, map_location="cpu", weights_only=False)
+        except Exception as e:
+            print(f"Failed to load pretrain weights: {e}")
+            print("Failed to load pretrain weights, re-downloading")
+            download_pretrain_weights(weights_path, redownload=True)
+            return torch.load(weights_path, map_location="cpu", weights_only=False)
+
+    def _handle_class_mismatch(self, args, checkpoint):
+        """Handle mismatch between checkpoint classes and model classes."""
+        checkpoint_num_classes = checkpoint["model"]["class_embed.bias"].shape[0]
+        if checkpoint_num_classes != args.num_classes + 1:
+            logger.warning(
+                f"num_classes mismatch: pretrain weights has {checkpoint_num_classes - 1} classes, "
+                f"but your model has {args.num_classes} classes\n"
+                f"reinitializing detection head with {checkpoint_num_classes - 1} classes"
             )
-            self.model.backbone[0].encoder = get_peft_model(
-                self.model.backbone[0].encoder, lora_config
-            )
+            self.reinitialize_detection_head(checkpoint_num_classes)
+
+    def _process_exclude_keys(self, args, checkpoint):
+        """Process keys to exclude from checkpoint."""
+        if args.pretrain_exclude_keys is not None:
+            assert isinstance(args.pretrain_exclude_keys, list)
+            for exclude_key in args.pretrain_exclude_keys:
+                checkpoint["model"].pop(exclude_key)
+
+    def _process_keys_to_modify(self, args, checkpoint):
+        """Process keys that need modification before loading."""
+        if args.pretrain_keys_modify_to_load is not None:
+            from rfdetr.util.obj365_to_coco_model import get_coco_pretrain_from_obj365
+
+            assert isinstance(args.pretrain_keys_modify_to_load, list)
+            for modify_key_to_load in args.pretrain_keys_modify_to_load:
+                try:
+                    checkpoint["model"][modify_key_to_load] = get_coco_pretrain_from_obj365(
+                        self.model.state_dict()[modify_key_to_load],
+                        checkpoint["model"][modify_key_to_load],
+                    )
+                except Exception as e:
+                    print(f"Failed to load {modify_key_to_load}, deleting from checkpoint: {e}")
+                    checkpoint["model"].pop(modify_key_to_load)
+
+    def _update_query_params(self, args, checkpoint):
+        """Update query parameters for group detr."""
+        num_desired_queries = args.num_queries * args.group_detr
+        query_param_names = ["refpoint_embed.weight", "query_feat.weight"]
+        for name, state in checkpoint["model"].items():
+            if any(name.endswith(x) for x in query_param_names):
+                checkpoint["model"][name] = state[:num_desired_queries]
+
+    def _apply_lora_if_needed(self, args):
+        """Apply LoRA to backbone if needed."""
+        if not args.backbone_lora:
+            return
+
+        print("Applying LORA to backbone")
+        lora_config = LoraConfig(
+            r=16,
+            lora_alpha=16,
+            use_dora=True,
+            target_modules=[
+                "q_proj",
+                "v_proj",
+                "k_proj",  # covers OWL-ViT
+                "qkv",  # covers open_clip ie Siglip2
+                "query",
+                "key",
+                "value",
+                "cls_token",
+                "register_tokens",  # covers Dinov2 with windowed attn
+            ],
+        )
+        self.model.backbone[0].encoder = get_peft_model(self.model.backbone[0].encoder, lora_config)
+
+    def _finalize_model_setup(self, args):
+        """Final model setup steps."""
         self.model = self.model.to(self.device)
         self.criterion, self.postprocessors = build_criterion_and_postprocessors(args)
-        self.stop_early = False
 
     def reinitialize_detection_head(self, num_classes):
         self.model.reinitialize_detection_head(num_classes)
@@ -168,6 +205,65 @@ class Model:
         print("Early stopping requested, will complete current epoch and stop")
 
     def train(self, callbacks: defaultdict[str, list[Callable]], **kwargs):
+        """Main training loop for the model."""
+        # Validate callbacks and setup the environment
+        self._validate_callbacks(callbacks)
+        args = populate_args(**kwargs)
+        model, model_without_ddp, device = self._setup_training_environment(args)
+
+        # Setup data and optimization components
+        criterion, postprocessors = build_criterion_and_postprocessors(args)
+        optimizer, lr_scheduler = self._setup_optimizer(model_without_ddp, args)
+
+        # Setup datasets and dataloaders
+        data_loader_train, data_loader_val, base_ds, n_parameters = (
+            self._setup_datasets_and_loaders(args, model_without_ddp, kwargs)
+        )
+
+        # Handle resuming from checkpoint
+        if args.resume:
+            self._resume_from_checkpoint(args, model_without_ddp, optimizer, lr_scheduler)
+
+        # Handle evaluation mode
+        if args.eval:
+            self._run_evaluation(
+                model, criterion, postprocessors, data_loader_val, base_ds, device, args
+            )
+            return
+
+        # Setup drop schedules
+        schedules = self._setup_drop_schedules(args, data_loader_train)
+
+        # Main training loop
+        best_metrics = self._run_training_loop(
+            args,
+            model,
+            model_without_ddp,
+            criterion,
+            optimizer,
+            lr_scheduler,
+            data_loader_train,
+            data_loader_val,
+            base_ds,
+            postprocessors,
+            device,
+            n_parameters,
+            schedules,
+            callbacks,
+        )
+
+        # Save final results
+        self._save_final_results(args, best_metrics)
+
+        # Finalize model
+        self._finalize_model(best_metrics)
+
+        # Call final callbacks
+        for callback in callbacks["on_train_end"]:
+            callback()
+
+    def _validate_callbacks(self, callbacks):
+        """Validate that all callbacks are supported."""
         currently_supported_callbacks = ["on_fit_epoch_end", "on_train_batch_start", "on_train_end"]
         for key in callbacks:
             if key not in currently_supported_callbacks:
@@ -175,7 +271,9 @@ class Model:
                     f"Callback {key} is not currently supported, please file an issue if you need it!\n"
                     f"Currently supported callbacks: {currently_supported_callbacks}"
                 )
-        args = populate_args(**kwargs)
+
+    def _setup_training_environment(self, args):
+        """Setup the training environment including distributed training."""
         utils.init_distributed_mode(args)
         print(f"git:\n  {utils.get_sha()}\n")
         print(args)
@@ -187,10 +285,11 @@ class Model:
         np.random.seed(seed)
         random.seed(seed)
 
-        criterion, postprocessors = build_criterion_and_postprocessors(args)
+        # Setup model
         model = self.model
         model.to(device)
 
+        # Handle distributed training
         model_without_ddp = model
         if args.distributed:
             if args.sync_bn:
@@ -200,19 +299,24 @@ class Model:
             )
             model_without_ddp = model.module
 
-        n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        print("number of params:", n_parameters)
+        return model, model_without_ddp, device
+
+    def _setup_optimizer(self, model_without_ddp, args):
+        """Setup optimizer and learning rate scheduler."""
         param_dicts = get_param_dict(args, model_without_ddp)
-
         param_dicts = [p for p in param_dicts if p["params"].requires_grad]
-
         optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
-        # Choose the learning rate scheduler based on the new argument
 
+        # For cosine annealing, create a lambda function for the scheduler
+        lr_lambda = self._create_lr_lambda(args)
+        lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+
+        return optimizer, lr_scheduler
+
+    def _create_lr_lambda(self, args):
+        """Create a learning rate lambda function for the scheduler."""
+        # These calculations are needed for the lr_lambda function
         dataset_train = build_dataset(image_set="train", args=args, resolution=args.resolution)
-        dataset_val = build_dataset(image_set="val", args=args, resolution=args.resolution)
-
-        # for cosine annealing, calculate total training steps and warmup steps
         total_batch_size_for_lr = args.batch_size * utils.get_world_size() * args.grad_accum_steps
         num_training_steps_per_epoch_lr = (
             len(dataset_train) + total_batch_size_for_lr - 1
@@ -220,6 +324,7 @@ class Model:
         total_training_steps_lr = num_training_steps_per_epoch_lr * args.epochs
         warmup_steps_lr = num_training_steps_per_epoch_lr * args.warmup_epochs
 
+        # Define the lambda function
         def lr_lambda(current_step: int):
             if current_step < warmup_steps_lr:
                 # Linear warmup
@@ -239,8 +344,14 @@ class Model:
                     else:
                         return 0.1
 
-        lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda)
+        return lr_lambda
 
+    def _setup_datasets_and_loaders(self, args, model_without_ddp, kwargs):
+        """Setup datasets and data loaders."""
+        dataset_train = build_dataset(image_set="train", args=args, resolution=args.resolution)
+        dataset_val = build_dataset(image_set="val", args=args, resolution=args.resolution)
+
+        # Setup samplers
         if args.distributed:
             sampler_train = DistributedSampler(dataset_train)
             sampler_val = DistributedSampler(dataset_val, shuffle=False)
@@ -248,18 +359,63 @@ class Model:
             sampler_train = torch.utils.data.RandomSampler(dataset_train)
             sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
+        # Create data loaders
         effective_batch_size = args.batch_size * args.grad_accum_steps
+
+        # Handle small datasets specially
+        data_loader_train = self._create_train_loader(
+            args, dataset_train, sampler_train, effective_batch_size, kwargs
+        )
+
+        # Create validation loader
+        data_loader_val = DataLoader(
+            dataset_val,
+            args.batch_size,
+            sampler=sampler_val,
+            drop_last=False,
+            collate_fn=utils.collate_fn,
+            num_workers=args.num_workers,
+        )
+
+        # Get COCO API for evaluation
+        base_ds = get_coco_api_from_dataset(dataset_val)
+
+        # Model EMA setup
+        if args.use_ema:
+            self.ema_m = ModelEma(model_without_ddp, decay=args.ema_decay, tau=args.ema_tau)
+        else:
+            self.ema_m = None
+
+        # Run benchmark if requested
+        output_dir = Path(args.output_dir)
+        if utils.is_main_process() and args.do_benchmark:
+            benchmark_model = copy.deepcopy(model_without_ddp)
+            bm = benchmark(benchmark_model.float(), dataset_val, output_dir)
+            print(json.dumps(bm, indent=2))
+            del benchmark_model
+
+        # Count parameters
+        n_parameters = sum(p.numel() for p in model_without_ddp.parameters() if p.requires_grad)
+        print("number of params:", n_parameters)
+
+        return data_loader_train, data_loader_val, base_ds, n_parameters
+
+    def _create_train_loader(
+        self, args, dataset_train, sampler_train, effective_batch_size, kwargs
+    ):
+        """Create the training data loader, handling small datasets specially."""
         min_batches = kwargs.get("min_batches", 5)
         if len(dataset_train) < effective_batch_size * min_batches:
             logger.info(
-                f"Training with uniform sampler because dataset is too small: {len(dataset_train)} < {effective_batch_size * min_batches}"
+                f"Training with uniform sampler because dataset is too small: "
+                f"{len(dataset_train)} < {effective_batch_size * min_batches}"
             )
             sampler = torch.utils.data.RandomSampler(
                 dataset_train,
                 replacement=True,
                 num_samples=effective_batch_size * min_batches,
             )
-            data_loader_train = DataLoader(
+            return DataLoader(
                 dataset_train,
                 batch_size=effective_batch_size,
                 collate_fn=utils.collate_fn,
@@ -270,72 +426,59 @@ class Model:
             batch_sampler_train = torch.utils.data.BatchSampler(
                 sampler_train, effective_batch_size, drop_last=True
             )
-            data_loader_train = DataLoader(
+            return DataLoader(
                 dataset_train,
                 batch_sampler=batch_sampler_train,
                 collate_fn=utils.collate_fn,
                 num_workers=args.num_workers,
             )
 
-        data_loader_val = DataLoader(
-            dataset_val,
-            args.batch_size,
-            sampler=sampler_val,
-            drop_last=False,
-            collate_fn=utils.collate_fn,
-            num_workers=args.num_workers,
-        )
+    def _resume_from_checkpoint(self, args, model_without_ddp, optimizer, lr_scheduler):
+        """Resume training from a checkpoint."""
+        checkpoint = torch.load(args.resume, map_location="cpu", weights_only=False)
+        model_without_ddp.load_state_dict(checkpoint["model"], strict=True)
 
-        base_ds = get_coco_api_from_dataset(dataset_val)
-
+        # Handle EMA
         if args.use_ema:
-            self.ema_m = ModelEma(model_without_ddp, decay=args.ema_decay, tau=args.ema_tau)
-        else:
-            self.ema_m = None
+            if "ema_model" in checkpoint:
+                self.ema_m.module.load_state_dict(clean_state_dict(checkpoint["ema_model"]))
+            else:
+                del self.ema_m
+                self.ema_m = ModelEma(model_without_ddp, decay=args.ema_decay, tau=args.ema_tau)
 
+        # Resume optimizer and scheduler if not in eval mode
+        if (
+            not args.eval
+            and "optimizer" in checkpoint
+            and "lr_scheduler" in checkpoint
+            and "epoch" in checkpoint
+        ):
+            optimizer.load_state_dict(checkpoint["optimizer"])
+            lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
+            args.start_epoch = checkpoint["epoch"] + 1
+
+    def _run_evaluation(
+        self, model, criterion, postprocessors, data_loader_val, base_ds, device, args
+    ):
+        """Run evaluation only."""
+        test_stats, coco_evaluator = evaluate(
+            model, criterion, postprocessors, data_loader_val, base_ds, device, args
+        )
         output_dir = Path(args.output_dir)
+        if args.output_dir:
+            utils.save_on_master(coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval.pth")
 
-        if utils.is_main_process():
-            print("Get benchmark")
-            if args.do_benchmark:
-                benchmark_model = copy.deepcopy(model_without_ddp)
-                bm = benchmark(benchmark_model.float(), dataset_val, output_dir)
-                print(json.dumps(bm, indent=2))
-                del benchmark_model
-
-        if args.resume:
-            checkpoint = torch.load(args.resume, map_location="cpu", weights_only=False)
-            model_without_ddp.load_state_dict(checkpoint["model"], strict=True)
-            if args.use_ema:
-                if "ema_model" in checkpoint:
-                    self.ema_m.module.load_state_dict(clean_state_dict(checkpoint["ema_model"]))
-                else:
-                    del self.ema_m
-                    self.ema_m = ModelEma(model, decay=args.ema_decay, tau=args.ema_tau)
-            if (
-                not args.eval
-                and "optimizer" in checkpoint
-                and "lr_scheduler" in checkpoint
-                and "epoch" in checkpoint
-            ):
-                optimizer.load_state_dict(checkpoint["optimizer"])
-                lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
-                args.start_epoch = checkpoint["epoch"] + 1
-
-        if args.eval:
-            test_stats, coco_evaluator = evaluate(
-                model, criterion, postprocessors, data_loader_val, base_ds, device, args
-            )
-            if args.output_dir:
-                utils.save_on_master(coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval.pth")
-            return
-
-        # for drop
+    def _setup_drop_schedules(self, args, dataset_train):
+        """Setup dropout and drop path schedules."""
+        effective_batch_size = args.batch_size * args.grad_accum_steps
         total_batch_size = effective_batch_size * utils.get_world_size()
         num_training_steps_per_epoch = (
             len(dataset_train) + total_batch_size - 1
         ) // total_batch_size
+
         schedules = {}
+
+        # Setup dropout schedule if needed
         if args.dropout > 0:
             schedules["do"] = drop_scheduler(
                 args.dropout,
@@ -351,6 +494,7 @@ class Model:
                 )
             )
 
+        # Setup drop path schedule if needed
         if args.drop_path > 0:
             schedules["dp"] = drop_scheduler(
                 args.drop_path,
@@ -366,197 +510,409 @@ class Model:
                 )
             )
 
+        return schedules, num_training_steps_per_epoch
+
+    def _run_training_loop(
+        self,
+        args,
+        model,
+        model_without_ddp,
+        criterion,
+        optimizer,
+        lr_scheduler,
+        data_loader_train,
+        data_loader_val,
+        base_ds,
+        postprocessors,
+        device,
+        n_parameters,
+        schedules_tuple,
+        callbacks,
+    ):
+        """Run the main training loop."""
+        schedules, num_training_steps_per_epoch = schedules_tuple
+        effective_batch_size = args.batch_size * args.grad_accum_steps
+        output_dir = Path(args.output_dir)
+
         print("Start training")
         start_time = time.time()
-        best_map_holder = BestMetricHolder(use_ema=args.use_ema)
-        best_map_5095 = 0
-        best_map_50 = 0
-        best_map_ema_5095 = 0
-        best_map_ema_50 = 0
+
+        # Track best metrics
+        best_metrics = {
+            "map_holder": BestMetricHolder(use_ema=args.use_ema),
+            "map_5095": 0,
+            "map_50": 0,
+            "map_ema_5095": 0,
+            "map_ema_50": 0,
+        }
+
+        # Main epoch loop
         for epoch in range(args.start_epoch, args.epochs):
-            epoch_start_time = time.time()
-            if args.distributed:
-                sampler_train.set_epoch(epoch)
+            if self.stop_early:
+                print(f"Early stopping requested, stopping at epoch {epoch}")
+                break
 
-            model.train()
-            criterion.train()
-            # Define evaluation frequency in steps
-            eval_freq = getattr(
-                args, "eval_freq_steps", 1000
-            )  # Default to 1000 steps if not provided
-
-            train_stats = train_one_epoch(
+            # Process this epoch
+            best_metrics = self._process_epoch(
+                args,
+                epoch,
                 model,
+                model_without_ddp,
                 criterion,
+                optimizer,
                 lr_scheduler,
                 data_loader_train,
-                optimizer,
+                data_loader_val,
+                base_ds,
+                postprocessors,
                 device,
-                epoch,
+                n_parameters,
+                schedules,
+                num_training_steps_per_epoch,
+                best_metrics,
+                output_dir,
+                callbacks,
                 effective_batch_size,
-                args.clip_max_norm,
-                ema_m=self.ema_m,
-                schedules=schedules,
-                num_training_steps_per_epoch=num_training_steps_per_epoch,
-                vit_encoder_num_layers=args.vit_encoder_num_layers,
-                args=args,
-                callbacks=callbacks,
-                eval_freq=eval_freq,
-                val_data_loader=data_loader_val,
-                base_ds=base_ds,
-                postprocessors=postprocessors,
             )
-            train_epoch_time = time.time() - epoch_start_time
-            train_epoch_time_str = str(datetime.timedelta(seconds=int(train_epoch_time)))
-            if args.output_dir:
-                checkpoint_paths = [output_dir / "checkpoint.pth"]
-                # extra checkpoint before LR drop and every `checkpoint_interval` epochs
-                if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % args.checkpoint_interval == 0:
-                    checkpoint_paths.append(output_dir / f"checkpoint{epoch:04}.pth")
-                for checkpoint_path in checkpoint_paths:
-                    weights = {
+
+        return best_metrics
+
+    def _process_epoch(
+        self,
+        args,
+        epoch,
+        model,
+        model_without_ddp,
+        criterion,
+        optimizer,
+        lr_scheduler,
+        data_loader_train,
+        data_loader_val,
+        base_ds,
+        postprocessors,
+        device,
+        n_parameters,
+        schedules,
+        num_training_steps_per_epoch,
+        best_metrics,
+        output_dir,
+        callbacks,
+        effective_batch_size,
+    ):
+        """Process a single epoch of training."""
+        epoch_start_time = time.time()
+
+        # Set epoch for distributed training
+        if args.distributed and hasattr(data_loader_train.sampler, "set_epoch"):
+            data_loader_train.sampler.set_epoch(epoch)
+
+        # Set model and criterion to training mode
+        model.train()
+        criterion.train()
+
+        # Get evaluation frequency
+        eval_freq = getattr(args, "eval_freq_steps", 1000)
+
+        # Train one epoch
+        train_stats = train_one_epoch(
+            model,
+            criterion,
+            lr_scheduler,
+            data_loader_train,
+            optimizer,
+            device,
+            epoch,
+            effective_batch_size,
+            args.clip_max_norm,
+            ema_m=self.ema_m,
+            schedules=schedules,
+            num_training_steps_per_epoch=num_training_steps_per_epoch,
+            vit_encoder_num_layers=args.vit_encoder_num_layers,
+            args=args,
+            callbacks=callbacks,
+            eval_freq=eval_freq,
+            val_data_loader=data_loader_val,
+            base_ds=base_ds,
+            postprocessors=postprocessors,
+        )
+
+        # Save checkpoints if needed
+        self._save_epoch_checkpoints(
+            args, epoch, model_without_ddp, optimizer, lr_scheduler, output_dir
+        )
+
+        # Evaluate model
+        test_stats, coco_evaluator = self._evaluate_model(
+            model, criterion, postprocessors, data_loader_val, base_ds, device, args
+        )
+
+        # Update regular model metrics
+        best_metrics = self._update_regular_model_metrics(
+            args,
+            epoch,
+            model_without_ddp,
+            optimizer,
+            lr_scheduler,
+            test_stats,
+            best_metrics,
+            output_dir,
+        )
+
+        # Process EMA model if enabled
+        if args.use_ema:
+            best_metrics = self._process_ema_model(
+                args,
+                epoch,
+                optimizer,
+                lr_scheduler,
+                criterion,
+                postprocessors,
+                data_loader_val,
+                base_ds,
+                device,
+                best_metrics,
+                output_dir,
+            )
+
+        # Log results
+        log_stats = self._create_log_stats(
+            train_stats, test_stats, epoch, n_parameters, best_metrics, epoch_start_time
+        )
+
+        # Save evaluation logs
+        self._save_evaluation_logs(args, epoch, coco_evaluator, output_dir, log_stats)
+
+        # Call epoch end callbacks
+        for callback in callbacks["on_fit_epoch_end"]:
+            callback(log_stats)
+
+        return best_metrics
+
+    def _save_epoch_checkpoints(
+        self, args, epoch, model_without_ddp, optimizer, lr_scheduler, output_dir
+    ):
+        """Save checkpoints at the end of an epoch."""
+        if not args.output_dir:
+            return
+
+        checkpoint_paths = [output_dir / "checkpoint.pth"]
+
+        # Save extra checkpoints before LR drop and at checkpoint intervals
+        if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % args.checkpoint_interval == 0:
+            checkpoint_paths.append(output_dir / f"checkpoint{epoch:04}.pth")
+
+        # Prepare weights dictionary
+        weights = {
+            "model": model_without_ddp.state_dict(),
+            "optimizer": optimizer.state_dict(),
+            "lr_scheduler": lr_scheduler.state_dict(),
+            "epoch": epoch,
+            "args": args,
+        }
+
+        # Add EMA model if using it
+        if args.use_ema:
+            weights.update({"ema_model": self.ema_m.module.state_dict()})
+
+        # Save weights
+        if not args.dont_save_weights:
+            for checkpoint_path in checkpoint_paths:
+                # Create checkpoint directory
+                checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+                utils.save_on_master(weights, checkpoint_path)
+
+    def _evaluate_model(
+        self, model, criterion, postprocessors, data_loader_val, base_ds, device, args
+    ):
+        """Evaluate the model on the validation set."""
+        with torch.inference_mode():
+            return evaluate(
+                model, criterion, postprocessors, data_loader_val, base_ds, device, args=args
+            )
+
+    def _update_regular_model_metrics(
+        self,
+        args,
+        epoch,
+        model_without_ddp,
+        optimizer,
+        lr_scheduler,
+        test_stats,
+        best_metrics,
+        output_dir,
+    ):
+        """Update metrics for the regular (non-EMA) model."""
+        map_regular = test_stats["coco_eval_bbox"][0]
+        is_best = best_metrics["map_holder"].update(map_regular, epoch, is_ema=False)
+
+        if is_best:
+            best_metrics["map_5095"] = max(best_metrics["map_5095"], map_regular)
+            best_metrics["map_50"] = max(best_metrics["map_50"], test_stats["coco_eval_bbox"][1])
+
+            # Save best regular model checkpoint
+            if not args.dont_save_weights and args.output_dir:
+                checkpoint_path = output_dir / "checkpoint_best_regular.pth"
+                utils.save_on_master(
+                    {
                         "model": model_without_ddp.state_dict(),
                         "optimizer": optimizer.state_dict(),
                         "lr_scheduler": lr_scheduler.state_dict(),
                         "epoch": epoch,
                         "args": args,
-                    }
-                    if args.use_ema:
-                        weights.update(
-                            {
-                                "ema_model": self.ema_m.module.state_dict(),
-                            }
-                        )
-                    if not args.dont_save_weights:
-                        # create checkpoint dir
-                        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-
-                        utils.save_on_master(weights, checkpoint_path)
-
-            with torch.inference_mode():
-                test_stats, coco_evaluator = evaluate(
-                    model, criterion, postprocessors, data_loader_val, base_ds, device, args=args
+                    },
+                    checkpoint_path,
                 )
 
-            map_regular = test_stats["coco_eval_bbox"][0]
-            _isbest = best_map_holder.update(map_regular, epoch, is_ema=False)
-            if _isbest:
-                best_map_5095 = max(best_map_5095, map_regular)
-                best_map_50 = max(best_map_50, test_stats["coco_eval_bbox"][1])
-                checkpoint_path = output_dir / "checkpoint_best_regular.pth"
-                if not args.dont_save_weights:
-                    utils.save_on_master(
-                        {
-                            "model": model_without_ddp.state_dict(),
-                            "optimizer": optimizer.state_dict(),
-                            "lr_scheduler": lr_scheduler.state_dict(),
-                            "epoch": epoch,
-                            "args": args,
-                        },
-                        checkpoint_path,
-                    )
-            log_stats = {
-                **{f"train_{k}": v for k, v in train_stats.items()},
-                **{f"test_{k}": v for k, v in test_stats.items()},
-                "epoch": epoch,
-                "n_parameters": n_parameters,
-            }
-            if args.use_ema:
-                ema_test_stats, _ = evaluate(
-                    self.ema_m.module,
-                    criterion,
-                    postprocessors,
-                    data_loader_val,
-                    base_ds,
-                    device,
-                    args=args,
-                )
-                log_stats.update({f"ema_test_{k}": v for k, v in ema_test_stats.items()})
-                map_ema = ema_test_stats["coco_eval_bbox"][0]
-                best_map_ema_5095 = max(best_map_ema_5095, map_ema)
-                _isbest = best_map_holder.update(map_ema, epoch, is_ema=True)
-                if _isbest:
-                    best_map_ema_50 = max(best_map_ema_50, ema_test_stats["coco_eval_bbox"][1])
-                    checkpoint_path = output_dir / "checkpoint_best_ema.pth"
-                    if not args.dont_save_weights:
-                        utils.save_on_master(
-                            {
-                                "model": self.ema_m.module.state_dict(),
-                                "optimizer": optimizer.state_dict(),
-                                "lr_scheduler": lr_scheduler.state_dict(),
-                                "epoch": epoch,
-                                "args": args,
-                            },
-                            checkpoint_path,
-                        )
-            log_stats.update(best_map_holder.summary())
+        return best_metrics
 
-            # epoch parameters
-            ep_paras = {"epoch": epoch, "n_parameters": n_parameters}
-            log_stats.update(ep_paras)
-            with contextlib.suppress(Exception):
-                log_stats.update({"now_time": str(datetime.datetime.now())})
-            log_stats["train_epoch_time"] = train_epoch_time_str
-            epoch_time = time.time() - epoch_start_time
-            epoch_time_str = str(datetime.timedelta(seconds=int(epoch_time)))
-            log_stats["epoch_time"] = epoch_time_str
-            if args.output_dir and utils.is_main_process():
-                with (output_dir / "log.txt").open("a") as f:
-                    f.write(json.dumps(log_stats) + "\n")
+    def _process_ema_model(
+        self,
+        args,
+        epoch,
+        optimizer,
+        lr_scheduler,
+        criterion,
+        postprocessors,
+        data_loader_val,
+        base_ds,
+        device,
+        best_metrics,
+        output_dir,
+    ):
+        """Process and evaluate the EMA model if enabled."""
+        ema_test_stats, _ = evaluate(
+            self.ema_m.module,
+            criterion,
+            postprocessors,
+            data_loader_val,
+            base_ds,
+            device,
+            args=args,
+        )
 
-                # for evaluation logs
-                if coco_evaluator is not None:
-                    (output_dir / "eval").mkdir(exist_ok=True)
-                    if "bbox" in coco_evaluator.coco_eval:
-                        filenames = ["latest.pth"]
-                        if epoch % 50 == 0:
-                            filenames.append(f"{epoch:03}.pth")
-                        for name in filenames:
-                            torch.save(
-                                coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval" / name
-                            )
+        map_ema = ema_test_stats["coco_eval_bbox"][0]
+        best_metrics["map_ema_5095"] = max(best_metrics["map_ema_5095"], map_ema)
 
-            for callback in callbacks["on_fit_epoch_end"]:
-                callback(log_stats)
+        is_best = best_metrics["map_holder"].update(map_ema, epoch, is_ema=True)
+        if is_best:
+            best_metrics["map_ema_50"] = max(
+                best_metrics["map_ema_50"], ema_test_stats["coco_eval_bbox"][1]
+            )
 
-            if self.stop_early:
-                print(f"Early stopping requested, stopping at epoch {epoch}")
-                break
-
-        best_is_ema = best_map_ema_5095 > best_map_5095
-
-        if utils.is_main_process():
-            if best_is_ema:
-                shutil.copy2(
-                    output_dir / "checkpoint_best_ema.pth", output_dir / "checkpoint_best_total.pth"
-                )
-            else:
-                shutil.copy2(
-                    output_dir / "checkpoint_best_regular.pth",
-                    output_dir / "checkpoint_best_total.pth",
+            # Save best EMA model checkpoint
+            if not args.dont_save_weights and args.output_dir:
+                checkpoint_path = output_dir / "checkpoint_best_ema.pth"
+                utils.save_on_master(
+                    {
+                        "model": self.ema_m.module.state_dict(),
+                        "optimizer": optimizer.state_dict(),
+                        "lr_scheduler": lr_scheduler.state_dict(),
+                        "epoch": epoch,
+                        "args": args,
+                    },
+                    checkpoint_path,
                 )
 
-            utils.strip_checkpoint(output_dir / "checkpoint_best_total.pth")
+        return best_metrics, ema_test_stats
 
-            best_map_5095 = max(best_map_5095, best_map_ema_5095)
-            best_map_50 = max(best_map_50, best_map_ema_50)
+    def _create_log_stats(
+        self, train_stats, test_stats, epoch, n_parameters, best_metrics, epoch_start_time
+    ):
+        """Create log statistics dictionary."""
+        log_stats = {
+            **{f"train_{k}": v for k, v in train_stats.items()},
+            **{f"test_{k}": v for k, v in test_stats.items()},
+            "epoch": epoch,
+            "n_parameters": n_parameters,
+        }
 
-            results_json = {"map95": best_map_5095, "map50": best_map_50, "class": "all"}
-            results = {"class_map": {"valid": [results_json]}}
-            with open(output_dir / "results.json", "w") as f:
-                json.dump(results, f)
+        # Add EMA stats if available
+        if hasattr(self, "ema_test_stats"):
+            log_stats.update({f"ema_test_{k}": v for k, v in self.ema_test_stats.items()})
 
-            total_time = time.time() - start_time
-            total_time_str = str(datetime.timedelta(seconds=int(total_time)))
-            print(f"Training time {total_time_str}")
-            print("Results saved to {}".format(output_dir / "results.json"))
+        # Add best metric summary
+        log_stats.update(best_metrics["map_holder"].summary())
 
+        # Add timing information
+        train_epoch_time = time.time() - epoch_start_time
+        train_epoch_time_str = str(datetime.timedelta(seconds=int(train_epoch_time)))
+        log_stats["train_epoch_time"] = train_epoch_time_str
+
+        epoch_time = time.time() - epoch_start_time
+        epoch_time_str = str(datetime.timedelta(seconds=int(epoch_time)))
+        log_stats["epoch_time"] = epoch_time_str
+
+        # Add timestamp
+        with contextlib.suppress(Exception):
+            log_stats.update({"now_time": str(datetime.datetime.now())})
+
+        return log_stats
+
+    def _save_evaluation_logs(self, args, epoch, coco_evaluator, output_dir, log_stats):
+        """Save evaluation logs."""
+        if not (args.output_dir and utils.is_main_process()):
+            return
+
+        # Save to log file
+        with (output_dir / "log.txt").open("a") as f:
+            f.write(json.dumps(log_stats) + "\n")
+
+        # Save evaluation results
+        if coco_evaluator is not None and "bbox" in coco_evaluator.coco_eval:
+            (output_dir / "eval").mkdir(exist_ok=True)
+            filenames = ["latest.pth"]
+            if epoch % 50 == 0:
+                filenames.append(f"{epoch:03}.pth")
+            for name in filenames:
+                torch.save(coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval" / name)
+
+    def _save_final_results(self, args, best_metrics):
+        """Save final results and best model."""
+        if not (args.output_dir and utils.is_main_process()):
+            return
+
+        output_dir = Path(args.output_dir)
+        best_is_ema = best_metrics["map_ema_5095"] > best_metrics["map_5095"]
+
+        # Copy best checkpoint
         if best_is_ema:
-            self.model = self.ema_m.module
-        self.model.eval()
+            shutil.copy2(
+                output_dir / "checkpoint_best_ema.pth", output_dir / "checkpoint_best_total.pth"
+            )
+        else:
+            shutil.copy2(
+                output_dir / "checkpoint_best_regular.pth",
+                output_dir / "checkpoint_best_total.pth",
+            )
 
-        for callback in callbacks["on_train_end"]:
-            callback()
+        # Strip checkpoint to reduce size
+        utils.strip_checkpoint(output_dir / "checkpoint_best_total.pth")
+
+        # Get best metrics
+        best_map_5095 = max(best_metrics["map_5095"], best_metrics["map_ema_5095"])
+        best_map_50 = max(best_metrics["map_50"], best_metrics["map_ema_50"])
+
+        # Save results JSON
+        results_json = {"map95": best_map_5095, "map50": best_map_50, "class": "all"}
+        results = {"class_map": {"valid": [results_json]}}
+        with open(output_dir / "results.json", "w") as f:
+            json.dump(results, f)
+
+        # Print final info
+        total_time = time.time() - self.start_time if hasattr(self, "start_time") else 0
+        total_time_str = str(datetime.timedelta(seconds=int(total_time)))
+        print(f"Training time {total_time_str}")
+        print("Results saved to {}".format(output_dir / "results.json"))
+
+    def _finalize_model(self, best_metrics):
+        """Finalize model state after training."""
+        # Use EMA model if it's better
+        best_is_ema = best_metrics["map_ema_5095"] > best_metrics["map_5095"]
+        if best_is_ema and hasattr(self, "ema_m") and self.ema_m is not None:
+            self.model = self.ema_m.module
+
+        # Set model to eval mode
+        self.model.eval()
 
     def export(
         self,
@@ -730,7 +1086,8 @@ class Model:
 #         export_main(**config)
 
 
-def get_args_parser():
+def get_args_parser() -> argparse.ArgumentParser:
+    """Get argument parser for command line interface."""
     parser = argparse.ArgumentParser("Set transformer detector", add_help=False)
     parser.add_argument("--num_classes", default=2, type=int)
     parser.add_argument("--grad_accum_steps", default=1, type=int)
@@ -1040,118 +1397,134 @@ def get_args_parser():
     return parser
 
 
-def populate_args(
+def populate_args(**kwargs) -> argparse.Namespace:
     # Basic training parameters
-    num_classes=2,
-    grad_accum_steps=1,
-    amp=False,
-    lr=1e-4,
-    lr_encoder=1.5e-4,
-    batch_size=2,
-    weight_decay=1e-4,
-    epochs=12,
-    lr_drop=11,
-    clip_max_norm=0.1,
-    lr_vit_layer_decay=0.8,
-    lr_component_decay=1.0,
-    do_benchmark=False,
+    num_classes = kwargs.get("num_classes", 2)
+    grad_accum_steps = kwargs.get("grad_accum_steps", 1)
+    amp = kwargs.get("amp", False)
+    lr = kwargs.get("lr", 1e-4)
+    lr_encoder = kwargs.get("lr_encoder", 1.5e-4)
+    batch_size = kwargs.get("batch_size", 2)
+    weight_decay = kwargs.get("weight_decay", 1e-4)
+    epochs = kwargs.get("epochs", 12)
+    lr_drop = kwargs.get("lr_drop", 11)
+    clip_max_norm = kwargs.get("clip_max_norm", 0.1)
+    lr_vit_layer_decay = kwargs.get("lr_vit_layer_decay", 0.8)
+    lr_component_decay = kwargs.get("lr_component_decay", 1.0)
+    do_benchmark = kwargs.get("do_benchmark", False)
+
     # Drop parameters
-    dropout=0,
-    drop_path=0,
-    drop_mode="standard",
-    drop_schedule="constant",
-    cutoff_epoch=0,
+    dropout = kwargs.get("dropout", 0)
+    drop_path = kwargs.get("drop_path", 0)
+    drop_mode = kwargs.get("drop_mode", "standard")
+    drop_schedule = kwargs.get("drop_schedule", "constant")
+    cutoff_epoch = kwargs.get("cutoff_epoch", 0)
+
     # Model parameters
-    pretrained_encoder=None,
-    pretrain_weights=None,
-    pretrain_exclude_keys=None,
-    pretrain_keys_modify_to_load=None,
-    pretrained_distiller=None,
+    pretrained_encoder = kwargs.get("pretrained_encoder")
+    pretrain_weights = kwargs.get("pretrain_weights")
+    pretrain_exclude_keys = kwargs.get("pretrain_exclude_keys")
+    pretrain_keys_modify_to_load = kwargs.get("pretrain_keys_modify_to_load")
+    pretrained_distiller = kwargs.get("pretrained_distiller")
+
     # Backbone parameters
-    encoder="vit_tiny",
-    vit_encoder_num_layers=12,
-    window_block_indexes=None,
-    position_embedding="sine",
-    out_feature_indexes=None,
-    freeze_encoder=False,
-    layer_norm=False,
-    rms_norm=False,
-    backbone_lora=False,
-    force_no_pretrain=False,
+    encoder = kwargs.get("encoder", "vit_tiny")
+    vit_encoder_num_layers = kwargs.get("vit_encoder_num_layers", 12)
+    window_block_indexes = kwargs.get("window_block_indexes")
+    position_embedding = kwargs.get("position_embedding", "sine")
+    out_feature_indexes = kwargs.get("out_feature_indexes")
+    freeze_encoder = kwargs.get("freeze_encoder", False)
+    layer_norm = kwargs.get("layer_norm", False)
+    rms_norm = kwargs.get("rms_norm", False)
+    backbone_lora = kwargs.get("backbone_lora", False)
+    force_no_pretrain = kwargs.get("force_no_pretrain", False)
+
     # Transformer parameters
-    dec_layers=3,
-    dim_feedforward=2048,
-    hidden_dim=256,
-    sa_nheads=8,
-    ca_nheads=8,
-    num_queries=300,
-    group_detr=13,
-    projector_scale="P4",
-    lite_refpoint_refine=False,
-    num_select=100,
-    dec_n_points=4,
-    decoder_norm="LN",
-    bbox_reparam=False,
-    freeze_batch_norm=False,
+    dec_layers = kwargs.get("dec_layers", 3)
+    dim_feedforward = kwargs.get("dim_feedforward", 2048)
+    hidden_dim = kwargs.get("hidden_dim", 256)
+    sa_nheads = kwargs.get("sa_nheads", 8)
+    ca_nheads = kwargs.get("ca_nheads", 8)
+    num_queries = kwargs.get("num_queries", 300)
+    group_detr = kwargs.get("group_detr", 13)
+    projector_scale = kwargs.get("projector_scale", "P4")
+    lite_refpoint_refine = kwargs.get("lite_refpoint_refine", False)
+    num_select = kwargs.get("num_select", 100)
+    dec_n_points = kwargs.get("dec_n_points", 4)
+    decoder_norm = kwargs.get("decoder_norm", "LN")
+    bbox_reparam = kwargs.get("bbox_reparam", False)
+    freeze_batch_norm = kwargs.get("freeze_batch_norm", False)
+
     # Matcher parameters
-    set_cost_class=2,
-    set_cost_bbox=5,
-    set_cost_giou=2,
+    set_cost_class = kwargs.get("set_cost_class", 2)
+    set_cost_bbox = kwargs.get("set_cost_bbox", 5)
+    set_cost_giou = kwargs.get("set_cost_giou", 2)
+
     # Loss coefficients
-    cls_loss_coef=2,
-    bbox_loss_coef=5,
-    giou_loss_coef=2,
-    focal_alpha=0.25,
-    aux_loss=True,
-    sum_group_losses=False,
-    use_varifocal_loss=False,
-    use_position_supervised_loss=False,
-    ia_bce_loss=False,
+    cls_loss_coef = kwargs.get("cls_loss_coef", 2)
+    bbox_loss_coef = kwargs.get("bbox_loss_coef", 5)
+    giou_loss_coef = kwargs.get("giou_loss_coef", 2)
+    focal_alpha = kwargs.get("focal_alpha", 0.25)
+    aux_loss = kwargs.get("aux_loss", True)
+    sum_group_losses = kwargs.get("sum_group_losses", False)
+    use_varifocal_loss = kwargs.get("use_varifocal_loss", False)
+    use_position_supervised_loss = kwargs.get("use_position_supervised_loss", False)
+    ia_bce_loss = kwargs.get("ia_bce_loss", False)
+
     # Dataset parameters
-    dataset_file="coco",
-    coco_path=None,
-    dataset_dir=None,
-    square_resize_div_64=False,
+    dataset_file = kwargs.get("dataset_file", "coco")
+    coco_path = kwargs.get("coco_path")
+    dataset_dir = kwargs.get("dataset_dir")
+    square_resize_div_64 = kwargs.get("square_resize_div_64", False)
+
     # Output parameters
-    output_dir="output",
-    dont_save_weights=False,
-    checkpoint_interval=10,
-    seed=42,
-    resume="",
-    start_epoch=0,
-    eval=False,
-    use_ema=False,
-    ema_decay=0.9997,
-    ema_tau=0,
-    num_workers=2,
+    output_dir = kwargs.get("output_dir", "output")
+    dont_save_weights = kwargs.get("dont_save_weights", False)
+    checkpoint_interval = kwargs.get("checkpoint_interval", 10)
+    seed = kwargs.get("seed", 42)
+    resume = kwargs.get("resume", "")
+    start_epoch = kwargs.get("start_epoch", 0)
+    eval = kwargs.get("eval", False)
+    use_ema = kwargs.get("use_ema", False)
+    ema_decay = kwargs.get("ema_decay", 0.9997)
+    ema_tau = kwargs.get("ema_tau", 0)
+    num_workers = kwargs.get("num_workers", 2)
+
     # Distributed training parameters
-    device="cuda",
-    world_size=1,
-    dist_url="env://",
-    sync_bn=True,
+    device = kwargs.get("device", "cuda")
+    world_size = kwargs.get("world_size", 1)
+    dist_url = kwargs.get("dist_url", "env://")
+    sync_bn = kwargs.get("sync_bn", True)
+
     # FP16
-    fp16_eval=False,
+    fp16_eval = kwargs.get("fp16_eval", False)
+
     # Custom args
-    encoder_only=False,
-    backbone_only=False,
-    resolution=640,
-    use_cls_token=False,
-    multi_scale=False,
-    expanded_scales=False,
-    warmup_epochs=1,
-    lr_scheduler="step",
-    lr_min_factor=0.0,
+    encoder_only = kwargs.get("encoder_only", False)
+    backbone_only = kwargs.get("backbone_only", False)
+    resolution = kwargs.get("resolution", 640)
+    use_cls_token = kwargs.get("use_cls_token", False)
+    multi_scale = kwargs.get("multi_scale", False)
+    expanded_scales = kwargs.get("expanded_scales", False)
+    warmup_epochs = kwargs.get("warmup_epochs", 1)
+    lr_scheduler = kwargs.get("lr_scheduler", "step")
+    lr_min_factor = kwargs.get("lr_min_factor", 0.0)
+
     # Early stopping parameters
-    early_stopping=True,
-    early_stopping_patience=10,
-    early_stopping_min_delta=0.001,
-    early_stopping_use_ema=False,
-    eval_freq_steps=1000,
-    gradient_checkpointing=False,
+    early_stopping = kwargs.get("early_stopping", True)
+    early_stopping_patience = kwargs.get("early_stopping_patience", 10)
+    early_stopping_min_delta = kwargs.get("early_stopping_min_delta", 0.001)
+    early_stopping_use_ema = kwargs.get("early_stopping_use_ema", False)
+    eval_freq_steps = kwargs.get("eval_freq_steps", 1000)
+    gradient_checkpointing = kwargs.get("gradient_checkpointing", False)
+
     # Additional
-    subcommand=None,
-    **extra_kwargs,  # To handle any unexpected arguments
-):
+    subcommand = kwargs.get("subcommand")
+
+    # Handle extra kwargs - filter out keys that are explicitly declared above
+    # to avoid duplicate arguments like 'encoder'
+    all_locals = set(locals().keys())
+    extra_kwargs = {k: v for k, v in kwargs.items() if k not in all_locals}
     if out_feature_indexes is None:
         out_feature_indexes = [-1]
     args = argparse.Namespace(

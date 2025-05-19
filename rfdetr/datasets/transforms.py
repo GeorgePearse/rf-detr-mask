@@ -100,40 +100,37 @@ def hflip(image, target):
     return flipped_image, target
 
 
-def resize(image, target, size, max_size=None):
-    # size can be min_size (scalar) or (w, h) tuple
+def get_size_with_aspect_ratio(image_size, size, max_size=None):
+    w, h = image_size
+    if max_size is not None:
+        min_original_size = float(min((w, h)))
+        max_original_size = float(max((w, h)))
+        if max_original_size / min_original_size * size > max_size:
+            size = int(round(max_size * min_original_size / max_original_size))
 
-    def get_size_with_aspect_ratio(image_size, size, max_size=None):
-        w, h = image_size
-        if max_size is not None:
-            min_original_size = float(min((w, h)))
-            max_original_size = float(max((w, h)))
-            if max_original_size / min_original_size * size > max_size:
-                size = int(round(max_size * min_original_size / max_original_size))
+    if (w <= h and w == size) or (h <= w and h == size):
+        return (h, w)
 
-        if (w <= h and w == size) or (h <= w and h == size):
-            return (h, w)
+    if w < h:
+        ow = size
+        oh = int(size * h / w)
+    else:
+        oh = size
+        ow = int(size * w / h)
 
-        if w < h:
-            ow = size
-            oh = int(size * h / w)
-        else:
-            oh = size
-            ow = int(size * w / h)
+    return (oh, ow)
 
-        return (oh, ow)
 
-    def get_size(image_size, size, max_size=None):
-        if isinstance(size, (list, tuple)):
-            return size[::-1]
-        else:
-            return get_size_with_aspect_ratio(image_size, size, max_size)
+def get_size(image_size, size, max_size=None):
+    if isinstance(size, (list, tuple)):
+        return size[::-1]
+    else:
+        return get_size_with_aspect_ratio(image_size, size, max_size)
 
-    size = get_size(image.size, size, max_size)
-    rescaled_image = transforms_functional.resize(image, size)
 
+def update_target_for_resize(target, rescaled_image, image, size):
     if target is None:
-        return rescaled_image, None
+        return None
 
     ratios = tuple(float(s) / float(s_orig) for s, s_orig in zip(rescaled_image.size, image.size))
     ratio_width, ratio_height = ratios
@@ -159,7 +156,20 @@ def resize(image, target, size, max_size=None):
             interpolate(target["masks"][:, None].float(), size, mode="nearest")[:, 0] > 0.5
         )
 
-    return rescaled_image, target
+    return target
+
+
+def resize(image, target, size, max_size=None):
+    """Resize the image and corresponding annotations."""
+    # size can be min_size (scalar) or (w, h) tuple
+    size = get_size(image.size, size, max_size)
+    rescaled_image = transforms_functional.resize(image, size)
+
+    if target is None:
+        return rescaled_image, None
+
+    updated_target = update_target_for_resize(target, rescaled_image, image, size)
+    return rescaled_image, updated_target
 
 
 def pad(image, target, padding):

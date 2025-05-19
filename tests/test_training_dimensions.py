@@ -9,6 +9,7 @@
 Test script to verify the training_width and training_height parameters work correctly.
 """
 
+import argparse
 import unittest
 from pathlib import Path
 
@@ -30,7 +31,13 @@ class TestTrainingDimensions(unittest.TestCase):
         training_height = 672  # Divisible by 56
         config.model.training_width = training_width
         config.model.training_height = training_height
-        args = config.to_args()
+        args = argparse.Namespace(
+            device="cpu",
+            num_classes=config.model.num_classes,
+            resolution=config.model.resolution,
+            training_width=training_width,
+            training_height=training_height,
+        )
 
         # Build dataset with custom training dimensions
         dataset_train = build_dataset(image_set="train", args=args, resolution=args.resolution)

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Test script that uses fixed-size inputs for testing model training"""
 
+import argparse
 import os
 import time
 import unittest
@@ -71,8 +72,12 @@ class TestFixedSize(unittest.TestCase):
         cls.config_path = os.path.join("configs", "default.yaml")
         cls.config = load_config(cls.config_path)
 
-        # Convert to args for backward compatibility
-        cls.args = cls.config.to_args()
+        # Create args directly without going through to_args() which causes duplicates
+        cls.args = argparse.Namespace(
+            device="cpu",
+            num_classes=cls.config.model.num_classes,
+            resolution=cls.config.model.resolution,
+        )
 
         # Adjust some parameters for the test
         cls.args.batch_size = 1

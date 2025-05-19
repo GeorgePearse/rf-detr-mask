@@ -20,7 +20,7 @@ Backbone modules.
 from typing import Optional
 
 import torch
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
 from peft import PeftModel
 
 from rfdetr.models.backbone.base import BackboneBase

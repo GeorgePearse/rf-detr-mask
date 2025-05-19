@@ -27,8 +27,8 @@ from .symbolic import CustomOpSymbolicRegistry
 
 
 class OnnxOptimizer:
-    def __init__(self, input, severity=G_LOGGER.INFO):
-        onnx_graph = self.load_onnx(input) if isinstance(input, str) else input
+    def __init__(self, input_file, severity=G_LOGGER.INFO):
+        onnx_graph = self.load_onnx(input_file) if isinstance(input_file, str) else input_file
         self.graph = gs.import_onnx(onnx_graph)
         self.severity = severity
         self.set_severity(severity)
@@ -332,60 +332,60 @@ class OnnxOptimizer:
 
                 input_tensor = node.inputs[0]
 
-                gammaNode = node.o().o().o().o().o().o().o().o().o().o().o()
-                index = [type(i) == gs.ir.tensor.Constant for i in gammaNode.inputs].index(True)
+                gamma_node = node.o().o().o().o().o().o().o().o().o().o().o()
+                index = [isinstance(i, gs.ir.tensor.Constant) for i in gamma_node.inputs].index(True)
                 gamma = np.array(
-                    deepcopy(gammaNode.inputs[index].values.tolist()), dtype=np.float32
+                    deepcopy(gamma_node.inputs[index].values.tolist()), dtype=np.float32
                 )
-                constantGamma = gs.Constant(
-                    "groupNormGamma-" + str(nGroupNormPlugin),
+                constant_gamma = gs.Constant(
+                    "groupNormGamma-" + str(n_group_norm_plugin),
                     np.ascontiguousarray(gamma.reshape(-1)),
                 )  # MUST use np.ascontiguousarray, or TRT will regard the shape of this Constant as (0) !!!
 
-                betaNode = gammaNode.o()
-                index = [type(i) == gs.ir.tensor.Constant for i in betaNode.inputs].index(True)
-                beta = np.array(deepcopy(betaNode.inputs[index].values.tolist()), dtype=np.float32)
-                constantBeta = gs.Constant(
-                    "groupNormBeta-" + str(nGroupNormPlugin), np.ascontiguousarray(beta.reshape(-1))
+                beta_node = gamma_node.o()
+                index = [isinstance(i, gs.ir.tensor.Constant) for i in beta_node.inputs].index(True)
+                beta = np.array(deepcopy(beta_node.inputs[index].values.tolist()), dtype=np.float32)
+                constant_beta = gs.Constant(
+                    "groupNormBeta-" + str(n_group_norm_plugin), np.ascontiguousarray(beta.reshape(-1))
                 )
 
                 epsilon = node.o().o().o().o().o().inputs[1].values.tolist()[0]
 
-                if betaNode.o().op == "Sigmoid":  # need Swish
-                    bSwish = True
-                    lastNode = betaNode.o().o()  # Mul node of Swish
+                if beta_node.o().op == "Sigmoid":  # need Swish
+                    is_swish = True
+                    last_node = beta_node.o().o()  # Mul node of Swish
                 else:
-                    bSwish = False
-                    lastNode = betaNode  # Cast node after Group Norm
+                    is_swish = False
+                    last_node = beta_node  # Cast node after Group Norm
 
-                if lastNode.o().op == "Cast":
-                    lastNode = lastNode.o()
-                inputList = [inputTensor, constantGamma, constantBeta]
-                groupNormV = gs.Variable(
-                    "GroupNormV-" + str(nGroupNormPlugin), np.dtype(np.float16), inputTensor.shape
+                if last_node.o().op == "Cast":
+                    last_node = last_node.o()
+                input_list = [input_tensor, constant_gamma, constant_beta]
+                group_norm_v = gs.Variable(
+                    "GroupNormV-" + str(n_group_norm_plugin), np.dtype(np.float16), input_tensor.shape
                 )
-                groupNormN = gs.Node(
+                group_norm_n = gs.Node(
                     "GroupNorm",
-                    "GroupNormN-" + str(nGroupNormPlugin),
-                    inputs=inputList,
-                    outputs=[groupNormV],
-                    attrs=OrderedDict([("epsilon", epsilon), ("bSwish", int(bSwish))]),
+                    "GroupNormN-" + str(n_group_norm_plugin),
+                    inputs=input_list,
+                    outputs=[group_norm_v],
+                    attrs=OrderedDict([("epsilon", epsilon), ("bSwish", int(is_swish))]),
                 )
-                self.graph.nodes.append(groupNormN)
+                self.graph.nodes.append(group_norm_n)
 
-                for subNode in self.graph.nodes:
-                    if lastNode.outputs[0] in subNode.inputs:
-                        index = subNode.inputs.index(lastNode.outputs[0])
-                        subNode.inputs[index] = groupNormV
+                for sub_node in self.graph.nodes:
+                    if last_node.outputs[0] in sub_node.inputs:
+                        index = sub_node.inputs.index(last_node.outputs[0])
+                        sub_node.inputs[index] = group_norm_v
                 node.inputs = []
-                lastNode.outputs = []
-                nGroupNormPlugin += 1
+                last_node.outputs = []
+                n_group_norm_plugin += 1
 
         self.cleanup()
-        return nGroupNormPlugin
+        return n_group_norm_plugin
 
     def insert_layernorm_plugin(self):
-        nLayerNormPlugin = 0
+        n_layer_norm_plugin = 0
         for node in self.graph.nodes:
             if (
                 node.op == "ReduceMean"
@@ -402,13 +402,12 @@ class OnnxOptimizer:
                 and node.o().o(0).o().o().o().o().o().o().op == "Add"
                 and len(node.o().o(0).o().o().o().o().o().inputs[1].values.shape) == 1
             ):
-                if node.i().op == "Add":
-                    inputTensor = node.inputs[0]  # CLIP
-                else:
-                    inputTensor = node.i().inputs[0]  # UNet and VAE
+                inputTensor = (
+                    node.inputs[0] if node.i().op == "Add" else node.i().inputs[0]
+                )  # CLIP or UNet and VAE
 
                 gammaNode = node.o().o().o().o().o().o().o()
-                index = [type(i) == gs.ir.tensor.Constant for i in gammaNode.inputs].index(True)
+                index = [isinstance(i, gs.ir.tensor.Constant) for i in gammaNode.inputs].index(True)
                 gamma = np.array(
                     deepcopy(gammaNode.inputs[index].values.tolist()), dtype=np.float32
                 )
@@ -418,7 +417,7 @@ class OnnxOptimizer:
                 )  # MUST use np.ascontiguousarray, or TRT will regard the shape of this Constant as (0) !!!
 
                 betaNode = gammaNode.o()
-                index = [type(i) == gs.ir.tensor.Constant for i in betaNode.inputs].index(True)
+                index = [isinstance(i, gs.ir.tensor.Constant) for i in betaNode.inputs].index(True)
                 beta = np.array(deepcopy(betaNode.inputs[index].values.tolist()), dtype=np.float32)
                 constantBeta = gs.Constant(
                     "LayerNormBeta-" + str(nLayerNormPlugin), np.ascontiguousarray(beta.reshape(-1))

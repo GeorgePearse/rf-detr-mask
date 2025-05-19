@@ -1,0 +1,1384 @@
+rfdetr/deploy/_onnx/optimizer.py:319:9: N806 Variable `nGroupNormPlugin` in function should be lowercase
+    |
+318 |     def insert_groupnorm_plugin(self):
+319 |         nGroupNormPlugin = 0
+    |         ^^^^^^^^^^^^^^^^ N806
+320 |         for node in self.graph.nodes:
+321 |             if (
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:333:17: N806 Variable `inputTensor` in function should be lowercase
+    |
+331 |                 # "node.outputs != []" is added for VAE
+332 |
+333 |                 inputTensor = node.inputs[0]
+    |                 ^^^^^^^^^^^ N806
+334 |
+335 |                 gammaNode = node.o().o().o().o().o().o().o().o().o().o().o()
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:335:17: N806 Variable `gammaNode` in function should be lowercase
+    |
+333 |                 inputTensor = node.inputs[0]
+334 |
+335 |                 gammaNode = node.o().o().o().o().o().o().o().o().o().o().o()
+    |                 ^^^^^^^^^ N806
+336 |                 index = [isinstance(i, gs.ir.tensor.Constant) for i in gammaNode.inputs].index(True)
+337 |                 gamma = np.array(
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:340:17: N806 Variable `constantGamma` in function should be lowercase
+    |
+338 |                     deepcopy(gammaNode.inputs[index].values.tolist()), dtype=np.float32
+339 |                 )
+340 |                 constantGamma = gs.Constant(
+    |                 ^^^^^^^^^^^^^ N806
+341 |                     "groupNormGamma-" + str(nGroupNormPlugin),
+342 |                     np.ascontiguousarray(gamma.reshape(-1)),
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:345:17: N806 Variable `betaNode` in function should be lowercase
+    |
+343 |                 )  # MUST use np.ascontiguousarray, or TRT will regard the shape of this Constant as (0) !!!
+344 |
+345 |                 betaNode = gammaNode.o()
+    |                 ^^^^^^^^ N806
+346 |                 index = [isinstance(i, gs.ir.tensor.Constant) for i in betaNode.inputs].index(True)
+347 |                 beta = np.array(deepcopy(betaNode.inputs[index].values.tolist()), dtype=np.float32)
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:348:17: N806 Variable `constantBeta` in function should be lowercase
+    |
+346 |                 index = [isinstance(i, gs.ir.tensor.Constant) for i in betaNode.inputs].index(True)
+347 |                 beta = np.array(deepcopy(betaNode.inputs[index].values.tolist()), dtype=np.float32)
+348 |                 constantBeta = gs.Constant(
+    |                 ^^^^^^^^^^^^ N806
+349 |                     "groupNormBeta-" + str(nGroupNormPlugin), np.ascontiguousarray(beta.reshape(-1))
+350 |                 )
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:355:21: N806 Variable `bSwish` in function should be lowercase
+    |
+354 |                 if betaNode.o().op == "Sigmoid":  # need Swish
+355 |                     bSwish = True
+    |                     ^^^^^^ N806
+356 |                     lastNode = betaNode.o().o()  # Mul node of Swish
+357 |                 else:
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:356:21: N806 Variable `lastNode` in function should be lowercase
+    |
+354 |                 if betaNode.o().op == "Sigmoid":  # need Swish
+355 |                     bSwish = True
+356 |                     lastNode = betaNode.o().o()  # Mul node of Swish
+    |                     ^^^^^^^^ N806
+357 |                 else:
+358 |                     bSwish = False
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:358:21: N806 Variable `bSwish` in function should be lowercase
+    |
+356 |                     lastNode = betaNode.o().o()  # Mul node of Swish
+357 |                 else:
+358 |                     bSwish = False
+    |                     ^^^^^^ N806
+359 |                     lastNode = betaNode  # Cast node after Group Norm
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:359:21: N806 Variable `lastNode` in function should be lowercase
+    |
+357 |                 else:
+358 |                     bSwish = False
+359 |                     lastNode = betaNode  # Cast node after Group Norm
+    |                     ^^^^^^^^ N806
+360 |
+361 |                 if lastNode.o().op == "Cast":
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:362:21: N806 Variable `lastNode` in function should be lowercase
+    |
+361 |                 if lastNode.o().op == "Cast":
+362 |                     lastNode = lastNode.o()
+    |                     ^^^^^^^^ N806
+363 |                 inputList = [inputTensor, constantGamma, constantBeta]
+364 |                 groupNormV = gs.Variable(
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:363:17: N806 Variable `inputList` in function should be lowercase
+    |
+361 |                 if lastNode.o().op == "Cast":
+362 |                     lastNode = lastNode.o()
+363 |                 inputList = [inputTensor, constantGamma, constantBeta]
+    |                 ^^^^^^^^^ N806
+364 |                 groupNormV = gs.Variable(
+365 |                     "GroupNormV-" + str(nGroupNormPlugin), np.dtype(np.float16), inputTensor.shape
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:364:17: N806 Variable `groupNormV` in function should be lowercase
+    |
+362 |                     lastNode = lastNode.o()
+363 |                 inputList = [inputTensor, constantGamma, constantBeta]
+364 |                 groupNormV = gs.Variable(
+    |                 ^^^^^^^^^^ N806
+365 |                     "GroupNormV-" + str(nGroupNormPlugin), np.dtype(np.float16), inputTensor.shape
+366 |                 )
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:367:17: N806 Variable `groupNormN` in function should be lowercase
+    |
+365 |                     "GroupNormV-" + str(nGroupNormPlugin), np.dtype(np.float16), inputTensor.shape
+366 |                 )
+367 |                 groupNormN = gs.Node(
+    |                 ^^^^^^^^^^ N806
+368 |                     "GroupNorm",
+369 |                     "GroupNormN-" + str(nGroupNormPlugin),
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:376:21: N806 Variable `subNode` in function should be lowercase
+    |
+374 |                 self.graph.nodes.append(groupNormN)
+375 |
+376 |                 for subNode in self.graph.nodes:
+    |                     ^^^^^^^ N806
+377 |                     if lastNode.outputs[0] in subNode.inputs:
+378 |                         index = subNode.inputs.index(lastNode.outputs[0])
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:382:17: N806 Variable `nGroupNormPlugin` in function should be lowercase
+    |
+380 |                 node.inputs = []
+381 |                 lastNode.outputs = []
+382 |                 nGroupNormPlugin += 1
+    |                 ^^^^^^^^^^^^^^^^ N806
+383 |
+384 |         self.cleanup()
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:388:9: N806 Variable `nLayerNormPlugin` in function should be lowercase
+    |
+387 |     def insert_layernorm_plugin(self):
+388 |         nLayerNormPlugin = 0
+    |         ^^^^^^^^^^^^^^^^ N806
+389 |         for node in self.graph.nodes:
+390 |             if (
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:405:17: N806 Variable `inputTensor` in function should be lowercase
+    |
+403 |                 and len(node.o().o(0).o().o().o().o().o().inputs[1].values.shape) == 1
+404 |             ):
+405 |                 inputTensor = (
+    |                 ^^^^^^^^^^^ N806
+406 |                     node.inputs[0] if node.i().op == "Add" else node.i().inputs[0]
+407 |                 )  # CLIP or UNet and VAE
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:409:17: N806 Variable `gammaNode` in function should be lowercase
+    |
+407 |                 )  # CLIP or UNet and VAE
+408 |
+409 |                 gammaNode = node.o().o().o().o().o().o().o()
+    |                 ^^^^^^^^^ N806
+410 |                 index = [isinstance(i, gs.ir.tensor.Constant) for i in gammaNode.inputs].index(True)
+411 |                 gamma = np.array(
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:414:17: N806 Variable `constantGamma` in function should be lowercase
+    |
+412 |                     deepcopy(gammaNode.inputs[index].values.tolist()), dtype=np.float32
+413 |                 )
+414 |                 constantGamma = gs.Constant(
+    |                 ^^^^^^^^^^^^^ N806
+415 |                     "LayerNormGamma-" + str(nLayerNormPlugin),
+416 |                     np.ascontiguousarray(gamma.reshape(-1)),
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:419:17: N806 Variable `betaNode` in function should be lowercase
+    |
+417 |                 )  # MUST use np.ascontiguousarray, or TRT will regard the shape of this Constant as (0) !!!
+418 |
+419 |                 betaNode = gammaNode.o()
+    |                 ^^^^^^^^ N806
+420 |                 index = [isinstance(i, gs.ir.tensor.Constant) for i in betaNode.inputs].index(True)
+421 |                 beta = np.array(deepcopy(betaNode.inputs[index].values.tolist()), dtype=np.float32)
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:422:17: N806 Variable `constantBeta` in function should be lowercase
+    |
+420 |                 index = [isinstance(i, gs.ir.tensor.Constant) for i in betaNode.inputs].index(True)
+421 |                 beta = np.array(deepcopy(betaNode.inputs[index].values.tolist()), dtype=np.float32)
+422 |                 constantBeta = gs.Constant(
+    |                 ^^^^^^^^^^^^ N806
+423 |                     "LayerNormBeta-" + str(nLayerNormPlugin), np.ascontiguousarray(beta.reshape(-1))
+424 |                 )
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:426:17: N806 Variable `inputList` in function should be lowercase
+    |
+424 |                 )
+425 |
+426 |                 inputList = [inputTensor, constantGamma, constantBeta]
+    |                 ^^^^^^^^^ N806
+427 |                 layerNormV = gs.Variable(
+428 |                     "LayerNormV-" + str(nLayerNormPlugin), np.dtype(np.float32), inputTensor.shape
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:427:17: N806 Variable `layerNormV` in function should be lowercase
+    |
+426 |                 inputList = [inputTensor, constantGamma, constantBeta]
+427 |                 layerNormV = gs.Variable(
+    |                 ^^^^^^^^^^ N806
+428 |                     "LayerNormV-" + str(nLayerNormPlugin), np.dtype(np.float32), inputTensor.shape
+429 |                 )
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:430:17: N806 Variable `layerNormN` in function should be lowercase
+    |
+428 |                     "LayerNormV-" + str(nLayerNormPlugin), np.dtype(np.float32), inputTensor.shape
+429 |                 )
+430 |                 layerNormN = gs.Node(
+    |                 ^^^^^^^^^^ N806
+431 |                     "LayerNorm",
+432 |                     "LayerNormN-" + str(nLayerNormPlugin),
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:438:17: N806 Variable `nLayerNormPlugin` in function should be lowercase
+    |
+436 |                 )
+437 |                 self.graph.nodes.append(layerNormN)
+438 |                 nLayerNormPlugin += 1
+    |                 ^^^^^^^^^^^^^^^^ N806
+439 |
+440 |                 if betaNode.outputs[0] in self.graph.outputs:
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:444:21: N806 Variable `lastNode` in function should be lowercase
+    |
+442 |                     self.graph.outputs[index] = layerNormV
+443 |                 else:
+444 |                     lastNode = betaNode.o() if betaNode.o().op == "Cast" else betaNode
+    |                     ^^^^^^^^ N806
+445 |                     for subNode in self.graph.nodes:
+446 |                         if lastNode.outputs[0] in subNode.inputs:
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:445:25: N806 Variable `subNode` in function should be lowercase
+    |
+443 |                 else:
+444 |                     lastNode = betaNode.o() if betaNode.o().op == "Cast" else betaNode
+445 |                     for subNode in self.graph.nodes:
+    |                         ^^^^^^^ N806
+446 |                         if lastNode.outputs[0] in subNode.inputs:
+447 |                             index = subNode.inputs.index(lastNode.outputs[0])
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:460:9: N806 Variable `C` in function should be lowercase
+    |
+458 |         weights_v = node_v.inputs[1].values
+459 |         # Input number of channels to K and V
+460 |         C = weights_k.shape[0]
+    |         ^ N806
+461 |         # Number of heads
+462 |         H = heads
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:462:9: N806 Variable `H` in function should be lowercase
+    |
+460 |         C = weights_k.shape[0]
+461 |         # Number of heads
+462 |         H = heads
+    |         ^ N806
+463 |         # Dimension per head
+464 |         D = weights_k.shape[1] // H
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:464:9: N806 Variable `D` in function should be lowercase
+    |
+462 |         H = heads
+463 |         # Dimension per head
+464 |         D = weights_k.shape[1] // H
+    |         ^ N806
+465 |
+466 |         # Concat and interleave weights such that the output of fused KV GEMM has [b, s_kv, h, 2, d] shape
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:581:9: N806 Variable `C` in function should be lowercase
+    |
+580 |         # Input number of channels to Q, K and V
+581 |         C = weights_k.shape[0]
+    |         ^ N806
+582 |         # Number of heads
+583 |         H = heads
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:583:9: N806 Variable `H` in function should be lowercase
+    |
+581 |         C = weights_k.shape[0]
+582 |         # Number of heads
+583 |         H = heads
+    |         ^ N806
+584 |         # Hidden dimension per head
+585 |         D = weights_k.shape[1] // H
+    |
+
+rfdetr/deploy/_onnx/optimizer.py:585:9: N806 Variable `D` in function should be lowercase
+    |
+583 |         H = heads
+584 |         # Hidden dimension per head
+585 |         D = weights_k.shape[1] // H
+    |         ^ N806
+586 |
+587 |         # Concat and interleave weights such that the output of fused QKV GEMM has [b, s, h, 3, d] shape
+    |
+
+rfdetr/deploy/benchmark.py:161:5: N806 Variable `catIds` in function should be lowercase
+    |
+159 |     self._prepare()
+160 |     # loop through images, area range, max detection number
+161 |     catIds = p.catIds if p.useCats else [-1]
+    |     ^^^^^^ N806
+162 |
+163 |     if p.iouType == "segm" or p.iouType == "bbox":
+    |
+
+rfdetr/deploy/benchmark.py:164:9: N806 Variable `computeIoU` in function should be lowercase
+    |
+163 |     if p.iouType == "segm" or p.iouType == "bbox":
+164 |         computeIoU = self.computeIoU
+    |         ^^^^^^^^^^ N806
+165 |     elif p.iouType == "keypoints":
+166 |         computeIoU = self.computeOks
+    |
+
+rfdetr/deploy/benchmark.py:166:9: N806 Variable `computeIoU` in function should be lowercase
+    |
+164 |         computeIoU = self.computeIoU
+165 |     elif p.iouType == "keypoints":
+166 |         computeIoU = self.computeOks
+    |         ^^^^^^^^^^ N806
+167 |     self.ious = {(imgId, catId): computeIoU(imgId, catId) for imgId in p.imgIds for catId in catIds}
+    |
+
+rfdetr/deploy/benchmark.py:169:5: N806 Variable `evaluateImg` in function should be lowercase
+    |
+167 |     self.ious = {(imgId, catId): computeIoU(imgId, catId) for imgId in p.imgIds for catId in catIds}
+168 |
+169 |     evaluateImg = self.evaluateImg
+    |     ^^^^^^^^^^^ N806
+170 |     maxDet = p.maxDets[-1]
+171 |     evalImgs = [
+    |
+
+rfdetr/deploy/benchmark.py:170:5: N806 Variable `maxDet` in function should be lowercase
+    |
+169 |     evaluateImg = self.evaluateImg
+170 |     maxDet = p.maxDets[-1]
+    |     ^^^^^^ N806
+171 |     evalImgs = [
+172 |         evaluateImg(imgId, catId, areaRng, maxDet)
+    |
+
+rfdetr/deploy/benchmark.py:171:5: N806 Variable `evalImgs` in function should be lowercase
+    |
+169 |     evaluateImg = self.evaluateImg
+170 |     maxDet = p.maxDets[-1]
+171 |     evalImgs = [
+    |     ^^^^^^^^ N806
+172 |         evaluateImg(imgId, catId, areaRng, maxDet)
+173 |         for catId in catIds
+    |
+
+rfdetr/deploy/benchmark.py:178:5: N806 Variable `evalImgs` in function should be lowercase
+    |
+176 |     ]
+177 |     # this is NOT in the pycocotools code, but could be done outside
+178 |     evalImgs = np.asarray(evalImgs).reshape(len(catIds), len(p.areaRng), len(p.imgIds))
+    |     ^^^^^^^^ N806
+179 |     self._paramsEval = copy.deepcopy(self.params)
+180 |     return p.imgIds, evalImgs
+    |
+
+rfdetr/deploy/benchmark.py:218:16: F821 Undefined name `F`
+    |
+216 | class ToTensor:
+217 |     def __call__(self, img, target):
+218 |         return F.to_tensor(img), target
+    |                ^ F821
+    |
+
+rfdetr/deploy/benchmark.py:227:17: F821 Undefined name `F`
+    |
+226 |     def __call__(self, image, target=None):
+227 |         image = F.normalize(image, mean=self.mean, std=self.std)
+    |                 ^ F821
+228 |         if target is None:
+229 |             return image, None
+    |
+
+rfdetr/deploy/benchmark.py:247:24: F821 Undefined name `F`
+    |
+245 |     def __call__(self, img, target=None):
+246 |         size = random.choice(self.sizes)
+247 |         rescaled_img = F.resize(img, (size, size))
+    |                        ^ F821
+248 |         w, h = rescaled_img.size
+249 |         if target is None:
+    |
+
+rfdetr/deploy/benchmark.py:531:9: N806 Variable `EXPLICIT_BATCH` in function should be lowercase
+    |
+529 |         http://gitlab.baidu.com/paddle-inference/benchmark/blob/main/backend_trt.py#L57
+530 |         """
+531 |         EXPLICIT_BATCH = 1 << (int)(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    |         ^^^^^^^^^^^^^^ N806
+532 |         with (
+533 |             trt.Builder(self.logger) as builder,
+    |
+
+rfdetr/deploy/export.py:52:18: F821 Undefined name `T`
+   |
+50 |         image = Image.open(infer_dir).convert("RGB")
+51 |
+52 |     transforms = T.Compose(
+   |                  ^ F821
+53 |         [
+54 |             T.SquareResize([shape[0]]),
+   |
+
+rfdetr/deploy/export.py:54:13: F821 Undefined name `T`
+   |
+52 |     transforms = T.Compose(
+53 |         [
+54 |             T.SquareResize([shape[0]]),
+   |             ^ F821
+55 |             T.ToTensor(),
+56 |             T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+   |
+
+rfdetr/deploy/export.py:55:13: F821 Undefined name `T`
+   |
+53 |         [
+54 |             T.SquareResize([shape[0]]),
+55 |             T.ToTensor(),
+   |             ^ F821
+56 |             T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+57 |         ]
+   |
+
+rfdetr/deploy/export.py:56:13: F821 Undefined name `T`
+   |
+54 |             T.SquareResize([shape[0]]),
+55 |             T.ToTensor(),
+56 |             T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+   |             ^ F821
+57 |         ]
+58 |     )
+   |
+
+rfdetr/detr.py:180:23: F821 Undefined name `F`
+    |
+179 |             if not isinstance(img, torch.Tensor):
+180 |                 img = F.to_tensor(img)
+    |                       ^ F821
+181 |
+182 |             if (img > 1).any():
+    |
+
+rfdetr/detr.py:198:26: F821 Undefined name `F`
+    |
+197 |             img_tensor = img_tensor.to(self.model.device)
+198 |             img_tensor = F.normalize(img_tensor, self.means, self.stds)
+    |                          ^ F821
+199 |             img_tensor = F.resize(img_tensor, (self.model.resolution, self.model.resolution))
+    |
+
+rfdetr/detr.py:199:26: F821 Undefined name `F`
+    |
+197 |             img_tensor = img_tensor.to(self.model.device)
+198 |             img_tensor = F.normalize(img_tensor, self.means, self.stds)
+199 |             img_tensor = F.resize(img_tensor, (self.model.resolution, self.model.resolution))
+    |                          ^ F821
+200 |
+201 |             processed_images.append(img_tensor)
+    |
+
+rfdetr/engine.py:60:5: C901 `train_one_epoch` is too complex (16 > 10)
+   |
+60 | def train_one_epoch(
+   |     ^^^^^^^^^^^^^^^ C901
+61 |     model: torch.nn.Module,
+62 |     criterion: torch.nn.Module,
+   |
+
+rfdetr/engine.py:118:9: SIM102 Use a single `if` statement instead of nested `if` statements
+    |
+117 |           # Periodic evaluation during training if enabled
+118 | /         if (
+119 | |             eval_freq is not None
+120 | |             and val_data_loader is not None
+121 | |             and base_ds is not None
+122 | |             and postprocessors is not None
+123 | |         ):
+124 | |             if step_counter > 0 and step_counter % eval_freq == 0:
+    | |__________________________________________________________________^ SIM102
+125 |                   logger.info(f"Running evaluation at step {step_counter}")
+126 |                   model.eval()
+    |
+    = help: Combine `if` statements using `and`
+
+rfdetr/engine.py:229:5: C901 `evaluate` is too complex (17 > 10)
+    |
+229 | def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, args=None):
+    |     ^^^^^^^^ C901
+230 |     model.eval()
+231 |     if args.fp16_eval:
+    |
+
+rfdetr/fabric_module.py:25:27: F401 `torch.amp.GradScaler` imported but unused; consider using `importlib.util.find_spec` to test for availability
+   |
+23 | # Import autocast for mixed precision training
+24 | try:
+25 |     from torch.amp import GradScaler, autocast
+   |                           ^^^^^^^^^^ F401
+26 |
+27 |     DEPRECATED_AMP = False
+   |
+   = help: Remove unused import
+
+rfdetr/fabric_module.py:25:39: F401 `torch.amp.autocast` imported but unused; consider using `importlib.util.find_spec` to test for availability
+   |
+23 | # Import autocast for mixed precision training
+24 | try:
+25 |     from torch.amp import GradScaler, autocast
+   |                                       ^^^^^^^^ F401
+26 |
+27 |     DEPRECATED_AMP = False
+   |
+   = help: Remove unused import
+
+rfdetr/fabric_module.py:106:13: F841 Local variable `use_ema` is assigned to but never used
+    |
+104 |             # Object attribute access
+105 |             self.ema_decay = getattr(self.config, "ema_decay", None)
+106 |             use_ema = getattr(self.config, "use_ema", True)
+    |             ^^^^^^^ F841
+107 |
+108 |         self.ema = None  # Will be initialized after model is setup with fabric
+    |
+    = help: Remove assignment to unused variable `use_ema`
+
+rfdetr/fabric_module.py:308:9: C901 `validation_step` is too complex (11 > 10)
+    |
+306 |         return metrics
+307 |
+308 |     def validation_step(self, batch):
+    |         ^^^^^^^^^^^^^^^ C901
+309 |         """Execute a single validation step.
+    |
+
+rfdetr/fabric_module.py:338:9: SIM117 Use a single `with` statement with multiple contexts instead of nested `with` statements
+    |
+337 |           # Forward pass
+338 | /         with torch.no_grad():
+339 | |             with torch.autocast(**self.autocast_args):
+    | |______________________________________________________^ SIM117
+340 |                   outputs = model_to_eval(samples)
+    |
+    = help: Combine `with` statements
+
+rfdetr/fabric_module.py:388:9: C901 `export_model` is too complex (12 > 10)
+    |
+386 |         return {"metrics": val_metrics, "results": res, "targets": targets}
+387 |
+388 |     def export_model(self, epoch):
+    |         ^^^^^^^^^^^^ C901
+389 |         """Export model to ONNX and save PyTorch weights.
+    |
+
+rfdetr/fabric_module.py:578:5: C901 `train_with_fabric` is too complex (20 > 10)
+    |
+578 | def train_with_fabric(
+    |     ^^^^^^^^^^^^^^^^^ C901
+579 |     config, output_dir=None, callbacks=None, precision="32-true", devices=1, accelerator="auto"
+580 | ):
+    |
+
+rfdetr/hooks/onnx_checkpoint_hook.py:104:9: C901 `on_validation_epoch_start` is too complex (18 > 10)
+    |
+102 |         return nested_tensor
+103 |
+104 |     def on_validation_epoch_start(self, trainer, pl_module):
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ C901
+105 |         """
+106 |         Called before validation epoch starts.
+    |
+
+rfdetr/lightning_module.py:26:38: F401 `rfdetr.deploy.export.export_onnx` imported but unused; consider using `importlib.util.find_spec` to test for availability
+   |
+24 | # Import ONNX export functionality
+25 | try:
+26 |     from rfdetr.deploy.export import export_onnx, onnx_simplify
+   |                                      ^^^^^^^^^^^ F401
+27 |
+28 |     ONNX_AVAILABLE = True
+   |
+   = help: Remove unused import
+
+rfdetr/lightning_module.py:26:51: F401 `rfdetr.deploy.export.onnx_simplify` imported but unused; consider using `importlib.util.find_spec` to test for availability
+   |
+24 | # Import ONNX export functionality
+25 | try:
+26 |     from rfdetr.deploy.export import export_onnx, onnx_simplify
+   |                                                   ^^^^^^^^^^^^^ F401
+27 |
+28 |     ONNX_AVAILABLE = True
+   |
+   = help: Remove unused import
+
+rfdetr/lightning_module.py:234:9: C901 `validation_step` is too complex (12 > 10)
+    |
+232 |         return losses
+233 |
+234 |     def validation_step(self, batch, batch_idx):
+    |         ^^^^^^^^^^^^^^^ C901
+235 |         """Validation step logic."""
+236 |         try:
+    |
+
+rfdetr/lightning_module.py:485:9: C901 `on_validation_epoch_end` is too complex (14 > 10)
+    |
+483 |                 print(f"Error updating COCO evaluator: {e}")
+484 |
+485 |     def on_validation_epoch_end(self):
+    |         ^^^^^^^^^^^^^^^^^^^^^^^ C901
+486 |         """Process validation epoch results."""
+487 |         # Default metric values
+    |
+
+rfdetr/lightning_module.py:518:21: SIM102 Use a single `if` statement instead of nested `if` statements
+    |
+517 |                       # Extract stats
+518 | /                     if (
+519 | |                         "bbox" in self.postprocessors
+520 | |                         and hasattr(self.coco_evaluator, "coco_eval")
+521 | |                         and "bbox" in self.coco_evaluator.coco_eval
+522 | |                     ):
+523 | |                         if hasattr(self.coco_evaluator.coco_eval["bbox"], "stats"):
+    | |___________________________________________________________________________________^ SIM102
+524 |                               stats = self.coco_evaluator.coco_eval["bbox"].stats
+525 |                               if hasattr(stats, "tolist"):
+    |
+    = help: Combine `if` statements using `and`
+
+rfdetr/lightning_module.py:533:21: SIM102 Use a single `if` statement instead of nested `if` statements
+    |
+531 |                                       self.best_map = map_value
+532 |
+533 | /                     if (
+534 | |                         "segm" in self.postprocessors
+535 | |                         and hasattr(self.coco_evaluator, "coco_eval")
+536 | |                         and "segm" in self.coco_evaluator.coco_eval
+537 | |                     ):
+538 | |                         if hasattr(self.coco_evaluator.coco_eval["segm"], "stats"):
+    | |___________________________________________________________________________________^ SIM102
+539 |                               stats = self.coco_evaluator.coco_eval["segm"].stats
+540 |                               if hasattr(stats, "tolist"):
+    |
+    = help: Combine `if` statements using `and`
+
+rfdetr/lightning_module.py:557:9: C901 `configure_optimizers` is too complex (14 > 10)
+    |
+555 |             self.log("val/mask_mAP", mask_map_value, on_step=False, on_epoch=True, sync_dist=True)
+556 |
+557 |     def configure_optimizers(self):
+    |         ^^^^^^^^^^^^^^^^^^^^ C901
+558 |         """Configure optimizers and learning rate scheduler for iteration-based training."""
+    |
+
+rfdetr/main.py:538:9: F841 Local variable `start_time` is assigned to but never used
+    |
+537 |         print("Start training")
+538 |         start_time = time.time()
+    |         ^^^^^^^^^^ F841
+539 |
+540 |         # Track best metrics
+    |
+    = help: Remove assignment to unused variable `start_time`
+
+rfdetr/model_config.py:11:1: UP035 `typing.Dict` is deprecated, use `dict` instead
+   |
+ 9 | """
+10 |
+11 | from typing import Any, Dict, List, Literal, Optional, Tuple
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
+12 |
+13 | import torch
+   |
+
+rfdetr/model_config.py:11:1: UP035 `typing.List` is deprecated, use `list` instead
+   |
+ 9 | """
+10 |
+11 | from typing import Any, Dict, List, Literal, Optional, Tuple
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
+12 |
+13 | import torch
+   |
+
+rfdetr/model_config.py:11:1: UP035 `typing.Tuple` is deprecated, use `tuple` instead
+   |
+ 9 | """
+10 |
+11 | from typing import Any, Dict, List, Literal, Optional, Tuple
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
+12 |
+13 | import torch
+   |
+
+rfdetr/model_config.py:29:26: UP006 Use `list` instead of `List` for type annotation
+   |
+27 |     # Core model parameters
+28 |     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base", "dinov2_small", "dinov2_base"]
+29 |     out_feature_indexes: List[int]
+   |                          ^^^^ UP006
+30 |     dec_layers: int = Field(default=3, ge=1)
+31 |     projector_scale: List[Literal["P3", "P4", "P5", "P6"]]
+   |
+   = help: Replace with `list`
+
+rfdetr/model_config.py:31:22: UP006 Use `list` instead of `List` for type annotation
+   |
+29 |     out_feature_indexes: List[int]
+30 |     dec_layers: int = Field(default=3, ge=1)
+31 |     projector_scale: List[Literal["P3", "P4", "P5", "P6"]]
+   |                      ^^^^ UP006
+32 |     hidden_dim: int = Field(default=256, gt=0)
+   |
+   = help: Replace with `list`
+
+rfdetr/model_config.py:69:21: UP006 Use `tuple` instead of `Tuple` for type annotation
+   |
+67 |     num_classes: int = Field(default=90, gt=0)
+68 |     resolution: int = Field(default=560, gt=0)
+69 |     shape: Optional[Tuple[int, int]] = None
+   |                     ^^^^^ UP006
+70 |     dataset_file: Literal["coco", "o365", "roboflow"] = "coco"
+71 |     coco_path: str = ""
+   |
+   = help: Replace with `tuple`
+
+rfdetr/model_config.py:99:36: UP006 Use `list` instead of `List` for type annotation
+    |
+ 97 |     vit_encoder_num_layers: int = Field(default=12, gt=0)
+ 98 |     pretrained_encoder: bool = True
+ 99 |     window_block_indexes: Optional[List[int]] = None
+    |                                    ^^^^ UP006
+100 |     drop_path: float = Field(default=0.0, ge=0.0, le=1.0)
+    |
+    = help: Replace with `list`
+
+rfdetr/model_config.py:119:29: N805 First argument of a method should be named `self`
+    |
+118 |     @field_validator("resolution")
+119 |     def validate_resolution(cls, v):
+    |                             ^^^ N805
+120 |         """Validate that resolution is divisible by 14 for DINOv2."""
+121 |         if v % 14 != 0:
+    |
+    = help: Rename `cls` to `self`
+
+rfdetr/model_config.py:125:39: UP006 Use `dict` instead of `Dict` for type annotation
+    |
+123 |         return v
+124 |
+125 |     def dict_for_model_build(self) -> Dict[str, Any]:
+    |                                       ^^^^ UP006
+126 |         """
+127 |         Convert this Pydantic model to a dictionary for backward compatibility
+    |
+    = help: Replace with `dict`
+
+rfdetr/model_config.py:132:31: UP006 Use `dict` instead of `Dict` for type annotation
+    |
+130 |         return self.model_dump()
+131 |
+132 |     def to_args_dict(self) -> Dict[str, Any]:
+    |                               ^^^^ UP006
+133 |         """Alias for dict_for_model_build."""
+134 |         return self.dict_for_model_build()
+    |
+    = help: Replace with `dict`
+
+rfdetr/models/attention.py:23:8: N812 Lowercase `functional` imported as non-lowercase `F`
+   |
+21 | import torch
+22 | import torch.nn as nn
+23 | import torch.nn.functional as F
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^ N812
+24 | from einops import rearrange
+25 | from torch import Tensor
+   |
+
+rfdetr/models/attention.py:96:32: RUF012 Mutable class attributes should be annotated with `typing.ClassVar`
+   |
+94 |     """
+95 |
+96 |     __constants__: list[str] = ["batch_first"]
+   |                                ^^^^^^^^^^^^^^^ RUF012
+97 |     bias_k: Optional[torch.Tensor]
+98 |     bias_v: Optional[torch.Tensor]
+   |
+
+rfdetr/models/attention.py:307:5: C901 `multi_head_attention_forward` is too complex (28 > 10)
+    |
+307 | def multi_head_attention_forward(
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ C901
+308 |     query: Tensor,
+309 |     key: Tensor,
+    |
+
+rfdetr/models/attention.py:647:5: N806 Variable `Eq` in function should be lowercase
+    |
+646 |     """
+647 |     Eq, Ek, Ev = q.size(-1), k.size(-1), v.size(-1)
+    |     ^^ N806
+648 |     assert w_q.shape == (
+649 |         Eq,
+    |
+
+rfdetr/models/attention.py:647:9: N806 Variable `Ek` in function should be lowercase
+    |
+646 |     """
+647 |     Eq, Ek, Ev = q.size(-1), k.size(-1), v.size(-1)
+    |         ^^ N806
+648 |     assert w_q.shape == (
+649 |         Eq,
+    |
+
+rfdetr/models/attention.py:647:13: N806 Variable `Ev` in function should be lowercase
+    |
+646 |     """
+647 |     Eq, Ek, Ev = q.size(-1), k.size(-1), v.size(-1)
+    |             ^^ N806
+648 |     assert w_q.shape == (
+649 |         Eq,
+    |
+
+rfdetr/models/attention.py:703:5: N806 Variable `E` in function should be lowercase
+    |
+701 |             same shape as the corresponding input tensor.
+702 |     """
+703 |     E = q.size(-1)
+    |     ^ N806
+704 |     if k is v:
+705 |         if q is k:
+    |
+
+rfdetr/models/attention.py:757:5: N806 Variable `B` in function should be lowercase
+    |
+755 |             have shape :math:`(B, Nt, Ns)`
+756 |     """
+757 |     B, Nt, E = q.shape
+    |     ^ N806
+758 |     q = q / math.sqrt(E)
+759 |     # (B, Nt, E) x (B, E, Ns) -> (B, Nt, Ns)
+    |
+
+rfdetr/models/attention.py:757:8: N806 Variable `Nt` in function should be lowercase
+    |
+755 |             have shape :math:`(B, Nt, Ns)`
+756 |     """
+757 |     B, Nt, E = q.shape
+    |        ^^ N806
+758 |     q = q / math.sqrt(E)
+759 |     # (B, Nt, E) x (B, E, Ns) -> (B, Nt, Ns)
+    |
+
+rfdetr/models/attention.py:757:12: N806 Variable `E` in function should be lowercase
+    |
+755 |             have shape :math:`(B, Nt, Ns)`
+756 |     """
+757 |     B, Nt, E = q.shape
+    |            ^ N806
+758 |     q = q / math.sqrt(E)
+759 |     # (B, Nt, E) x (B, E, Ns) -> (B, Nt, Ns)
+    |
+
+rfdetr/models/backbone/__init__.py:10:1: UP035 `typing.Dict` is deprecated, use `dict` instead
+   |
+ 8 | # ------------------------------------------------------------------------
+ 9 |
+10 | from typing import Callable, Dict, List
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
+11 |
+12 | import torch
+   |
+
+rfdetr/models/backbone/__init__.py:10:1: UP035 `typing.List` is deprecated, use `list` instead
+   |
+ 8 | # ------------------------------------------------------------------------
+ 9 |
+10 | from typing import Callable, Dict, List
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
+11 |
+12 | import torch
+   |
+
+rfdetr/models/backbone/__init__.py:15:1: F403 `from rfdetr.models.backbone.backbone import *` used; unable to detect undefined names
+   |
+13 | from torch import nn
+14 |
+15 | from rfdetr.models.backbone.backbone import *
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ F403
+16 | from rfdetr.models.position_encoding import build_position_encoding
+17 | from rfdetr.util.misc import NestedTensor
+   |
+
+rfdetr/models/backbone/__init__.py:85:16: F405 `Backbone` may be undefined, or defined from star imports
+   |
+83 |     position_embedding = build_position_encoding(hidden_dim, position_embedding)
+84 |
+85 |     backbone = Backbone(
+   |                ^^^^^^^^ F405
+86 |         encoder,
+87 |         pretrained_encoder,
+   |
+
+rfdetr/models/backbone/backbone.py:23:8: N812 Lowercase `functional` imported as non-lowercase `F`
+   |
+22 | import torch
+23 | import torch.nn.functional as F
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^ N812
+24 | from peft import PeftModel
+   |
+
+rfdetr/models/backbone/dinov2_with_windowed_attn.py:301:9: SIM102 Use a single `if` statement instead of nested `if` statements
+    |
+300 |           # Validate output dimensions if not tracing
+301 | /         if not torch.jit.is_tracing():
+302 | |             if int(height) != patch_pos_embed.shape[-2] or int(width) != patch_pos_embed.shape[-1]:
+    | |___________________________________________________________________________________________________^ SIM102
+303 |                   raise ValueError(
+304 |                       "Width or height does not match with the interpolated position embeddings"
+    |
+    = help: Combine `if` statements using `and`
+
+rfdetr/models/backbone/dinov2_with_windowed_attn.py:692:13: N806 Variable `B` in function should be lowercase
+    |
+690 |         if run_full_attention:
+691 |             # reshape x to remove windows
+692 |             B, HW, C = hidden_states.shape
+    |             ^ N806
+693 |             num_windows_squared = self.num_windows**2
+694 |             hidden_states = hidden_states.view(
+    |
+
+rfdetr/models/backbone/dinov2_with_windowed_attn.py:692:16: N806 Variable `HW` in function should be lowercase
+    |
+690 |         if run_full_attention:
+691 |             # reshape x to remove windows
+692 |             B, HW, C = hidden_states.shape
+    |                ^^ N806
+693 |             num_windows_squared = self.num_windows**2
+694 |             hidden_states = hidden_states.view(
+    |
+
+rfdetr/models/backbone/dinov2_with_windowed_attn.py:692:20: N806 Variable `C` in function should be lowercase
+    |
+690 |         if run_full_attention:
+691 |             # reshape x to remove windows
+692 |             B, HW, C = hidden_states.shape
+    |                    ^ N806
+693 |             num_windows_squared = self.num_windows**2
+694 |             hidden_states = hidden_states.view(
+    |
+
+rfdetr/models/backbone/dinov2_with_windowed_attn.py:709:13: N806 Variable `B` in function should be lowercase
+    |
+707 |         if run_full_attention:
+708 |             # reshape x to add windows back
+709 |             B, HW, C = hidden_states.shape
+    |             ^ N806
+710 |             num_windows_squared = self.num_windows**2
+711 |             # hidden_states = hidden_states.view(B * num_windows_squared, HW // num_windows_squared, C)
+    |
+
+rfdetr/models/backbone/dinov2_with_windowed_attn.py:709:16: N806 Variable `HW` in function should be lowercase
+    |
+707 |         if run_full_attention:
+708 |             # reshape x to add windows back
+709 |             B, HW, C = hidden_states.shape
+    |                ^^ N806
+710 |             num_windows_squared = self.num_windows**2
+711 |             # hidden_states = hidden_states.view(B * num_windows_squared, HW // num_windows_squared, C)
+    |
+
+rfdetr/models/backbone/dinov2_with_windowed_attn.py:709:20: N806 Variable `C` in function should be lowercase
+    |
+707 |         if run_full_attention:
+708 |             # reshape x to add windows back
+709 |             B, HW, C = hidden_states.shape
+    |                    ^ N806
+710 |             num_windows_squared = self.num_windows**2
+711 |             # hidden_states = hidden_states.view(B * num_windows_squared, HW // num_windows_squared, C)
+    |
+
+rfdetr/models/backbone/dinov2_with_windowed_attn.py:809:25: RUF012 Mutable class attributes should be annotated with `typing.ClassVar`
+    |
+807 |     main_input_name = "pixel_values"
+808 |     supports_gradient_checkpointing = True
+809 |     _no_split_modules = ["Dinov2WithRegistersSwiGLUFFN"]
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ RUF012
+810 |     _supports_sdpa = True
+    |
+
+rfdetr/models/backbone/dinov2_with_windowed_attn.py:1205:25: N806 Variable `B` in function should be lowercase
+     |
+1203 |                         # undo windowing
+1204 |                         num_windows_squared = self.config.num_windows**2
+1205 |                         B, HW, C = hidden_state.shape
+     |                         ^ N806
+1206 |                         num_h_patches_per_window = num_h_patches // self.config.num_windows
+1207 |                         num_w_patches_per_window = num_w_patches // self.config.num_windows
+     |
+
+rfdetr/models/backbone/dinov2_with_windowed_attn.py:1205:28: N806 Variable `HW` in function should be lowercase
+     |
+1203 |                         # undo windowing
+1204 |                         num_windows_squared = self.config.num_windows**2
+1205 |                         B, HW, C = hidden_state.shape
+     |                            ^^ N806
+1206 |                         num_h_patches_per_window = num_h_patches // self.config.num_windows
+1207 |                         num_w_patches_per_window = num_w_patches // self.config.num_windows
+     |
+
+rfdetr/models/backbone/dinov2_with_windowed_attn.py:1205:32: N806 Variable `C` in function should be lowercase
+     |
+1203 |                         # undo windowing
+1204 |                         num_windows_squared = self.config.num_windows**2
+1205 |                         B, HW, C = hidden_state.shape
+     |                                ^ N806
+1206 |                         num_h_patches_per_window = num_h_patches // self.config.num_windows
+1207 |                         num_w_patches_per_window = num_w_patches // self.config.num_windows
+     |
+
+rfdetr/models/backbone/projector.py:20:8: N812 Lowercase `functional` imported as non-lowercase `F`
+   |
+18 | import torch
+19 | import torch.nn as nn
+20 | import torch.nn.functional as F
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^ N812
+   |
+
+rfdetr/models/lwdetr.py:28:8: N812 Lowercase `functional` imported as non-lowercase `F`
+   |
+27 | import torch
+28 | import torch.nn.functional as F
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^ N812
+29 | from torch import nn
+   |
+
+rfdetr/models/lwdetr.py:611:9: C901 `forward` is too complex (12 > 10)
+    |
+609 |         return loss_map[loss](outputs, targets, indices, num_boxes, **kwargs)
+610 |
+611 |     def forward(self, outputs, targets):
+    |         ^^^^^^^ C901
+612 |         """This performs the loss computation.
+613 |         Parameters:
+    |
+
+rfdetr/models/lwdetr.py:764:20: E741 Ambiguous variable name: `l`
+    |
+763 |         results = []
+764 |         for i, (s, l, b) in enumerate(zip(scores, labels, boxes)):
+    |                    ^ E741
+765 |             result = {"scores": s, "labels": l, "boxes": b}
+    |
+
+rfdetr/models/matcher.py:107:9: N806 Variable `C` in function should be lowercase
+    |
+106 |         # Final cost matrix
+107 |         C = self.cost_bbox * cost_bbox + self.cost_class * cost_class + self.cost_giou * cost_giou
+    |         ^ N806
+108 |         C = C.view(bs, num_queries, -1).cpu()
+    |
+
+rfdetr/models/matcher.py:108:9: N806 Variable `C` in function should be lowercase
+    |
+106 |         # Final cost matrix
+107 |         C = self.cost_bbox * cost_bbox + self.cost_class * cost_class + self.cost_giou * cost_giou
+108 |         C = C.view(bs, num_queries, -1).cpu()
+    |         ^ N806
+109 |
+110 |         sizes = [len(v["boxes"]) for v in targets]
+    |
+
+rfdetr/models/matcher.py:113:9: N806 Variable `C_list` in function should be lowercase
+    |
+111 |         indices = []
+112 |         g_num_queries = num_queries // group_detr
+113 |         C_list = C.split(g_num_queries, dim=1)
+    |         ^^^^^^ N806
+114 |         for g_i in range(group_detr):
+115 |             C_g = C_list[g_i]
+    |
+
+rfdetr/models/matcher.py:115:13: N806 Variable `C_g` in function should be lowercase
+    |
+113 |         C_list = C.split(g_num_queries, dim=1)
+114 |         for g_i in range(group_detr):
+115 |             C_g = C_list[g_i]
+    |             ^^^ N806
+116 |             indices_g = [linear_sum_assignment(c[i]) for i, c in enumerate(C_g.split(sizes, -1))]
+117 |             if g_i == 0:
+    |
+
+rfdetr/models/ops/functions/ms_deform_attn_func.py:19:8: N812 Lowercase `functional` imported as non-lowercase `F`
+   |
+18 | import torch
+19 | import torch.nn.functional as F
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^ N812
+   |
+
+rfdetr/models/ops/functions/ms_deform_attn_func.py:25:5: N806 Variable `B` in function should be lowercase
+   |
+23 |     """ "for debug and test only, need to use cuda version instead"""
+24 |     # B, n_heads, head_dim, N
+25 |     B, n_heads, head_dim, _ = value.shape
+   |     ^ N806
+26 |     _, Len_q, n_heads, L, P, _ = sampling_locations.shape
+27 |     value_list = value.split([H * W for H, W in value_spatial_shapes], dim=3)
+   |
+
+rfdetr/models/ops/functions/ms_deform_attn_func.py:26:8: N806 Variable `Len_q` in function should be lowercase
+   |
+24 |     # B, n_heads, head_dim, N
+25 |     B, n_heads, head_dim, _ = value.shape
+26 |     _, Len_q, n_heads, L, P, _ = sampling_locations.shape
+   |        ^^^^^ N806
+27 |     value_list = value.split([H * W for H, W in value_spatial_shapes], dim=3)
+28 |     sampling_grids = 2 * sampling_locations - 1
+   |
+
+rfdetr/models/ops/functions/ms_deform_attn_func.py:26:24: N806 Variable `L` in function should be lowercase
+   |
+24 |     # B, n_heads, head_dim, N
+25 |     B, n_heads, head_dim, _ = value.shape
+26 |     _, Len_q, n_heads, L, P, _ = sampling_locations.shape
+   |                        ^ N806
+27 |     value_list = value.split([H * W for H, W in value_spatial_shapes], dim=3)
+28 |     sampling_grids = 2 * sampling_locations - 1
+   |
+
+rfdetr/models/ops/functions/ms_deform_attn_func.py:26:27: N806 Variable `P` in function should be lowercase
+   |
+24 |     # B, n_heads, head_dim, N
+25 |     B, n_heads, head_dim, _ = value.shape
+26 |     _, Len_q, n_heads, L, P, _ = sampling_locations.shape
+   |                           ^ N806
+27 |     value_list = value.split([H * W for H, W in value_spatial_shapes], dim=3)
+28 |     sampling_grids = 2 * sampling_locations - 1
+   |
+
+rfdetr/models/ops/functions/ms_deform_attn_func.py:30:16: N806 Variable `H` in function should be lowercase
+   |
+28 |     sampling_grids = 2 * sampling_locations - 1
+29 |     sampling_value_list = []
+30 |     for lid_, (H, W) in enumerate(value_spatial_shapes):
+   |                ^ N806
+31 |         # B, n_heads, head_dim, H, W
+32 |         value_l_ = value_list[lid_].view(B * n_heads, head_dim, H, W)
+   |
+
+rfdetr/models/ops/functions/ms_deform_attn_func.py:30:19: N806 Variable `W` in function should be lowercase
+   |
+28 |     sampling_grids = 2 * sampling_locations - 1
+29 |     sampling_value_list = []
+30 |     for lid_, (H, W) in enumerate(value_spatial_shapes):
+   |                   ^ N806
+31 |         # B, n_heads, head_dim, H, W
+32 |         value_l_ = value_list[lid_].view(B * n_heads, head_dim, H, W)
+   |
+
+rfdetr/models/ops/modules/ms_deform_attn.py:22:8: N812 Lowercase `functional` imported as non-lowercase `F`
+   |
+21 | import torch
+22 | import torch.nn.functional as F
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^ N812
+23 | from torch import nn
+24 | from torch.nn.init import constant_, xavier_uniform_
+   |
+
+rfdetr/models/ops/modules/ms_deform_attn.py:121:9: N806 Variable `N` in function should be lowercase
+    |
+119 |         :return output                     (N, Length_{query}, C)
+120 |         """
+121 |         N, Len_q, _ = query.shape
+    |         ^ N806
+122 |         N, Len_in, _ = input_flatten.shape
+123 |         assert (input_spatial_shapes[:, 0] * input_spatial_shapes[:, 1]).sum() == Len_in
+    |
+
+rfdetr/models/ops/modules/ms_deform_attn.py:121:12: N806 Variable `Len_q` in function should be lowercase
+    |
+119 |         :return output                     (N, Length_{query}, C)
+120 |         """
+121 |         N, Len_q, _ = query.shape
+    |            ^^^^^ N806
+122 |         N, Len_in, _ = input_flatten.shape
+123 |         assert (input_spatial_shapes[:, 0] * input_spatial_shapes[:, 1]).sum() == Len_in
+    |
+
+rfdetr/models/ops/modules/ms_deform_attn.py:122:9: N806 Variable `N` in function should be lowercase
+    |
+120 |         """
+121 |         N, Len_q, _ = query.shape
+122 |         N, Len_in, _ = input_flatten.shape
+    |         ^ N806
+123 |         assert (input_spatial_shapes[:, 0] * input_spatial_shapes[:, 1]).sum() == Len_in
+    |
+
+rfdetr/models/ops/modules/ms_deform_attn.py:122:12: N806 Variable `Len_in` in function should be lowercase
+    |
+120 |         """
+121 |         N, Len_q, _ = query.shape
+122 |         N, Len_in, _ = input_flatten.shape
+    |            ^^^^^^ N806
+123 |         assert (input_spatial_shapes[:, 0] * input_spatial_shapes[:, 1]).sum() == Len_in
+    |
+
+rfdetr/models/position_encoding.py:154:5: N806 Variable `N_steps` in function should be lowercase
+    |
+153 | def build_position_encoding(hidden_dim, position_embedding):
+154 |     N_steps = hidden_dim // 2
+    |     ^^^^^^^ N806
+155 |     if position_embedding in ("v2", "sine"):
+156 |         # TODO find a better way of exposing other arguments
+    |
+
+rfdetr/models/segmentation.py:15:8: N812 Lowercase `functional` imported as non-lowercase `F`
+   |
+14 | import torch.nn as nn
+15 | import torch.nn.functional as F
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^ N812
+16 | from torch import Tensor
+   |
+
+rfdetr/models/segmentation.py:210:12: F821 Undefined name `torch`
+    |
+209 |         # Check for inf/nan values
+210 |         if torch.isnan(mask_probs).any() or torch.isinf(mask_probs).any():
+    |            ^^^^^ F821
+211 |             print("Warning: inf/nan in mask predictions, clamping values")
+212 |             mask_probs = torch.clamp(mask_probs, min=0.0, max=1.0)
+    |
+
+rfdetr/models/segmentation.py:210:45: F821 Undefined name `torch`
+    |
+209 |         # Check for inf/nan values
+210 |         if torch.isnan(mask_probs).any() or torch.isinf(mask_probs).any():
+    |                                             ^^^^^ F821
+211 |             print("Warning: inf/nan in mask predictions, clamping values")
+212 |             mask_probs = torch.clamp(mask_probs, min=0.0, max=1.0)
+    |
+
+rfdetr/models/segmentation.py:212:26: F821 Undefined name `torch`
+    |
+210 |         if torch.isnan(mask_probs).any() or torch.isinf(mask_probs).any():
+211 |             print("Warning: inf/nan in mask predictions, clamping values")
+212 |             mask_probs = torch.clamp(mask_probs, min=0.0, max=1.0)
+    |                          ^^^^^ F821
+213 |
+214 |         # Add mask predictions to the output
+    |
+
+rfdetr/models/transformer.py:24:8: N812 Lowercase `functional` imported as non-lowercase `F`
+   |
+23 | import torch
+24 | import torch.nn.functional as F
+   |        ^^^^^^^^^^^^^^^^^^^^^^^^ N812
+25 | from torch import Tensor, nn
+   |
+
+rfdetr/models/transformer.py:401:9: C901 `forward` is too complex (17 > 10)
+    |
+399 |         return new_refpoints_unsigmoid
+400 |
+401 |     def forward(
+    |         ^^^^^^^ C901
+402 |         self,
+403 |         tgt,
+    |
+
+rfdetr/util/benchmark.py:455:5: C901 `flop_count` is too complex (11 > 10)
+    |
+455 | def flop_count(
+    |     ^^^^^^^^^^ C901
+456 |     model: nn.Module,
+457 |     inputs: tuple[object, ...],
+    |
+
+rfdetr/util/early_stopping.py:39:9: C901 `update` is too complex (13 > 10)
+   |
+37 |         self.model = model
+38 |
+39 |     def update(self, log_stats: dict[str, Any]) -> None:
+   |         ^^^^^^ C901
+40 |         """Update early stopping state based on epoch validation metrics"""
+41 |         regular_map = None
+   |
+
+rfdetr/util/get_param_dicts.py:90:9: B007 Loop control variable `n` not used within loop body
+   |
+88 |     # Process other parameters
+89 |     other_params = []
+90 |     for n, p in all_param_names.items():
+   |         ^ B007
+91 |         if id(p) not in included_params:
+92 |             other_params.append(p)
+   |
+   = help: Rename unused `n` to `_n`
+
+rfdetr/util/metrics.py:40:9: C901 `save` is too complex (15 > 10)
+   |
+38 |         self.history.append(values)
+39 |
+40 |     def save(self):
+   |         ^^^^ C901
+41 |         if not self.history:
+42 |             print("No data to plot.")
+   |
+
+rfdetr/util/metrics.py:177:9: C901 `update` is too complex (12 > 10)
+    |
+175 |             )
+176 |
+177 |     def update(self, values: dict):
+    |         ^^^^^^ C901
+178 |         if not self.writer:
+179 |             return
+    |
+
+rfdetr/util/metrics.py:249:9: C901 `update` is too complex (12 > 10)
+    |
+247 |             )
+248 |
+249 |     def update(self, values: dict):
+    |         ^^^^^^ C901
+250 |         if not wandb or not self.run:
+251 |             return
+    |
+
+rfdetr/util/misc.py:282:13: SIM113 Use `enumerate()` for index variable `i` in `for` loop
+    |
+280 |                         )
+281 |                     )
+282 |             i += 1
+    |             ^^^^^^ SIM113
+283 |             end = time.time()
+284 |         total_time = time.time() - start_time
+    |
+
+Found 141 errors.
+No fixes available (13 hidden fixes can be enabled with the `--unsafe-fixes` option).

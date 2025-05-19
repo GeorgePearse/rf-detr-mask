@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Test script to verify model construction and forward pass"""
 
+import argparse
 import os
 import unittest
 
@@ -20,8 +21,12 @@ class TestModelConstruction(unittest.TestCase):
         config_path = os.path.join("configs", "default.yaml")
         self.config = load_config(config_path)
 
-        # Convert to args for backward compatibility
-        self.args = self.config.to_args()
+        # Create args directly without going through to_args() which causes duplicates
+        self.args = argparse.Namespace(
+            device="cpu",
+            num_classes=self.config.model.num_classes,
+            resolution=self.config.model.resolution,
+        )
 
         # Adjust some parameters for simple test
         self.args.batch_size = 1

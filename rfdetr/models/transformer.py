@@ -84,33 +84,35 @@ def gen_encoder_output_proposals(memory, memory_padding_mask, spatial_shapes, un
         - output_memory: bs, \sum{hw}, d_model
         - output_proposals: bs, \sum{hw}, 4
     """
-    N_, S_, C_ = memory.shape
+    n_batch, s_len, c_dim = memory.shape
     proposals = []
     _cur = 0
-    for lvl, (H_, W_) in enumerate(spatial_shapes):
+    for lvl, (h_shape, w_shape) in enumerate(spatial_shapes):
         if memory_padding_mask is not None:
-            mask_flatten_ = memory_padding_mask[:, _cur : (_cur + H_ * W_)].view(N_, H_, W_, 1)
-            valid_H = torch.sum(~mask_flatten_[:, :, 0, 0], 1)
-            valid_W = torch.sum(~mask_flatten_[:, 0, :, 0], 1)
+            mask_flatten_ = memory_padding_mask[:, _cur : (_cur + h_shape * w_shape)].view(
+                n_batch, h_shape, w_shape, 1
+            )
+            valid_h = torch.sum(~mask_flatten_[:, :, 0, 0], 1)
+            valid_w = torch.sum(~mask_flatten_[:, 0, :, 0], 1)
         else:
-            valid_H = torch.tensor([H_ for _ in range(N_)], device=memory.device)
-            valid_W = torch.tensor([W_ for _ in range(N_)], device=memory.device)
+            valid_h = torch.tensor([h_shape for _ in range(n_batch)], device=memory.device)
+            valid_w = torch.tensor([w_shape for _ in range(n_batch)], device=memory.device)
 
         grid_y, grid_x = torch.meshgrid(
-            torch.linspace(0, H_ - 1, H_, dtype=torch.float32, device=memory.device),
-            torch.linspace(0, W_ - 1, W_, dtype=torch.float32, device=memory.device),
+            torch.linspace(0, h_shape - 1, h_shape, dtype=torch.float32, device=memory.device),
+            torch.linspace(0, w_shape - 1, w_shape, dtype=torch.float32, device=memory.device),
             indexing="ij",
         )
-        grid = torch.cat([grid_x.unsqueeze(-1), grid_y.unsqueeze(-1)], -1)  # H_, W_, 2
+        grid = torch.cat([grid_x.unsqueeze(-1), grid_y.unsqueeze(-1)], -1)  # h_shape, w_shape, 2
 
-        scale = torch.cat([valid_W.unsqueeze(-1), valid_H.unsqueeze(-1)], 1).view(N_, 1, 1, 2)
-        grid = (grid.unsqueeze(0).expand(N_, -1, -1, -1) + 0.5) / scale
+        scale = torch.cat([valid_w.unsqueeze(-1), valid_h.unsqueeze(-1)], 1).view(n_batch, 1, 1, 2)
+        grid = (grid.unsqueeze(0).expand(n_batch, -1, -1, -1) + 0.5) / scale
 
         wh = torch.ones_like(grid) * 0.05 * (2.0**lvl)
 
-        proposal = torch.cat((grid, wh), -1).view(N_, -1, 4)
+        proposal = torch.cat((grid, wh), -1).view(n_batch, -1, 4)
         proposals.append(proposal)
-        _cur += H_ * W_
+        _cur += h_shape * w_shape
 
     output_proposals = torch.cat(proposals, 1)
     output_proposals_valid = ((output_proposals > 0.01) & (output_proposals < 0.99)).all(
@@ -225,11 +227,11 @@ class Transformer(nn.Module):
                 m._reset_parameters()
 
     def get_valid_ratio(self, mask):
-        _, H, W = mask.shape
-        valid_H = torch.sum(~mask[:, :, 0], 1)
-        valid_W = torch.sum(~mask[:, 0, :], 1)
-        valid_ratio_h = valid_H.float() / H
-        valid_ratio_w = valid_W.float() / W
+        _, h, w = mask.shape
+        valid_h = torch.sum(~mask[:, :, 0], 1)
+        valid_w = torch.sum(~mask[:, 0, :], 1)
+        valid_ratio_h = valid_h.float() / h
+        valid_ratio_w = valid_w.float() / w
         valid_ratio = torch.stack([valid_ratio_w, valid_ratio_h], -1)
         return valid_ratio
 
@@ -655,8 +657,8 @@ class TransformerDecoderLayer(nn.Module):
         )
 
 
-def _get_clones(module, N):
-    return nn.ModuleList([copy.deepcopy(module) for i in range(N)])
+def _get_clones(module, n):
+    return nn.ModuleList([copy.deepcopy(module) for i in range(n)])
 
 
 def build_transformer(args):
