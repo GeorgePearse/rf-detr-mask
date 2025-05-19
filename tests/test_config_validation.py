@@ -31,41 +31,26 @@ class TestConfigValidation(unittest.TestCase):
         with open(config_path) as f:
             config_data = yaml.safe_load(f)
 
-        # Get all fields from Pydantic models
-        model_fields = set(ModelConfig.model_fields.keys())
+        # Get all fields from Pydantic models in the sections dictionary below
 
         # Track all missing fields to provide a comprehensive report
         all_missing_fields = {}
 
-        # Check model fields
-        model_yaml_fields = set(config_data["model"].keys())
-        missing_model_fields = model_yaml_fields - model_fields
-        if missing_model_fields:
-            all_missing_fields["model"] = missing_model_fields
+        # Check fields for each section
+        sections = {
+            "model": set(ModelConfig.model_fields.keys()),
+            "training": set(TrainingConfig.model_fields.keys()),
+            "dataset": set(DatasetConfig.model_fields.keys()),
+            "mask": set(MaskConfig.model_fields.keys()),
+            "other": set(OtherConfig.model_fields.keys()),
+        }
 
-        # Check training fields
-        training_yaml_fields = set(config_data["training"].keys())
-        missing_training_fields = training_yaml_fields - training_fields
-        if missing_training_fields:
-            all_missing_fields["training"] = missing_training_fields
-
-        # Check dataset fields
-        dataset_yaml_fields = set(config_data["dataset"].keys())
-        missing_dataset_fields = dataset_yaml_fields - dataset_fields
-        if missing_dataset_fields:
-            all_missing_fields["dataset"] = missing_dataset_fields
-
-        # Check mask fields
-        mask_yaml_fields = set(config_data["mask"].keys())
-        missing_mask_fields = mask_yaml_fields - mask_fields
-        if missing_mask_fields:
-            all_missing_fields["mask"] = missing_mask_fields
-
-        # Check other fields
-        other_yaml_fields = set(config_data["other"].keys())
-        missing_other_fields = other_yaml_fields - other_fields
-        if missing_other_fields:
-            all_missing_fields["other"] = missing_other_fields
+        # Check all sections
+        for section, fields in sections.items():
+            yaml_fields = set(config_data[section].keys())
+            missing_fields = yaml_fields - fields
+            if missing_fields:
+                all_missing_fields[section] = missing_fields
 
         # Assert no missing fields and provide a detailed error message if there are any
         self.assertEqual(

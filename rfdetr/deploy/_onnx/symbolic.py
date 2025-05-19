@@ -10,10 +10,12 @@
 CustomOpSymbolicRegistry class
 """
 
+from typing import ClassVar
+
 
 class CustomOpSymbolicRegistry:
     # _SYMBOLICS = {}
-    _OPTIMIZER: list[str] = []
+    _OPTIMIZER: ClassVar[list[str]] = []
 
     @classmethod
     def optimizer(cls, fn):

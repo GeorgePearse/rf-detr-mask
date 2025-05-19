@@ -39,7 +39,7 @@ def main():
     parser.add_argument(
         "--config",
         type=str,
-        default="configs/iter_training_config.yaml",
+        default="configs/default.yaml",
         help="Path to YAML configuration file",
     )
     parser.add_argument(
