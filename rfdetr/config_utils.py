@@ -46,7 +46,6 @@ class ModelConfig(BaseModel):
     gradient_checkpointing: bool = False
     num_queries: int = Field(default=300, gt=0)
     num_select: int = Field(default=300, gt=0)
-    two_stage: bool = False
 
     @field_validator("resolution")
     @classmethod
@@ -192,7 +191,6 @@ class RFDETRConfig(BaseModel):
             "gradient_checkpointing": self.model.gradient_checkpointing,
             "num_queries": self.model.num_queries,
             "num_select": self.model.num_select,
-            "two_stage": self.model.two_stage,
             # Training parameters
             "lr": self.training.lr,
             "lr_encoder": self.training.lr_encoder,

@@ -850,7 +850,6 @@ def get_args_parser():
     parser.add_argument(
         "--group_detr", default=13, type=int, help="Number of groups to speed up detr training"
     )
-    parser.add_argument("--two_stage", action="store_true")
     parser.add_argument(
         "--projector_scale", default="P4", type=str, nargs="+", choices=("P3", "P4", "P5", "P6")
     )
@@ -1071,7 +1070,6 @@ def populate_args(
     ca_nheads=8,
     num_queries=300,
     group_detr=13,
-    two_stage=False,
     projector_scale="P4",
     lite_refpoint_refine=False,
     num_select=100,
@@ -1180,7 +1178,6 @@ def populate_args(
         ca_nheads=ca_nheads,
         num_queries=num_queries,
         group_detr=group_detr,
-        two_stage=two_stage,
         projector_scale=projector_scale,
         lite_refpoint_refine=lite_refpoint_refine,
         num_select=num_select,

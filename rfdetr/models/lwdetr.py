@@ -52,7 +52,6 @@ class LWDETR(nn.Module):
         num_queries,
         aux_loss=False,
         group_detr=1,
-        two_stage=False,
         lite_refpoint_refine=False,
         bbox_reparam=False,
     ):
@@ -106,15 +105,13 @@ class LWDETR(nn.Module):
         nn.init.constant_(self.mask_embed.layers[-1].weight.data, 0)
         nn.init.constant_(self.mask_embed.layers[-1].bias.data, 0)
 
-        # two_stage
-        self.two_stage = two_stage
-        if self.two_stage:
-            self.transformer.enc_out_bbox_embed = nn.ModuleList(
-                [copy.deepcopy(self.bbox_embed) for _ in range(group_detr)]
-            )
-            self.transformer.enc_out_class_embed = nn.ModuleList(
-                [copy.deepcopy(self.class_embed) for _ in range(group_detr)]
-            )
+        # Always enable two-stage behavior for encoder outputs
+        self.transformer.enc_out_bbox_embed = nn.ModuleList(
+            [copy.deepcopy(self.bbox_embed) for _ in range(group_detr)]
+        )
+        self.transformer.enc_out_class_embed = nn.ModuleList(
+            [copy.deepcopy(self.class_embed) for _ in range(group_detr)]
+        )
 
         self._export = False
 
@@ -128,12 +125,12 @@ class LWDETR(nn.Module):
         bias_value = -math.log((1 - prior_prob) / prior_prob)
         self.class_embed.bias.data = torch.ones(num_classes) * bias_value
 
-        if self.two_stage:
-            del self.transformer.enc_out_class_embed
-            self.transformer.add_module(
-                "enc_out_class_embed",
-                nn.ModuleList([copy.deepcopy(self.class_embed) for _ in range(self.group_detr)]),
-            )
+        # Always update encoder outputs class embed
+        del self.transformer.enc_out_class_embed
+        self.transformer.add_module(
+            "enc_out_class_embed",
+            nn.ModuleList([copy.deepcopy(self.class_embed) for _ in range(self.group_detr)]),
+        )
 
     def export(self):
         self._export = True
@@ -212,15 +209,15 @@ class LWDETR(nn.Module):
         if self.aux_loss:
             out["aux_outputs"] = self._set_aux_loss(outputs_class, outputs_coord, outputs_mask)
 
-        if self.two_stage:
-            group_detr = self.group_detr if self.training else 1
-            hs_enc_list = hs_enc.chunk(group_detr, dim=1)
-            cls_enc = []
-            for g_idx in range(group_detr):
-                cls_enc_gidx = self.transformer.enc_out_class_embed[g_idx](hs_enc_list[g_idx])
-                cls_enc.append(cls_enc_gidx)
-            cls_enc = torch.cat(cls_enc, dim=1)
-            out["enc_outputs"] = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
+        # Always include encoder outputs (former two-stage behavior is now the default)
+        group_detr = self.group_detr if self.training else 1
+        hs_enc_list = hs_enc.chunk(group_detr, dim=1)
+        cls_enc = []
+        for g_idx in range(group_detr):
+            cls_enc_gidx = self.transformer.enc_out_class_embed[g_idx](hs_enc_list[g_idx])
+            cls_enc.append(cls_enc_gidx)
+        cls_enc = torch.cat(cls_enc, dim=1)
+        out["enc_outputs"] = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
         return out
 
     def forward_export(self, tensors):
@@ -1000,7 +997,6 @@ def build_model(args):
         'num_queries': args.num_queries,
         'aux_loss': getattr(args, 'aux_loss', False),
         'group_detr': args.group_detr,
-        'two_stage': getattr(args, 'two_stage', False),
         'lite_refpoint_refine': getattr(args, 'lite_refpoint_refine', False),
         'bbox_reparam': getattr(args, 'bbox_reparam', False),
     }
@@ -1031,8 +1027,8 @@ def build_criterion_and_postprocessors(args):
         aux_weight_dict = {}
         for i in range(getattr(args, "dec_layers", 6) - 1):
             aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
-        if getattr(args, "two_stage", False):
-            aux_weight_dict.update({k + "_enc": v for k, v in weight_dict.items()})
+        # Always include encoder output weights (former two-stage behavior is now the default)
+        aux_weight_dict.update({k + "_enc": v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
     losses = ["labels", "boxes", "cardinality", "masks"]

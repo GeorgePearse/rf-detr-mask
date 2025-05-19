@@ -6,7 +6,6 @@ model:
   encoder: "dinov2_windowed_small"
   out_feature_indexes: [2, 5, 8, 11]
   dec_layers: 2
-  two_stage: true
   projector_scale: ["P4"]
   hidden_dim: 256
   sa_nheads: 8

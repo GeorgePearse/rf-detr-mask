@@ -25,7 +25,6 @@ model:
   gradient_checkpointing: true
   num_queries: 100
   num_select: 100
-  two_stage: true
 
 # Training Configuration
 training:
