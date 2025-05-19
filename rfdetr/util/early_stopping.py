@@ -3,6 +3,7 @@ Early stopping callback for RF-DETR training
 """
 
 from logging import getLogger
+from typing import Any
 
 logger = getLogger(__name__)
 
@@ -21,7 +22,7 @@ class EarlyStoppingCallback:
 
     def __init__(
         self,
-        model,
+        model: Any,
         patience: int = 5,
         min_delta: float = 0.001,
         use_ema: bool = False,
@@ -35,7 +36,7 @@ class EarlyStoppingCallback:
         self.counter = 0
         self.model = model
 
-    def update(self, log_stats: dict) -> None:
+    def update(self, log_stats: dict[str, Any]) -> None:
         """Update early stopping state based on epoch validation metrics"""
         regular_map = None
         ema_map = None
