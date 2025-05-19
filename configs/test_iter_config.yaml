@@ -47,7 +47,6 @@ num_queries: 100
 sa_nheads: 8
 ca_nheads: 8
 group_detr: 1
-two_stage: true
 lite_refpoint_refine: true
 bbox_reparam: true
 dec_n_points: 4

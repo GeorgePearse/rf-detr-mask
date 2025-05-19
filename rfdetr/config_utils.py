@@ -22,7 +22,6 @@ class ModelConfig(BaseModel):
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"]
     out_feature_indexes: list[int]
     dec_layers: int = Field(default=3, ge=1)
-    two_stage: bool = True
     projector_scale: list[Literal["P3", "P4", "P5", "P6"]]
     hidden_dim: int = Field(default=256, gt=0)
     sa_nheads: int = Field(default=8, gt=0)
@@ -151,7 +150,6 @@ class RFDETRConfig(BaseModel):
             "encoder": self.model.encoder,
             "out_feature_indexes": self.model.out_feature_indexes,
             "dec_layers": self.model.dec_layers,
-            "two_stage": self.model.two_stage,
             "projector_scale": self.model.projector_scale,
             "hidden_dim": self.model.hidden_dim,
             "sa_nheads": self.model.sa_nheads,

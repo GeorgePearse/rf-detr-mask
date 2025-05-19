@@ -5,7 +5,6 @@ model:
   encoder: "dinov2_windowed_small"  # Using small for quicker testing and less GPU memory
   out_feature_indexes: [2, 5, 8, 11]
   dec_layers: 3  # Fewer decoder layers for faster execution
-  two_stage: true
   projector_scale: ["P3", "P4", "P5"]
   hidden_dim: 256  # Smaller hidden dimension for faster execution
   sa_nheads: 8

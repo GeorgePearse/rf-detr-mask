@@ -153,7 +153,6 @@ class Transformer(nn.Module):
         normalize_before=False,
         return_intermediate_dec=False,
         group_detr=1,
-        two_stage=False,
         num_feature_levels=4,
         dec_n_points=4,
         lite_refpoint_refine=False,
@@ -193,12 +192,11 @@ class Transformer(nn.Module):
             bbox_reparam=bbox_reparam,
         )
 
-        self.two_stage = two_stage
-        if two_stage:
-            self.enc_output = nn.ModuleList(
-                [nn.Linear(d_model, d_model) for _ in range(group_detr)]
-            )
-            self.enc_output_norm = nn.ModuleList([nn.LayerNorm(d_model) for _ in range(group_detr)])
+        # Initialize encoder output processing
+        self.enc_output = nn.ModuleList(
+            [nn.Linear(d_model, d_model) for _ in range(group_detr)]
+        )
+        self.enc_output_norm = nn.ModuleList([nn.LayerNorm(d_model) for _ in range(group_detr)])
 
         self._reset_parameters()
 
@@ -259,89 +257,90 @@ class Transformer(nn.Module):
             (spatial_shapes.new_zeros((1,)), spatial_shapes.prod(1).cumsum(0)[:-1])
         )
 
-        if self.two_stage:
-            output_memory, output_proposals = gen_encoder_output_proposals(
-                memory, mask_flatten, spatial_shapes, unsigmoid=not self.bbox_reparam
+        # Generate encoder output proposals
+        output_memory, output_proposals = gen_encoder_output_proposals(
+            memory, mask_flatten, spatial_shapes, unsigmoid=not self.bbox_reparam
+        )
+        # Process for group DETR
+        refpoint_embed_ts, memory_ts, boxes_ts = [], [], []
+        group_detr = self.group_detr if self.training else 1
+        for g_idx in range(group_detr):
+            output_memory_gidx = self.enc_output_norm[g_idx](
+                self.enc_output[g_idx](output_memory)
             )
-            # group detr for first stage
-            refpoint_embed_ts, memory_ts, boxes_ts = [], [], []
-            group_detr = self.group_detr if self.training else 1
-            for g_idx in range(group_detr):
-                output_memory_gidx = self.enc_output_norm[g_idx](
-                    self.enc_output[g_idx](output_memory)
-                )
 
-                enc_outputs_class_unselected_gidx = self.enc_out_class_embed[g_idx](
+            enc_outputs_class_unselected_gidx = self.enc_out_class_embed[g_idx](
+                output_memory_gidx
+            )
+            if self.bbox_reparam:
+                enc_outputs_coord_delta_gidx = self.enc_out_bbox_embed[g_idx](
                     output_memory_gidx
                 )
-                if self.bbox_reparam:
-                    enc_outputs_coord_delta_gidx = self.enc_out_bbox_embed[g_idx](
-                        output_memory_gidx
-                    )
-                    enc_outputs_coord_cxcy_gidx = (
-                        enc_outputs_coord_delta_gidx[..., :2] * output_proposals[..., 2:]
-                        + output_proposals[..., :2]
-                    )
-                    enc_outputs_coord_wh_gidx = (
-                        enc_outputs_coord_delta_gidx[..., 2:].exp() * output_proposals[..., 2:]
-                    )
-                    enc_outputs_coord_unselected_gidx = torch.concat(
-                        [enc_outputs_coord_cxcy_gidx, enc_outputs_coord_wh_gidx], dim=-1
-                    )
-                else:
-                    enc_outputs_coord_unselected_gidx = (
-                        self.enc_out_bbox_embed[g_idx](output_memory_gidx) + output_proposals
-                    )  # (bs, \sum{hw}, 4) unsigmoid
-
-                topk = min(self.num_queries, enc_outputs_class_unselected_gidx.shape[-2])
-                topk_proposals_gidx = torch.topk(
-                    enc_outputs_class_unselected_gidx.max(-1)[0], topk, dim=1
-                )[1]  # bs, nq
-
-                refpoint_embed_gidx_undetach = torch.gather(
-                    enc_outputs_coord_unselected_gidx,
-                    1,
-                    topk_proposals_gidx.unsqueeze(-1).repeat(1, 1, 4),
-                )  # unsigmoid
-                # for decoder layer, detached as initial ones, (bs, nq, 4)
-                refpoint_embed_gidx = refpoint_embed_gidx_undetach.detach()
-
-                # get memory tgt
-                tgt_undetach_gidx = torch.gather(
-                    output_memory_gidx,
-                    1,
-                    topk_proposals_gidx.unsqueeze(-1).repeat(1, 1, self.d_model),
+                enc_outputs_coord_cxcy_gidx = (
+                    enc_outputs_coord_delta_gidx[..., :2] * output_proposals[..., 2:]
+                    + output_proposals[..., :2]
                 )
+                enc_outputs_coord_wh_gidx = (
+                    enc_outputs_coord_delta_gidx[..., 2:].exp() * output_proposals[..., 2:]
+                )
+                enc_outputs_coord_unselected_gidx = torch.concat(
+                    [enc_outputs_coord_cxcy_gidx, enc_outputs_coord_wh_gidx], dim=-1
+                )
+            else:
+                enc_outputs_coord_unselected_gidx = (
+                    self.enc_out_bbox_embed[g_idx](output_memory_gidx) + output_proposals
+                )  # (bs, \sum{hw}, 4) unsigmoid
 
-                refpoint_embed_ts.append(refpoint_embed_gidx)
-                memory_ts.append(tgt_undetach_gidx)
-                boxes_ts.append(refpoint_embed_gidx_undetach)
-            # concat on dim=1, the nq dimension, (bs, nq, d) --> (bs, nq, d)
-            refpoint_embed_ts = torch.cat(refpoint_embed_ts, dim=1)
-            # (bs, nq, d)
-            memory_ts = torch.cat(memory_ts, dim=1)  # .transpose(0, 1)
-            boxes_ts = torch.cat(boxes_ts, dim=1)  # .transpose(0, 1)
+            topk = min(self.num_queries, enc_outputs_class_unselected_gidx.shape[-2])
+            topk_proposals_gidx = torch.topk(
+                enc_outputs_class_unselected_gidx.max(-1)[0], topk, dim=1
+            )[1]  # bs, nq
+
+            refpoint_embed_gidx_undetach = torch.gather(
+                enc_outputs_coord_unselected_gidx,
+                1,
+                topk_proposals_gidx.unsqueeze(-1).repeat(1, 1, 4),
+            )  # unsigmoid
+            # for decoder layer, detached as initial ones, (bs, nq, 4)
+            refpoint_embed_gidx = refpoint_embed_gidx_undetach.detach()
+
+            # get memory tgt
+            tgt_undetach_gidx = torch.gather(
+                output_memory_gidx,
+                1,
+                topk_proposals_gidx.unsqueeze(-1).repeat(1, 1, self.d_model),
+            )
+
+            refpoint_embed_ts.append(refpoint_embed_gidx)
+            memory_ts.append(tgt_undetach_gidx)
+            boxes_ts.append(refpoint_embed_gidx_undetach)
+        # concat on dim=1, the nq dimension, (bs, nq, d) --> (bs, nq, d)
+        refpoint_embed_ts = torch.cat(refpoint_embed_ts, dim=1)
+        # (bs, nq, d)
+        memory_ts = torch.cat(memory_ts, dim=1)
+        boxes_ts = torch.cat(boxes_ts, dim=1)
 
         tgt = query_feat.unsqueeze(0).repeat(bs, 1, 1)
         refpoint_embed = refpoint_embed.unsqueeze(0).repeat(bs, 1, 1)
-        if self.two_stage:
-            ts_len = refpoint_embed_ts.shape[-2]
-            refpoint_embed_ts_subset = refpoint_embed[..., :ts_len, :]
-            refpoint_embed_subset = refpoint_embed[..., ts_len:, :]
+        
+        # Process reference points from encoder
+        ts_len = refpoint_embed_ts.shape[-2]
+        refpoint_embed_ts_subset = refpoint_embed[..., :ts_len, :]
+        refpoint_embed_subset = refpoint_embed[..., ts_len:, :]
 
-            if self.bbox_reparam:
-                refpoint_embed_cxcy = refpoint_embed_ts_subset[..., :2] * refpoint_embed_ts[..., 2:]
-                refpoint_embed_cxcy = refpoint_embed_cxcy + refpoint_embed_ts[..., :2]
-                refpoint_embed_wh = (
-                    refpoint_embed_ts_subset[..., 2:].exp() * refpoint_embed_ts[..., 2:]
-                )
-                refpoint_embed_ts_subset = torch.concat(
-                    [refpoint_embed_cxcy, refpoint_embed_wh], dim=-1
-                )
-            else:
-                refpoint_embed_ts_subset = refpoint_embed_ts_subset + refpoint_embed_ts
+        if self.bbox_reparam:
+            refpoint_embed_cxcy = refpoint_embed_ts_subset[..., :2] * refpoint_embed_ts[..., 2:]
+            refpoint_embed_cxcy = refpoint_embed_cxcy + refpoint_embed_ts[..., :2]
+            refpoint_embed_wh = (
+                refpoint_embed_ts_subset[..., 2:].exp() * refpoint_embed_ts[..., 2:]
+            )
+            refpoint_embed_ts_subset = torch.concat(
+                [refpoint_embed_cxcy, refpoint_embed_wh], dim=-1
+            )
+        else:
+            refpoint_embed_ts_subset = refpoint_embed_ts_subset + refpoint_embed_ts
 
-            refpoint_embed = torch.concat([refpoint_embed_ts_subset, refpoint_embed_subset], dim=-2)
+        refpoint_embed = torch.concat([refpoint_embed_ts_subset, refpoint_embed_subset], dim=-2)
 
         hs, references = self.decoder(
             tgt,
@@ -355,12 +354,11 @@ class Transformer(nn.Module):
             if valid_ratios is not None
             else valid_ratios,
         )
-        if self.two_stage:
-            if self.bbox_reparam:
-                return hs, references, memory_ts, boxes_ts
-            else:
-                return hs, references, memory_ts, boxes_ts.sigmoid()
-        return hs, references, None, None
+        # Always return encoder outputs
+        if self.bbox_reparam:
+            return hs, references, memory_ts, boxes_ts
+        else:
+            return hs, references, memory_ts, boxes_ts.sigmoid()
 
 
 class TransformerDecoder(nn.Module):
@@ -666,11 +664,6 @@ def _get_clones(module, N):
 
 
 def build_transformer(args):
-    try:
-        two_stage = args.two_stage
-    except:
-        two_stage = False
-
     return Transformer(
         d_model=args.hidden_dim,
         sa_nhead=args.sa_nheads,
@@ -681,7 +674,6 @@ def build_transformer(args):
         num_decoder_layers=args.dec_layers,
         return_intermediate_dec=True,
         group_detr=args.group_detr,
-        two_stage=two_stage,
         num_feature_levels=args.num_feature_levels,
         dec_n_points=args.dec_n_points,
         lite_refpoint_refine=args.lite_refpoint_refine,

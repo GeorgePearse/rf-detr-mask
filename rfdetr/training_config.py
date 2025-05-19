@@ -92,7 +92,6 @@ class TrainingConfig(BaseModel):
     sa_nheads: int = Field(8, description="Self-attention heads")
     ca_nheads: int = Field(8, description="Cross-attention heads")
     group_detr: int = Field(1, description="Group DETR parameter")
-    two_stage: bool = Field(True, description="Use two-stage model")
     lite_refpoint_refine: bool = Field(True, description="Use lite reference point refinement")
     num_queries: int = Field(300, description="Number of query slots")
     bbox_reparam: bool = Field(True, description="Use bbox reparameterization")

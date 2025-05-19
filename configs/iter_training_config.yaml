@@ -57,7 +57,6 @@ dim_feedforward: 1024
 sa_nheads: 8
 ca_nheads: 8
 group_detr: 1
-two_stage: true
 lite_refpoint_refine: true
 num_queries: 100
 bbox_reparam: true

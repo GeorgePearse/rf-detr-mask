@@ -12,6 +12,7 @@ This repository is a customized fork of the excellent [RF-DETR](https://github.c
 ## Useful Resources 
 
 - https://paperswithcode.com/paper/mask-frozen-detr-high-quality-instance
+- https://github.com/facebookresearch/detr/blob/main/models/segmentation.py
 
 ## What's Different in This Fork
 

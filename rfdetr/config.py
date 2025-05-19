@@ -19,7 +19,6 @@ class ModelConfig(BaseModel):
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"]
     out_feature_indexes: list[int]
     dec_layers: int = 3
-    two_stage: bool = True
     projector_scale: list[Literal["P3", "P4", "P5"]]
     hidden_dim: int
     sa_nheads: int

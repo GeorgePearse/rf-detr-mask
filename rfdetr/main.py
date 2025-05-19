@@ -133,7 +133,24 @@ class Model:
                 if any(name.endswith(x) for x in query_param_names):
                     checkpoint["model"][name] = state[:num_desired_queries]
 
-            self.model.load_state_dict(checkpoint["model"], strict=False)
+            # Check for missing mask parameters in the checkpoint
+            # These parameters are needed for segmentation but may not be in detection-only checkpoints
+            missing_mask_params = any(
+                param.startswith("mask_embed") for param in self.model.state_dict().keys()
+                if param not in checkpoint["model"]
+            )
+            
+            if missing_mask_params:
+                logger.info("Detected missing mask parameters in checkpoint - using initialized values for mask head")
+                
+            # Load state dict with strict=False to allow missing parameters to use defaults
+            result = self.model.load_state_dict(checkpoint["model"], strict=False)
+            
+            # Log missing and unexpected keys
+            if result.missing_keys:
+                logger.info(f"Missing keys during loading: {result.missing_keys}")
+            if result.unexpected_keys:
+                logger.info(f"Unexpected keys during loading: {result.unexpected_keys}")
 
         if args.backbone_lora:
             print("Applying LORA to backbone")
@@ -320,10 +337,48 @@ class Model:
 
         if args.resume:
             checkpoint = torch.load(args.resume, map_location="cpu", weights_only=False)
-            model_without_ddp.load_state_dict(checkpoint["model"], strict=True)
+            
+            # Check for class embedding size mismatch
+            checkpoint_num_classes = checkpoint["model"]["class_embed.bias"].shape[0]
+            if checkpoint_num_classes != args.num_classes + 1:
+                logger.warning(
+                    f"num_classes mismatch when resuming: checkpoint has {checkpoint_num_classes - 1} classes, but model has {args.num_classes} classes. "
+                    f"Reinitializing detection head with {checkpoint_num_classes - 1} classes."
+                )
+                model_without_ddp.reinitialize_detection_head(checkpoint_num_classes)
+                
+            # Check for missing mask parameters
+            missing_mask_params = any(
+                param.startswith("mask_embed") for param in model_without_ddp.state_dict().keys()
+                if param not in checkpoint["model"]
+            )
+            
+            if missing_mask_params:
+                logger.info("Detected missing mask parameters in checkpoint - using initialized values for mask head")
+                result = model_without_ddp.load_state_dict(checkpoint["model"], strict=False)
+                logger.info(f"Missing keys when resuming: {result.missing_keys}")
+                if result.unexpected_keys:
+                    logger.info(f"Unexpected keys when resuming: {result.unexpected_keys}")
+            else:
+                model_without_ddp.load_state_dict(checkpoint["model"], strict=True)
+                
             if args.use_ema:
                 if "ema_model" in checkpoint:
-                    self.ema_m.module.load_state_dict(clean_state_dict(checkpoint["ema_model"]))
+                    # Also handle non-strict loading for EMA model
+                    ema_state_dict = clean_state_dict(checkpoint["ema_model"])
+                    
+                    # Check for missing mask parameters in EMA
+                    ema_missing_mask_params = any(
+                        param.startswith("mask_embed") for param in self.ema_m.module.state_dict().keys()
+                        if param not in ema_state_dict
+                    )
+                    
+                    if ema_missing_mask_params:
+                        logger.info("Detected missing mask parameters in EMA checkpoint - using initialized values")
+                        result = self.ema_m.module.load_state_dict(ema_state_dict, strict=False)
+                        logger.info(f"Missing keys in EMA: {result.missing_keys}")
+                    else:
+                        self.ema_m.module.load_state_dict(ema_state_dict)
                 else:
                     del self.ema_m
                     self.ema_m = ModelEma(model, decay=args.ema_decay, tau=args.ema_tau)
@@ -1122,7 +1177,6 @@ def get_args_parser():
     parser.add_argument(
         "--group_detr", default=13, type=int, help="Number of groups to speed up detr training"
     )
-    parser.add_argument("--two_stage", action="store_true")
     parser.add_argument(
         "--projector_scale", default="P4", type=str, nargs="+", choices=("P3", "P4", "P5", "P6")
     )

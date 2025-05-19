@@ -52,7 +52,6 @@ class LWDETR(nn.Module):
         num_queries,
         aux_loss=False,
         group_detr=1,
-        two_stage=False,
         lite_refpoint_refine=False,
         bbox_reparam=False,
     ):
@@ -103,22 +102,34 @@ class LWDETR(nn.Module):
 
         # Add mask head (28x28 masks, similar to Mask R-CNN)
         self.mask_embed = MLP(hidden_dim, hidden_dim, 28 * 28, 3)
+        # Initialize with zeros for stable training
         nn.init.constant_(self.mask_embed.layers[-1].weight.data, 0)
         nn.init.constant_(self.mask_embed.layers[-1].bias.data, 0)
+        # Initialize other layers with small values for stability 
+        nn.init.xavier_uniform_(self.mask_embed.layers[0].weight.data, gain=0.01)
+        nn.init.constant_(self.mask_embed.layers[0].bias.data, 0)
+        nn.init.xavier_uniform_(self.mask_embed.layers[1].weight.data, gain=0.01)
+        nn.init.constant_(self.mask_embed.layers[1].bias.data, 0)
 
-        # two_stage
-        self.two_stage = two_stage
-        if self.two_stage:
-            self.transformer.enc_out_bbox_embed = nn.ModuleList(
-                [copy.deepcopy(self.bbox_embed) for _ in range(group_detr)]
-            )
-            self.transformer.enc_out_class_embed = nn.ModuleList(
-                [copy.deepcopy(self.class_embed) for _ in range(group_detr)]
-            )
+        # Initialize encoder output class and bbox embeddings
+        self.transformer.enc_out_bbox_embed = nn.ModuleList(
+            [copy.deepcopy(self.bbox_embed) for _ in range(group_detr)]
+        )
+        self.transformer.enc_out_class_embed = nn.ModuleList(
+            [copy.deepcopy(self.class_embed) for _ in range(group_detr)]
+        )
 
         self._export = False
 
     def reinitialize_detection_head(self, num_classes):
+        """Create a new detection head with the specified number of classes.
+        
+        This method is used when loading a checkpoint with a different number
+        of classes than the model was defined with.
+        
+        Args:
+            num_classes (int): The number of classes to use for the new head
+        """
         # Create new classification head
         del self.class_embed
         self.add_module("class_embed", nn.Linear(self.transformer.d_model, num_classes))
@@ -128,12 +139,15 @@ class LWDETR(nn.Module):
         bias_value = -math.log((1 - prior_prob) / prior_prob)
         self.class_embed.bias.data = torch.ones(num_classes) * bias_value
 
-        if self.two_stage:
+        # Clean up existing module list
+        if hasattr(self.transformer, "enc_out_class_embed"):
             del self.transformer.enc_out_class_embed
-            self.transformer.add_module(
-                "enc_out_class_embed",
-                nn.ModuleList([copy.deepcopy(self.class_embed) for _ in range(self.group_detr)]),
-            )
+            
+        # Create new module list with the correct number of classes
+        self.transformer.add_module(
+            "enc_out_class_embed",
+            nn.ModuleList([copy.deepcopy(self.class_embed) for _ in range(self.group_detr)]),
+        )
 
     def export(self):
         self._export = True
@@ -212,15 +226,15 @@ class LWDETR(nn.Module):
         if self.aux_loss:
             out["aux_outputs"] = self._set_aux_loss(outputs_class, outputs_coord, outputs_mask)
 
-        if self.two_stage:
-            group_detr = self.group_detr if self.training else 1
-            hs_enc_list = hs_enc.chunk(group_detr, dim=1)
-            cls_enc = []
-            for g_idx in range(group_detr):
-                cls_enc_gidx = self.transformer.enc_out_class_embed[g_idx](hs_enc_list[g_idx])
-                cls_enc.append(cls_enc_gidx)
-            cls_enc = torch.cat(cls_enc, dim=1)
-            out["enc_outputs"] = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
+        # Process encoder outputs
+        group_detr = self.group_detr if self.training else 1
+        hs_enc_list = hs_enc.chunk(group_detr, dim=1)
+        cls_enc = []
+        for g_idx in range(group_detr):
+            cls_enc_gidx = self.transformer.enc_out_class_embed[g_idx](hs_enc_list[g_idx])
+            cls_enc.append(cls_enc_gidx)
+        cls_enc = torch.cat(cls_enc, dim=1)
+        out["enc_outputs"] = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
         return out
 
     def forward_export(self, tensors):
@@ -998,7 +1012,6 @@ def build_model(config):
         num_queries=config.num_queries,
         aux_loss=config.aux_loss,
         group_detr=config.group_detr,
-        two_stage=config.two_stage,
         lite_refpoint_refine=config.lite_refpoint_refine,
         bbox_reparam=config.bbox_reparam,
     )
@@ -1049,8 +1062,8 @@ def build_criterion_and_postprocessors(config):
         aux_weight_dict = {}
         for i in range(config.dec_layers - 1):
             aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
-        if config.two_stage:
-            aux_weight_dict.update({k + "_enc": v for k, v in weight_dict.items()})
+        # Always include encoder outputs
+        aux_weight_dict.update({k + "_enc": v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
     # Define losses to compute

@@ -40,7 +40,6 @@ class Config:
     num_queries = 900
     aux_loss = True
     group_detr = 1
-    two_stage = True
     lite_refpoint_refine = False
     bbox_reparam = True
     sa_nheads = 8
