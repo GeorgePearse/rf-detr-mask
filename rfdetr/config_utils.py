@@ -40,8 +40,12 @@ class ModelConfig(BaseModel):
     pretrain_weights: Optional[str] = None
     device: Literal["cpu", "cuda", "mps"] = DEVICE
     resolution: int = Field(default=560, gt=0)
-    training_width: int = Field(..., gt=0, description="Width during training, must be divisible by 56")  # Required field, no default value
-    training_height: int = Field(..., gt=0, description="Height during training, must be divisible by 56")  # Required field, no default value
+    training_width: int = Field(
+        ..., gt=0, description="Width during training, must be divisible by 56"
+    )  # Required field, no default value
+    training_height: int = Field(
+        ..., gt=0, description="Height during training, must be divisible by 56"
+    )  # Required field, no default value
     group_detr: int = Field(default=13, gt=0)
     gradient_checkpointing: bool = False
     num_queries: int = Field(default=300, gt=0)
@@ -49,17 +53,17 @@ class ModelConfig(BaseModel):
 
     @field_validator("resolution")
     @classmethod
-    def validate_resolution(cls, v):
+    def validate_resolution(cls, v: int) -> int:
         """Validate that resolution is divisible by 14 for DINOv2."""
         if v % 14 != 0:
             error_msg = f"Resolution {v} must be divisible by 14 for DINOv2"
             logger.error(error_msg)
             raise ConfigurationError(error_msg)
         return v
-        
+
     @field_validator("training_width", "training_height")
     @classmethod
-    def validate_training_dimensions(cls, v, info):
+    def validate_training_dimensions(cls, v: int, info) -> int:
         """Validate that training dimensions are divisible by 56."""
         if v % 56 != 0:
             field_name = info.field_name
@@ -116,6 +120,7 @@ class DatasetConfig(BaseModel):
     coco_train: Optional[str] = ""
     coco_val: Optional[str] = ""
     coco_img_path: Optional[str] = ""
+    val_limit: Optional[int] = None
 
 
 class MaskConfig(BaseModel):
@@ -148,7 +153,7 @@ class RFDETRConfig(BaseModel):
 
     @model_validator(mode="after")
     @classmethod
-    def validate_config(cls, values):
+    def validate_config(cls, values: "RFDETRConfig") -> "RFDETRConfig":
         """Validate that configuration parameters are consistent."""
         if values.model.num_select != values.training.num_select:
             error_msg = f"Model num_select ({values.model.num_select}) must match training num_select ({values.training.num_select})"
@@ -226,6 +231,7 @@ class RFDETRConfig(BaseModel):
             "coco_train": self.dataset.coco_train,
             "coco_val": self.dataset.coco_val,
             "coco_img_path": self.dataset.coco_img_path,
+            "val_limit": self.dataset.val_limit,
             # Mask parameters
             "masks": self.mask.enabled,
             "loss_mask_coef": self.mask.loss_mask_coef,
