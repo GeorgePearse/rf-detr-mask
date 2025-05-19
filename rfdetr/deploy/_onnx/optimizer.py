@@ -102,7 +102,7 @@ class OnnxOptimizer:
                 Shape->Slice----^     subgraph to the graph to extract the shape of the output tensor.
         This fix is required for the dynamic shape support.
         """
-        mResizeNodes = 0
+        m_resize_nodes = 0
         for node in self.graph.nodes:
             if node.op == "Resize" and len(node.inputs) == 3:
                 name = node.name + "/"
@@ -180,26 +180,26 @@ class OnnxOptimizer:
                 node.inputs = []
                 node.outputs = []
 
-                mResizeNodes += 1
+                m_resize_nodes += 1
 
         self.cleanup()
-        return mResizeNodes
+        return m_resize_nodes
 
-    def adjustAddNode(self):
-        nAdjustAddNode = 0
+    def adjust_add_node(self):
+        n_adjust_add_node = 0
         for node in self.graph.nodes:
             # Change the bias const to the second input to allow Gemm+BiasAdd fusion in TRT.
             if node.op in ["Add"] and isinstance(node.inputs[0], gs.ir.tensor.Constant):
                 tensor = node.inputs[1]
                 bias = node.inputs[0]
                 node.inputs = [tensor, bias]
-                nAdjustAddNode += 1
+                n_adjust_add_node += 1
 
         self.cleanup()
-        return nAdjustAddNode
+        return n_adjust_add_node
 
     def decompose_instancenorms(self):
-        nRemoveInstanceNorm = 0
+        n_remove_instance_norm = 0
         for node in self.graph.nodes:
             if node.op == "InstanceNormalization":
                 name = node.name + "/"
@@ -268,14 +268,14 @@ class OnnxOptimizer:
                     inputs=[sub_out, sqrt_out],
                     outputs=[div_out],
                 )
-                constantScale = gs.Constant(
-                    "InstanceNormScaleV-" + str(nRemoveInstanceNorm),
+                constant_scale = gs.Constant(
+                    "InstanceNormScaleV-" + str(n_remove_instance_norm),
                     np.ascontiguousarray(
                         node.inputs[1].inputs[0].attrs["value"].values.reshape(1, 32, 1)
                     ),
                 )
-                constantBias = gs.Constant(
-                    "InstanceBiasV-" + str(nRemoveInstanceNorm),
+                constant_bias = gs.Constant(
+                    "InstanceBiasV-" + str(n_remove_instance_norm),
                     np.ascontiguousarray(
                         node.inputs[2].inputs[0].attrs["value"].values.reshape(1, 32, 1)
                     ),
@@ -285,14 +285,14 @@ class OnnxOptimizer:
                     op="Mul",
                     name=name + "mul_node",
                     attrs={},
-                    inputs=[div_out, constantScale],
+                    inputs=[div_out, constant_scale],
                     outputs=[mul_out],
                 )
                 add_node = gs.Node(
                     op="Add",
                     name=name + "add_node",
                     attrs={},
-                    inputs=[mul_out, constantBias],
+                    inputs=[mul_out, constant_bias],
                     outputs=[output_tensor],
                 )
                 self.graph.nodes.extend(
@@ -310,13 +310,13 @@ class OnnxOptimizer:
                 )
                 node.inputs = []
                 node.outputs = []
-                nRemoveInstanceNorm += 1
+                n_remove_instance_norm += 1
 
         self.cleanup()
-        return nRemoveInstanceNorm
+        return n_remove_instance_norm
 
     def insert_groupnorm_plugin(self):
-        nGroupNormPlugin = 0
+        n_group_norm_plugin = 0
         for node in self.graph.nodes:
             if (
                 node.op == "Reshape"
@@ -330,7 +330,7 @@ class OnnxOptimizer:
             ):
                 # "node.outputs != []" is added for VAE
 
-                inputTensor = node.inputs[0]
+                input_tensor = node.inputs[0]
 
                 gammaNode = node.o().o().o().o().o().o().o().o().o().o().o()
                 index = [type(i) == gs.ir.tensor.Constant for i in gammaNode.inputs].index(True)

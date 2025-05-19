@@ -14,10 +14,8 @@ import datetime
 import math
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
-import torch.nn.functional as F
 from lightning.fabric import Fabric
 from lightning.fabric.strategies import DDPStrategy
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
@@ -25,12 +23,11 @@ from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, Sequ
 # Import autocast for mixed precision training
 try:
     from torch.amp import GradScaler, autocast
+
     DEPRECATED_AMP = False
 except ImportError:
-    from torch.cuda.amp import GradScaler, autocast
     DEPRECATED_AMP = True
 
-import rfdetr.datasets.transforms as T
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
@@ -41,10 +38,10 @@ from rfdetr.util.utils import ModelEma
 
 def get_autocast_args(config):
     """Get autocast arguments for mixed precision training.
-    
+
     Args:
         config: Configuration object or dict
-        
+
     Returns:
         dict: Autocast arguments
     """
@@ -54,13 +51,13 @@ def get_autocast_args(config):
         if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
         else torch.float16
     )
-    
+
     # Check if config is a dict or object
     if isinstance(config, dict):
         amp_enabled = config.get("amp", False)
     else:
         amp_enabled = getattr(config, "amp", False)
-    
+
     if DEPRECATED_AMP:
         return {"enabled": amp_enabled, "dtype": dtype}
     else:
@@ -78,7 +75,7 @@ class RFDETRFabricModule:
         """
         # Import here to avoid circular imports
         from rfdetr.model_config import ModelConfig
-        
+
         # Handle different types of input for backward compatibility
         if isinstance(config, dict):
             # For dict input, try to convert to ModelConfig
@@ -107,20 +104,20 @@ class RFDETRFabricModule:
             # Object attribute access
             self.ema_decay = getattr(self.config, "ema_decay", None)
             use_ema = getattr(self.config, "use_ema", True)
-            
+
         self.ema = None  # Will be initialized after model is setup with fabric
 
         # Track metrics
         self.train_metrics = []
         self.val_metrics = []
         self.test_metrics = []
-        
+
         # Setup autocast args for mixed precision training
         self._setup_autocast_args()
 
         # Track best metrics
         self.best_map = 0.0
-        
+
         # Get configuration values based on type
         if isinstance(self.config, dict):
             output_dir = self.config.get("output_dir", "exports")
@@ -129,18 +126,20 @@ class RFDETRFabricModule:
             self.simplify_onnx = self.config.get("simplify_onnx", True)
             self.export_on_validation = self.config.get("export_on_validation", True)
             self.max_steps = self.config.get("max_steps", 2000)
-            self.eval_save_frequency = self.config.get("eval_save_frequency", 
-                                                     self.config.get("val_frequency", 200))
+            self.eval_save_frequency = self.config.get(
+                "eval_save_frequency", self.config.get("val_frequency", 200)
+            )
         else:
             output_dir = getattr(self.config, "output_dir", "exports")
             self.export_onnx = getattr(self.config, "export_onnx", True)
-            self.export_torch = getattr(self.config, "export_torch", True) 
+            self.export_torch = getattr(self.config, "export_torch", True)
             self.simplify_onnx = getattr(self.config, "simplify_onnx", True)
             self.export_on_validation = getattr(self.config, "export_on_validation", True)
             self.max_steps = getattr(self.config, "max_steps", 2000)
-            self.eval_save_frequency = getattr(self.config, "eval_save_frequency", 
-                                             getattr(self.config, "val_frequency", 200))
-        
+            self.eval_save_frequency = getattr(
+                self.config, "eval_save_frequency", getattr(self.config, "val_frequency", 200)
+            )
+
         # Setup export directories
         self.export_dir = Path(output_dir)
         self.export_dir.mkdir(parents=True, exist_ok=True)
@@ -149,13 +148,13 @@ class RFDETRFabricModule:
         """Set up arguments for autocast (mixed precision training)."""
         # Get autocast arguments from helper function
         self.autocast_args = get_autocast_args(self.config)
-            
+
     def _make_dummy_input(self, batch_size=1):
         """Generate a dummy input for ONNX export.
-        
+
         Args:
             batch_size: Number of samples in the batch
-            
+
         Returns:
             A dummy input tensor with the correct shape for ONNX export
         """
@@ -164,32 +163,32 @@ class RFDETRFabricModule:
             resolution = self.config.get("resolution", 640)
         else:
             resolution = getattr(self.config, "resolution", 640)
-        
+
         # Create dummy input
         dummy = torch.randint(0, 256, (batch_size, 3, resolution, resolution), dtype=torch.uint8)
         image = dummy.float() / 255.0
-        
+
         # Apply normalization
         mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1)
         std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1)
         image = (image - mean) / std
-        
+
         return image
-    
+
     def setup(self, fabric):
         """Setup the module with Fabric.
-        
+
         Args:
             fabric: Lightning Fabric instance
         """
         self.fabric = fabric
         self.model = fabric.setup_module(self.model)
         self.criterion = fabric.setup_module(self.criterion)
-        
+
         # Initialize EMA after model has been set up with fabric
         if self.ema_decay and getattr(self.config, "use_ema", True):
             self.ema = ModelEma(self.model, self.ema_decay)
-        
+
         # Get optimizer parameters
         if isinstance(self.config, dict):
             lr = self.config.get("lr", 1e-4)
@@ -208,10 +207,10 @@ class RFDETRFabricModule:
             eps=1e-4,
         )
         self.optimizer = fabric.setup_optimizers(self.optimizer)
-        
+
         # Configure learning rate scheduler
         self._setup_lr_scheduler()
-        
+
     def _setup_lr_scheduler(self):
         """Setup learning rate scheduler."""
         # Get scheduling parameters from config
@@ -223,10 +222,10 @@ class RFDETRFabricModule:
             warmup_ratio = getattr(self.config, "warmup_ratio", 0.1)
             lr_scheduler_type = getattr(self.config, "lr_scheduler", "cosine")
             lr_min_factor = getattr(self.config, "lr_min_factor", 0.0)
-        
+
         # Calculate warmup steps
         warmup_steps = int(self.max_steps * warmup_ratio)
-        
+
         # Define lambda function for scheduler
         def lr_lambda(current_step: int):
             if current_step < warmup_steps:
@@ -252,17 +251,17 @@ class RFDETRFabricModule:
 
     def train_step(self, batch):
         """Execute a single training step.
-        
+
         Args:
             batch: Tuple of (samples, targets)
-            
+
         Returns:
             dict: Dictionary containing loss values and metrics
         """
         samples, targets = batch
         self.model.train()
         self.criterion.train()
-        
+
         # Forward pass with autocast
         with torch.autocast(**self.autocast_args):
             outputs = self.model(samples, targets)
@@ -272,19 +271,21 @@ class RFDETRFabricModule:
 
         # Backward and optimize
         self.fabric.backward(losses)
-        
+
         # Clip gradients if needed
         if hasattr(self.config, "clip_max_norm") and self.config.clip_max_norm > 0:
-            self.fabric.clip_gradients(self.model, optimizer=self.optimizer, max_norm=self.config.clip_max_norm)
-        
+            self.fabric.clip_gradients(
+                self.model, optimizer=self.optimizer, max_norm=self.config.clip_max_norm
+            )
+
         self.optimizer.step()
         self.lr_scheduler.step()
         self.optimizer.zero_grad()
-        
+
         # Update EMA model if available
         if self.ema is not None:
             self.ema.update(self.model)
-            
+
         # Log metrics
         loss_dict_reduced = utils.reduce_dict(loss_dict)
         loss_dict_reduced_unscaled = {f"{k}_unscaled": v for k, v in loss_dict_reduced.items()}
@@ -292,7 +293,7 @@ class RFDETRFabricModule:
             k: v * weight_dict[k] for k, v in loss_dict_reduced.items() if k in weight_dict
         }
         losses_reduced_scaled = sum(loss_dict_reduced_scaled.values())
-        
+
         metrics = {
             "loss": losses_reduced_scaled.item(),
             "class_error": loss_dict_reduced["class_error"].item(),
@@ -300,23 +301,23 @@ class RFDETRFabricModule:
             **{k: v.item() for k, v in loss_dict_reduced_scaled.items()},
             **{k: v.item() for k, v in loss_dict_reduced_unscaled.items()},
         }
-        
+
         self.train_metrics.append(metrics)
         return metrics
-    
+
     def validation_step(self, batch):
         """Execute a single validation step.
-        
+
         Args:
             batch: Tuple of (samples, targets)
-            
+
         Returns:
             tuple: (metrics, results, targets) for COCO evaluation
         """
         samples, targets = batch
         self.model.eval()
         self.criterion.eval()
-        
+
         # Determine which model to evaluate (EMA or regular)
         model_to_eval = self.ema.ema if self.ema is not None else self.model
 
@@ -325,7 +326,7 @@ class RFDETRFabricModule:
             fp16_eval = self.config.get("fp16_eval", False)
         else:
             fp16_eval = getattr(self.config, "fp16_eval", False)
-            
+
         # Store original precision
         orig_dtype = None
         if fp16_eval:
@@ -343,7 +344,7 @@ class RFDETRFabricModule:
             # Convert model back to original precision
             for p in model_to_eval.parameters():
                 p.data = p.data.to(orig_dtype)
-                
+
             # Convert outputs back to float
             for key in outputs:
                 if key == "enc_outputs":
@@ -383,88 +384,92 @@ class RFDETRFabricModule:
         self.val_metrics.append(val_metrics)
 
         return {"metrics": val_metrics, "results": res, "targets": targets}
-        
+
     def export_model(self, epoch):
         """Export model to ONNX and save PyTorch weights.
-        
+
         Args:
             epoch: Current epoch number
         """
-        if not hasattr(self, 'export_onnx') or not hasattr(self, 'export_torch'):
+        if not hasattr(self, "export_onnx") or not hasattr(self, "export_torch"):
             return
-            
+
         if not (self.export_onnx or self.export_torch):
             return
-        
+
         # Use CPU for exports to avoid CUDA errors
         device = torch.device("cpu")
-        
+
         # Create timestamped directory for this export
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+
         # Make sure we have an export directory
-        if not hasattr(self, 'export_dir') or self.export_dir is None:
+        if not hasattr(self, "export_dir") or self.export_dir is None:
             self.export_dir = Path("exports")
-            
+
         export_path = self.export_dir / f"epoch_{epoch:04d}_{timestamp}"
         export_path.mkdir(parents=True, exist_ok=True)
-        
+
         # Save to logs
         print(f"Exporting model to {export_path}")
-        
+
         # Get model to export (use EMA if available)
         model_to_export = self.ema.ema if self.ema is not None else self.model
         model_to_export = model_to_export.to(device)
         model_to_export.eval()
-        
+
         try:
             # Export PyTorch weights
             if self.export_torch:
                 torch_path = export_path / "model.pth"
-                config_data = self.config.model_dump() if hasattr(self.config, "model_dump") else self.config
-                torch.save({
-                    "model": model_to_export.state_dict(),
-                    "config": config_data,
-                    "epoch": epoch,
-                    "map": self.best_map
-                }, torch_path)
+                config_data = (
+                    self.config.model_dump() if hasattr(self.config, "model_dump") else self.config
+                )
+                torch.save(
+                    {
+                        "model": model_to_export.state_dict(),
+                        "config": config_data,
+                        "epoch": epoch,
+                        "map": self.best_map,
+                    },
+                    torch_path,
+                )
                 print(f"Saved PyTorch weights to {torch_path}")
-            
+
             # ONNX export
             if self.export_onnx:
                 try:
                     # Import ONNX export modules
                     from rfdetr.deploy.export import export_onnx, onnx_simplify
-                    
+
                     # Export to ONNX format
                     dummy_input = self._make_dummy_input()
                     onnx_path = export_path / "inference_model.onnx"
-                    
+
                     # Perform export
                     export_onnx(
                         output_dir=export_path,
                         model=model_to_export,
                         input_tensors=dummy_input,
                         verbose=False,
-                        opset_version=getattr(self.config, "opset_version", 17)
+                        opset_version=getattr(self.config, "opset_version", 17),
                     )
-                    
+
                     # Simplify if requested
                     if self.simplify_onnx:
-                        onnx_simplify(
-                            onnx_dir=onnx_path,
-                            input_tensors=dummy_input
-                        )
+                        onnx_simplify(onnx_dir=onnx_path, input_tensors=dummy_input)
                 except ImportError:
-                    print("ONNX export dependencies not found. Install with: pip install \".[onnxexport]\"")
+                    print(
+                        'ONNX export dependencies not found. Install with: pip install ".[onnxexport]"'
+                    )
                 except Exception as e:
                     print(f"Error during ONNX export: {e}")
         except Exception as e:
             print(f"Error during model export: {e}")
         finally:
             # Move model back to original device
-            if hasattr(self, 'fabric'):
-                device = getattr(self.fabric, 'device', None)
+            if hasattr(self, "fabric"):
+                device = getattr(self.fabric, "device", None)
                 if device:
                     model_to_export.to(device)
 
@@ -480,7 +485,7 @@ class RFDETRFabricData:
         """
         # Import here to avoid circular imports
         from rfdetr.model_config import ModelConfig
-        
+
         # Handle different types of input for backward compatibility
         if isinstance(config, dict):
             # For dict input, try to convert to ModelConfig
@@ -495,7 +500,7 @@ class RFDETRFabricData:
         else:
             # Other object with attributes, keep as is
             self.config = config
-            
+
         # Get configuration values based on type
         if isinstance(self.config, dict):
             self.batch_size = self.config.get("batch_size", 4)
@@ -512,7 +517,7 @@ class RFDETRFabricData:
 
     def setup(self, fabric=None):
         """Set up datasets for training and validation.
-        
+
         Args:
             fabric: Optional Fabric instance for distributed setup
         """
@@ -523,7 +528,7 @@ class RFDETRFabricData:
         self.dataset_val = build_dataset(
             image_set="val", args=self.config, resolution=self.resolution
         )
-        
+
         # Store fabric reference
         self.fabric = fabric
 
@@ -544,7 +549,7 @@ class RFDETRFabricData:
             collate_fn=utils.collate_fn,
             num_workers=self.num_workers,
         )
-        
+
         if self.fabric:
             return self.fabric.setup_dataloaders(dataloader_train)
         return dataloader_train
@@ -564,22 +569,17 @@ class RFDETRFabricData:
             collate_fn=utils.collate_fn,
             num_workers=self.num_workers,
         )
-        
+
         if self.fabric:
             return self.fabric.setup_dataloaders(dataloader_val)
         return dataloader_val
 
 
 def train_with_fabric(
-    config, 
-    output_dir=None, 
-    callbacks=None, 
-    precision="32-true", 
-    devices=1, 
-    accelerator="auto"
+    config, output_dir=None, callbacks=None, precision="32-true", devices=1, accelerator="auto"
 ):
     """Train RF-DETR model using Lightning Fabric.
-    
+
     Args:
         config: The model configuration
         output_dir: Directory to save outputs (overrides config value)
@@ -587,33 +587,31 @@ def train_with_fabric(
         precision: Precision setting for Fabric
         devices: Number of devices to use
         accelerator: Hardware accelerator to use
-        
+
     Returns:
         The trained model and final metrics
     """
-    # Setup output directory 
+    # Setup output directory
     if output_dir:
         if isinstance(config, dict):
             config["output_dir"] = output_dir
         else:
             config.output_dir = output_dir
-            
-    output_dir = output_dir or (config.output_dir if hasattr(config, "output_dir") else "output_fabric")
+
+    output_dir = output_dir or (
+        config.output_dir if hasattr(config, "output_dir") else "output_fabric"
+    )
     os.makedirs(output_dir, exist_ok=True)
-    
+
     # Initialize callbacks if not provided
     if callbacks is None:
-        callbacks = {
-            "on_fit_epoch_end": [],
-            "on_train_batch_start": [],
-            "on_train_end": []
-        }
-    
+        callbacks = {"on_fit_epoch_end": [], "on_train_batch_start": [], "on_train_end": []}
+
     # Setup Fabric
     strategy = "auto"
     if devices > 1:
         strategy = DDPStrategy(find_unused_parameters=True)
-        
+
     fabric = Fabric(
         accelerator=accelerator,
         devices=devices,
@@ -621,34 +619,34 @@ def train_with_fabric(
         strategy=strategy,
     )
     fabric.launch()
-    
+
     # Create model and data module
     model = RFDETRFabricModule(config)
     data_module = RFDETRFabricData(config)
-    
+
     # Setup data module
     data_module.setup(fabric)
     train_loader = data_module.train_dataloader()
     val_loader = data_module.val_dataloader()
-    
+
     # Setup model
     model.setup(fabric)
-    
+
     # Add COCO evaluation capabilities
     base_ds = get_coco_api_from_dataset(data_module.dataset_val)
     iou_types = tuple(k for k in ("segm", "bbox") if k in model.postprocessors)
-    
+
     # Get training parameters
     max_steps = model.max_steps
     eval_save_frequency = model.eval_save_frequency
-    
+
     # Initialize step counter
     global_step = 0
-    
+
     # Start training
     print(f"Starting training with Fabric for {max_steps} steps")
     print(f"Validation and checkpointing every {eval_save_frequency} steps")
-    
+
     # Training loop
     model.model.train()
     train_iter = iter(train_loader)
@@ -659,7 +657,7 @@ def train_with_fabric(
         except StopIteration:
             train_iter = iter(train_loader)
             batch = next(train_iter)
-            
+
         # Call callbacks
         callback_dict = {
             "step": global_step,
@@ -668,97 +666,117 @@ def train_with_fabric(
         }
         for callback in callbacks["on_train_batch_start"]:
             callback(callback_dict)
-        
+
         # Execute training step
         metrics = model.train_step(batch)
-        
+
         # Log every 10 steps
         if global_step % 10 == 0:
-            fabric.print(f"Step {global_step}/{max_steps}, "
-                       f"Loss: {metrics['loss']:.4f}, "
-                       f"LR: {metrics['lr']:.6f}")
-        
+            fabric.print(
+                f"Step {global_step}/{max_steps}, "
+                f"Loss: {metrics['loss']:.4f}, "
+                f"LR: {metrics['lr']:.6f}"
+            )
+
         # Run validation and checkpointing if needed
         if global_step > 0 and global_step % eval_save_frequency == 0:
             # Initialize COCO evaluator
             coco_evaluator = CocoEvaluator(base_ds, iou_types)
-            
+
             # Run validation
             model.model.eval()
             model.val_metrics = []  # Reset metrics
-            
+
             with torch.no_grad():
                 for val_batch in val_loader:
                     val_output = model.validation_step(val_batch)
                     # Update COCO evaluator
                     coco_evaluator.update(val_output["results"])
-            
+
             # Process COCO results
             coco_evaluator.synchronize_between_processes()
             coco_evaluator.accumulate()
             coco_evaluator.summarize()
-            
+
             # Extract metrics
-            map_regular = coco_evaluator.coco_eval["bbox"].stats[0] if "bbox" in coco_evaluator.coco_eval else 0
-            
+            map_regular = (
+                coco_evaluator.coco_eval["bbox"].stats[0]
+                if "bbox" in coco_evaluator.coco_eval
+                else 0
+            )
+
             # Update best mAP
             is_best = False
             if map_regular > model.best_map:
                 model.best_map = map_regular
                 is_best = True
-                
+
             # Print validation results
-            fabric.print(f"Step {global_step}: mAP: {map_regular:.4f}, Best mAP: {model.best_map:.4f}")
-            
+            fabric.print(
+                f"Step {global_step}: mAP: {map_regular:.4f}, Best mAP: {model.best_map:.4f}"
+            )
+
             # Save checkpoints
             if fabric.is_global_zero:
                 # Regular checkpoint
                 checkpoint_path = Path(output_dir) / f"checkpoint_step_{global_step:07d}.pth"
-                torch.save({
-                    "model": model.model.state_dict(),
-                    "optimizer": model.optimizer.state_dict(),
-                    "lr_scheduler": model.lr_scheduler.state_dict(),
-                    "step": global_step,
-                    "config": config,
-                }, checkpoint_path)
-                
-                # Best checkpoint if applicable
-                if is_best:
-                    best_path = Path(output_dir) / "checkpoint_best.pth"
-                    torch.save({
+                torch.save(
+                    {
                         "model": model.model.state_dict(),
                         "optimizer": model.optimizer.state_dict(),
                         "lr_scheduler": model.lr_scheduler.state_dict(),
                         "step": global_step,
                         "config": config,
-                    }, best_path)
-                
+                    },
+                    checkpoint_path,
+                )
+
+                # Best checkpoint if applicable
+                if is_best:
+                    best_path = Path(output_dir) / "checkpoint_best.pth"
+                    torch.save(
+                        {
+                            "model": model.model.state_dict(),
+                            "optimizer": model.optimizer.state_dict(),
+                            "lr_scheduler": model.lr_scheduler.state_dict(),
+                            "step": global_step,
+                            "config": config,
+                        },
+                        best_path,
+                    )
+
                 # EMA checkpoint if available
                 if model.ema is not None:
                     ema_path = Path(output_dir) / f"checkpoint_ema_step_{global_step:07d}.pth"
-                    torch.save({
-                        "model": model.ema.ema.state_dict(),
-                        "optimizer": model.optimizer.state_dict(),
-                        "lr_scheduler": model.lr_scheduler.state_dict(),
-                        "step": global_step,
-                        "config": config,
-                    }, ema_path)
-                    
-                    # Best EMA checkpoint if applicable
-                    if is_best:
-                        best_ema_path = Path(output_dir) / "checkpoint_best_ema.pth"
-                        torch.save({
+                    torch.save(
+                        {
                             "model": model.ema.ema.state_dict(),
                             "optimizer": model.optimizer.state_dict(),
                             "lr_scheduler": model.lr_scheduler.state_dict(),
                             "step": global_step,
                             "config": config,
-                        }, best_ema_path)
-            
+                        },
+                        ema_path,
+                    )
+
+                    # Best EMA checkpoint if applicable
+                    if is_best:
+                        best_ema_path = Path(output_dir) / "checkpoint_best_ema.pth"
+                        torch.save(
+                            {
+                                "model": model.ema.ema.state_dict(),
+                                "optimizer": model.optimizer.state_dict(),
+                                "lr_scheduler": model.lr_scheduler.state_dict(),
+                                "step": global_step,
+                                "config": config,
+                            },
+                            best_ema_path,
+                        )
+
                 # Export model if configured
                 if model.export_on_validation:
                     model.export_model(global_step)
-            
+
             # Prepare log stats for callbacks
             log_stats = {
                 "train_loss": metrics["loss"],
@@ -768,38 +786,40 @@ def train_with_fabric(
                 "n_parameters": sum(p.numel() for p in model.model.parameters() if p.requires_grad),
                 "best_map": model.best_map,
             }
-            
+
             # Run epoch end callbacks
             for callback in callbacks["on_fit_epoch_end"]:
                 callback(log_stats)
-                
+
             # Resume training
             model.model.train()
-            
+
         # Increment step counter
         global_step += 1
-    
+
     # Final validation
     model.model.eval()
     coco_evaluator = CocoEvaluator(base_ds, iou_types)
-    
+
     with torch.no_grad():
         for val_batch in val_loader:
             val_output = model.validation_step(val_batch)
             coco_evaluator.update(val_output["results"])
-    
+
     coco_evaluator.synchronize_between_processes()
     coco_evaluator.accumulate()
     coco_evaluator.summarize()
-    
+
     # Get final metrics
-    final_map = coco_evaluator.coco_eval["bbox"].stats[0] if "bbox" in coco_evaluator.coco_eval else 0
-    
+    final_map = (
+        coco_evaluator.coco_eval["bbox"].stats[0] if "bbox" in coco_evaluator.coco_eval else 0
+    )
+
     # Run train end callbacks
     for callback in callbacks["on_train_end"]:
         callback()
-    
+
     fabric.print(f"Training completed. Final mAP: {final_map:.4f}, Best mAP: {model.best_map:.4f}")
-    
+
     # Return model and metrics
     return model, {"final_map": final_map, "best_map": model.best_map}

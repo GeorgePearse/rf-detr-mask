@@ -914,13 +914,13 @@ def build_model(args):
 
     # Debug prints to understand what's happening
     print(f"DEBUG: args has shape? {hasattr(args, 'shape')}")
-    if hasattr(args, 'shape'):
+    if hasattr(args, "shape"):
         print(f"DEBUG: args.shape = {args.shape}, type: {type(args.shape)}")
     print(f"DEBUG: args has resolution? {hasattr(args, 'resolution')}")
-    if hasattr(args, 'resolution'):
+    if hasattr(args, "resolution"):
         print(f"DEBUG: args.resolution = {args.resolution}")
-    
-    # Calculate target_shape 
+
+    # Calculate target_shape
     if hasattr(args, "shape") and args.shape is not None:
         target_shape = tuple(args.shape) if isinstance(args.shape, list) else args.shape
     elif hasattr(args, "training_width") and hasattr(args, "training_height"):
@@ -934,9 +934,9 @@ def build_model(args):
         target_shape = (args.resolution, args.resolution)
     else:
         target_shape = (640, 640)
-        
+
     print(f"DEBUG: target_shape = {target_shape}")
-    
+
     backbone = build_backbone(
         encoder=args.encoder,
         vit_encoder_num_layers=getattr(args, "vit_encoder_num_layers", None),
@@ -959,15 +959,15 @@ def build_model(args):
         load_dinov2_weights=getattr(args, "pretrain_weights", None) is None,
     )
     # Check if encoder_only is defined and True
-    if hasattr(args, 'encoder_only') and args.encoder_only:
+    if hasattr(args, "encoder_only") and args.encoder_only:
         return backbone[0].encoder, None, None
     # Check if backbone_only is defined and True
-    if hasattr(args, 'backbone_only') and args.backbone_only:
+    if hasattr(args, "backbone_only") and args.backbone_only:
         return backbone, None, None
 
     # Use variable instead of modifying args directly
     num_feature_levels = len(args.projector_scale)
-    
+
     # Create a dictionary of args for the transformer with num_feature_levels
     transformer_args = {
         "hidden_dim": args.hidden_dim,
@@ -982,25 +982,27 @@ def build_model(args):
         "num_feature_levels": num_feature_levels,
         "dec_n_points": args.dec_n_points,
         "lite_refpoint_refine": getattr(args, "lite_refpoint_refine", False),
-        "decoder_norm": getattr(args, "decoder_norm_type", "LN"),  # Match the parameter name expected in build_transformer
+        "decoder_norm": getattr(
+            args, "decoder_norm_type", "LN"
+        ),  # Match the parameter name expected in build_transformer
         "bbox_reparam": getattr(args, "bbox_reparam", False),
     }
-    
+
     # Build the transformer with the args dictionary
-    transformer = build_transformer(type('Args', (), transformer_args))
+    transformer = build_transformer(type("Args", (), transformer_args))
 
     # Create a model with the collected args
     model_args = {
-        'backbone': backbone,
-        'transformer': transformer,
-        'num_classes': num_classes,
-        'num_queries': args.num_queries,
-        'aux_loss': getattr(args, 'aux_loss', False),
-        'group_detr': args.group_detr,
-        'lite_refpoint_refine': getattr(args, 'lite_refpoint_refine', False),
-        'bbox_reparam': getattr(args, 'bbox_reparam', False),
+        "backbone": backbone,
+        "transformer": transformer,
+        "num_classes": num_classes,
+        "num_queries": args.num_queries,
+        "aux_loss": getattr(args, "aux_loss", False),
+        "group_detr": args.group_detr,
+        "lite_refpoint_refine": getattr(args, "lite_refpoint_refine", False),
+        "bbox_reparam": getattr(args, "bbox_reparam", False),
     }
-    
+
     model = LWDETR(**model_args)
     return model
 
@@ -1008,20 +1010,20 @@ def build_model(args):
 def build_criterion_and_postprocessors(args):
     device = torch.device(getattr(args, "device", "cuda"))
     matcher = build_matcher(args)
-    
+
     # Get loss coefficients with defaults
     cls_loss_coef = getattr(args, "cls_loss_coef", 1.0)
     bbox_loss_coef = getattr(args, "bbox_loss_coef", 5.0)
     giou_loss_coef = getattr(args, "giou_loss_coef", 2.0)
     mask_loss_coef = getattr(args, "loss_mask_coef", 1.0)
-    
+
     weight_dict = {
-        "loss_ce": cls_loss_coef, 
+        "loss_ce": cls_loss_coef,
         "loss_bbox": bbox_loss_coef,
         "loss_giou": giou_loss_coef,
-        "loss_mask": mask_loss_coef
+        "loss_mask": mask_loss_coef,
     }
-    
+
     # Optional auxiliary losses
     if getattr(args, "aux_loss", False):
         aux_weight_dict = {}
@@ -1035,7 +1037,7 @@ def build_criterion_and_postprocessors(args):
 
     # Optional group loss settings
     sum_group_losses = getattr(args, "sum_group_losses", False)
-    
+
     criterion = SetCriterion(
         getattr(args, "num_classes", 90) + 1,
         matcher=matcher,

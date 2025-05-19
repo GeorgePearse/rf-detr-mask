@@ -5,7 +5,6 @@ Script to fix common mypy errors in the codebase
 
 import os
 import re
-from typing import List, Tuple
 
 # Map of files to fix and their issues
 FILES_TO_FIX = {
@@ -51,7 +50,7 @@ FILES_TO_FIX = {
 }
 
 
-def fix_file(file_path: str, fixes: List[Tuple[str, str]]) -> bool:
+def fix_file(file_path: str, fixes: list[tuple[str, str]]) -> bool:
     """Apply regex replacements to fix mypy errors in a file.
 
     Args:

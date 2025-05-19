@@ -35,9 +35,11 @@ logger = get_logger(__name__)
 
 try:
     from torch.amp import GradScaler, autocast
+
     DEPRECATED_AMP = False
 except ImportError:
     from torch.cuda.amp import GradScaler, autocast
+
     DEPRECATED_AMP = True
 
 
@@ -75,8 +77,8 @@ def train_one_epoch(
     current_step: Optional[int] = 0,
     eval_freq: Optional[int] = None,
     val_data_loader: Optional[Iterable] = None,
-    base_ds = None,
-    postprocessors = None,
+    base_ds=None,
+    postprocessors=None,
 ):
     if schedules is None:
         schedules = {}
@@ -84,7 +86,7 @@ def train_one_epoch(
     metric_logger.add_meter("lr", utils.SmoothedValue(window_size=1, fmt="{value:.6f}"))
     metric_logger.add_meter("class_error", utils.SmoothedValue(window_size=1, fmt="{value:.2f}"))
     header = f"Epoch: [{epoch}]"
-    print_freq = 10
+    print_freq = 1
     start_steps = epoch * num_training_steps_per_epoch
 
     logger.info(f"Grad accum steps: {args.grad_accum_steps}")
@@ -100,10 +102,10 @@ def train_one_epoch(
     assert batch_size % args.grad_accum_steps == 0
     sub_batch_size = batch_size // args.grad_accum_steps
     logger.info(f"LENGTH OF DATA LOADER: {len(data_loader)}")
-    
+
     # If max_steps is specified, track steps and limit accordingly
     step_counter = current_step
-    
+
     for data_iter_step, (samples, targets) in enumerate(
         metric_logger.log_every(data_loader, print_freq, header)
     ):
@@ -111,19 +113,32 @@ def train_one_epoch(
         if max_steps is not None and step_counter >= max_steps:
             logger.info(f"Reached max_steps ({max_steps}), stopping training")
             break
-            
+
         # Periodic evaluation during training if enabled
-        if eval_freq is not None and val_data_loader is not None and base_ds is not None and postprocessors is not None:
+        if (
+            eval_freq is not None
+            and val_data_loader is not None
+            and base_ds is not None
+            and postprocessors is not None
+        ):
             if step_counter > 0 and step_counter % eval_freq == 0:
                 logger.info(f"Running evaluation at step {step_counter}")
                 model.eval()
                 with torch.no_grad():
                     eval_stats, coco_evaluator = evaluate(
-                        model, criterion, postprocessors, val_data_loader, base_ds, device, args=args
+                        model,
+                        criterion,
+                        postprocessors,
+                        val_data_loader,
+                        base_ds,
+                        device,
+                        args=args,
                     )
-                    logger.info(f"Step {step_counter} evaluation: mAP={eval_stats['coco_eval_bbox'][0]:.4f}")
+                    logger.info(
+                        f"Step {step_counter} evaluation: mAP={eval_stats['coco_eval_bbox'][0]:.4f}"
+                    )
                 model.train()
-            
+
         it = start_steps + data_iter_step
         callback_dict = {
             "step": it,
@@ -143,7 +158,7 @@ def train_one_epoch(
                 model.module.update_dropout(schedules["do"][it])
             else:
                 model.update_dropout(schedules["do"][it])
-                
+
         # Update step counter
         step_counter += 1
 
@@ -181,7 +196,9 @@ def train_one_epoch(
 
         if not math.isfinite(loss_value):
             logger.error(f"Loss dict reduced: {loss_dict_reduced}")
-            raise TrainingError(f"Loss is {loss_value} (not finite). Loss components: {loss_dict_reduced}")
+            raise TrainingError(
+                f"Loss is {loss_value} (not finite). Loss components: {loss_dict_reduced}"
+            )
 
         if max_norm > 0:
             scaler.unscale_(optimizer)
@@ -202,10 +219,10 @@ def train_one_epoch(
     metric_logger.synchronize_between_processes()
     logger.info(f"Averaged stats: {metric_logger}")
     stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    
+
     # Include global step in the return
     stats["global_step"] = step_counter
-    
+
     return stats
 
 
@@ -222,7 +239,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
     iou_types = tuple(k for k in ("segm", "bbox") if k in postprocessors)
     coco_evaluator = CocoEvaluator(base_ds, iou_types)
 
-    for samples, targets in metric_logger.log_every(data_loader, 10, header):
+    for samples, targets in metric_logger.log_every(data_loader, 1, header):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 

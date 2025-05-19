@@ -13,11 +13,11 @@ CustomOpSymbolicRegistry class
 
 class CustomOpSymbolicRegistry:
     # _SYMBOLICS = {}
-    _OPTIMIZER: list[str] = : list[str] = []
+    _OPTIMIZER: list[str] = []
 
     @classmethod
     def optimizer(cls, fn):
-        cls._OPTIMIZER: list[str] = .append(fn)
+        cls._OPTIMIZER.append(fn)
 
 
 def register_optimizer():

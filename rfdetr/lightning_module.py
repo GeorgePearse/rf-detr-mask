@@ -385,7 +385,7 @@ class RFDETRLightningModule(pl.LightningModule):
             # Export PyTorch weights
             if self.export_torch:
                 torch_path = export_path / "model.pth"
-                
+
                 # Get config data properly
                 if hasattr(self.config, "model_dump"):
                     config_data = self.config.model_dump()
@@ -395,10 +395,10 @@ class RFDETRLightningModule(pl.LightningModule):
                     # Convert object to dict if needed
                     config_data = {
                         attr: getattr(self.config, attr)
-                        for attr in dir(self.config) 
+                        for attr in dir(self.config)
                         if not attr.startswith("_") and not callable(getattr(self.config, attr))
                     }
-                
+
                 # Save the model weights and config
                 torch.save(
                     {

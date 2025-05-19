@@ -381,8 +381,10 @@ class Model:
             model.train()
             criterion.train()
             # Define evaluation frequency in steps
-            eval_freq = getattr(args, "eval_freq_steps", 1000)  # Default to 1000 steps if not provided
-            
+            eval_freq = getattr(
+                args, "eval_freq_steps", 1000
+            )  # Default to 1000 steps if not provided
+
             train_stats = train_one_epoch(
                 model,
                 criterion,

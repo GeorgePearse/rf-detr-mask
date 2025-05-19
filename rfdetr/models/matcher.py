@@ -133,19 +133,35 @@ class HungarianMatcher(nn.Module):
 def build_matcher(config):
     """
     Build the Hungarian matcher using the provided configuration.
-    
+
     Args:
         config: A Pydantic ModelConfig instance containing matcher parameters.
                For backward compatibility, can also accept a dict or an object with attributes.
-    
+
     Returns:
         HungarianMatcher instance
     """
     # Get cost values with fallbacks, regardless of config type
-    cost_class = getattr(config, "set_cost_class", 2.0) if not isinstance(config, dict) else config.get("set_cost_class", 2.0)
-    cost_bbox = getattr(config, "set_cost_bbox", 5.0) if not isinstance(config, dict) else config.get("set_cost_bbox", 5.0)
-    cost_giou = getattr(config, "set_cost_giou", 2.0) if not isinstance(config, dict) else config.get("set_cost_giou", 2.0)
-    focal_alpha = getattr(config, "focal_alpha", 0.25) if not isinstance(config, dict) else config.get("focal_alpha", 0.25)
+    cost_class = (
+        getattr(config, "set_cost_class", 2.0)
+        if not isinstance(config, dict)
+        else config.get("set_cost_class", 2.0)
+    )
+    cost_bbox = (
+        getattr(config, "set_cost_bbox", 5.0)
+        if not isinstance(config, dict)
+        else config.get("set_cost_bbox", 5.0)
+    )
+    cost_giou = (
+        getattr(config, "set_cost_giou", 2.0)
+        if not isinstance(config, dict)
+        else config.get("set_cost_giou", 2.0)
+    )
+    focal_alpha = (
+        getattr(config, "focal_alpha", 0.25)
+        if not isinstance(config, dict)
+        else config.get("focal_alpha", 0.25)
+    )
     return HungarianMatcher(
         cost_class=cost_class,
         cost_bbox=cost_bbox,

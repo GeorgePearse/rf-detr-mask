@@ -193,15 +193,11 @@ class Transformer(nn.Module):
         )
 
         # Initialize encoder output processing
-        self.enc_output = nn.ModuleList(
-            [nn.Linear(d_model, d_model) for _ in range(group_detr)]
-        )
+        self.enc_output = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(group_detr)])
         self.enc_output_norm = nn.ModuleList([nn.LayerNorm(d_model) for _ in range(group_detr)])
-        
+
         # Add required attributes for two-stage version
-        self.enc_out_class_embed = nn.ModuleList(
-            [nn.Linear(d_model, 1) for _ in range(group_detr)]
-        )
+        self.enc_out_class_embed = nn.ModuleList([nn.Linear(d_model, 1) for _ in range(group_detr)])
         self.enc_out_bbox_embed = nn.ModuleList(
             [MLP(d_model, d_model, 4, 3) for _ in range(group_detr)]
         )
@@ -273,17 +269,11 @@ class Transformer(nn.Module):
         refpoint_embed_ts, memory_ts, boxes_ts = [], [], []
         group_detr = self.group_detr if self.training else 1
         for g_idx in range(group_detr):
-            output_memory_gidx = self.enc_output_norm[g_idx](
-                self.enc_output[g_idx](output_memory)
-            )
+            output_memory_gidx = self.enc_output_norm[g_idx](self.enc_output[g_idx](output_memory))
 
-            enc_outputs_class_unselected_gidx = self.enc_out_class_embed[g_idx](
-                output_memory_gidx
-            )
+            enc_outputs_class_unselected_gidx = self.enc_out_class_embed[g_idx](output_memory_gidx)
             if self.bbox_reparam:
-                enc_outputs_coord_delta_gidx = self.enc_out_bbox_embed[g_idx](
-                    output_memory_gidx
-                )
+                enc_outputs_coord_delta_gidx = self.enc_out_bbox_embed[g_idx](output_memory_gidx)
                 enc_outputs_coord_cxcy_gidx = (
                     enc_outputs_coord_delta_gidx[..., :2] * output_proposals[..., 2:]
                     + output_proposals[..., :2]
@@ -330,7 +320,7 @@ class Transformer(nn.Module):
 
         tgt = query_feat.unsqueeze(0).repeat(bs, 1, 1)
         refpoint_embed = refpoint_embed.unsqueeze(0).repeat(bs, 1, 1)
-        
+
         # Process reference points from encoder
         ts_len = refpoint_embed_ts.shape[-2]
         refpoint_embed_ts_subset = refpoint_embed[..., :ts_len, :]
@@ -339,9 +329,7 @@ class Transformer(nn.Module):
         if self.bbox_reparam:
             refpoint_embed_cxcy = refpoint_embed_ts_subset[..., :2] * refpoint_embed_ts[..., 2:]
             refpoint_embed_cxcy = refpoint_embed_cxcy + refpoint_embed_ts[..., :2]
-            refpoint_embed_wh = (
-                refpoint_embed_ts_subset[..., 2:].exp() * refpoint_embed_ts[..., 2:]
-            )
+            refpoint_embed_wh = refpoint_embed_ts_subset[..., 2:].exp() * refpoint_embed_ts[..., 2:]
             refpoint_embed_ts_subset = torch.concat(
                 [refpoint_embed_cxcy, refpoint_embed_wh], dim=-1
             )

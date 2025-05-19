@@ -1,9 +1,5 @@
-import os
 import logging
 from dataclasses import dataclass
-from pathlib import Path
-
-import torch
 
 from rfdetr.datasets.coco import build
 
@@ -29,7 +25,7 @@ class Dataset:
 def main():
     # Configure basic logging
     logging.basicConfig(level=logging.INFO)
-    
+
     # Create dataset with square_resize_div_56=True
     args = Args(
         coco_path="/home/georgepearse/data/cmr/annotations",
@@ -39,25 +35,25 @@ def main():
         square_resize_div_56=True,
         multi_scale=False,
         expanded_scales=False,
-        dataset=Dataset(val_limit=1)
+        dataset=Dataset(val_limit=1),
     )
-    
+
     # Build dataset
     print("Building dataset with square_resize_div_56=True")
-    dataset = build('val', args, 448)
-    
+    dataset = build("val", args, 448)
+
     # Load a single image to test
     print(f"Dataset contains {len(dataset)} images")
     if len(dataset) > 0:
         img, target = dataset[0]
         print(f"Image shape: {img.shape}")
         print(f"Target size: {target['size']}")
-        
+
         # Verify that dimensions are divisible by 56
         h, w = img.shape[1:]
         print(f"Height {h} is divisible by 56: {h % 56 == 0}")
         print(f"Width {w} is divisible by 56: {w % 56 == 0}")
-    
+
     print("Test completed successfully")
 
 
