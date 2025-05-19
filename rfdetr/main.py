@@ -133,24 +133,7 @@ class Model:
                 if any(name.endswith(x) for x in query_param_names):
                     checkpoint["model"][name] = state[:num_desired_queries]
 
-            # Check for missing mask parameters in the checkpoint
-            # These parameters are needed for segmentation but may not be in detection-only checkpoints
-            missing_mask_params = any(
-                param.startswith("mask_embed") for param in self.model.state_dict().keys()
-                if param not in checkpoint["model"]
-            )
-            
-            if missing_mask_params:
-                logger.info("Detected missing mask parameters in checkpoint - using initialized values for mask head")
-                
-            # Load state dict with strict=False to allow missing parameters to use defaults
-            result = self.model.load_state_dict(checkpoint["model"], strict=False)
-            
-            # Log missing and unexpected keys
-            if result.missing_keys:
-                logger.info(f"Missing keys during loading: {result.missing_keys}")
-            if result.unexpected_keys:
-                logger.info(f"Unexpected keys during loading: {result.unexpected_keys}")
+            self.model.load_state_dict(checkpoint["model"], strict=False)
 
         if args.backbone_lora:
             print("Applying LORA to backbone")
@@ -234,23 +217,8 @@ class Model:
         num_training_steps_per_epoch_lr = (
             len(dataset_train) + total_batch_size_for_lr - 1
         ) // total_batch_size_for_lr
-        
-        # Calculate total training steps based on max_steps or epochs
-        max_steps = getattr(args, "max_steps", None)
-        if max_steps is not None:
-            # If max_steps is specified, use that directly
-            total_training_steps_lr = max_steps
-            # Calculate equivalent epochs for logging (approximate)
-            equivalent_epochs = max_steps // num_training_steps_per_epoch_lr
-            print(f"Training for {max_steps} steps (approximately {equivalent_epochs} epochs)")
-        else:
-            # Otherwise, calculate from epochs
-            total_training_steps_lr = num_training_steps_per_epoch_lr * args.epochs
-            print(f"Training for {args.epochs} epochs ({total_training_steps_lr} steps)")
-            
-        warmup_steps_lr = int(total_training_steps_lr * getattr(args, "warmup_ratio", 0.0))
-        if args.warmup_epochs:
-            warmup_steps_lr = num_training_steps_per_epoch_lr * args.warmup_epochs
+        total_training_steps_lr = num_training_steps_per_epoch_lr * args.epochs
+        warmup_steps_lr = num_training_steps_per_epoch_lr * args.warmup_epochs
 
         def lr_lambda(current_step: int):
             if current_step < warmup_steps_lr:
@@ -337,48 +305,10 @@ class Model:
 
         if args.resume:
             checkpoint = torch.load(args.resume, map_location="cpu", weights_only=False)
-            
-            # Check for class embedding size mismatch
-            checkpoint_num_classes = checkpoint["model"]["class_embed.bias"].shape[0]
-            if checkpoint_num_classes != args.num_classes + 1:
-                logger.warning(
-                    f"num_classes mismatch when resuming: checkpoint has {checkpoint_num_classes - 1} classes, but model has {args.num_classes} classes. "
-                    f"Reinitializing detection head with {checkpoint_num_classes - 1} classes."
-                )
-                model_without_ddp.reinitialize_detection_head(checkpoint_num_classes)
-                
-            # Check for missing mask parameters
-            missing_mask_params = any(
-                param.startswith("mask_embed") for param in model_without_ddp.state_dict().keys()
-                if param not in checkpoint["model"]
-            )
-            
-            if missing_mask_params:
-                logger.info("Detected missing mask parameters in checkpoint - using initialized values for mask head")
-                result = model_without_ddp.load_state_dict(checkpoint["model"], strict=False)
-                logger.info(f"Missing keys when resuming: {result.missing_keys}")
-                if result.unexpected_keys:
-                    logger.info(f"Unexpected keys when resuming: {result.unexpected_keys}")
-            else:
-                model_without_ddp.load_state_dict(checkpoint["model"], strict=True)
-                
+            model_without_ddp.load_state_dict(checkpoint["model"], strict=True)
             if args.use_ema:
                 if "ema_model" in checkpoint:
-                    # Also handle non-strict loading for EMA model
-                    ema_state_dict = clean_state_dict(checkpoint["ema_model"])
-                    
-                    # Check for missing mask parameters in EMA
-                    ema_missing_mask_params = any(
-                        param.startswith("mask_embed") for param in self.ema_m.module.state_dict().keys()
-                        if param not in ema_state_dict
-                    )
-                    
-                    if ema_missing_mask_params:
-                        logger.info("Detected missing mask parameters in EMA checkpoint - using initialized values")
-                        result = self.ema_m.module.load_state_dict(ema_state_dict, strict=False)
-                        logger.info(f"Missing keys in EMA: {result.missing_keys}")
-                    else:
-                        self.ema_m.module.load_state_dict(ema_state_dict)
+                    self.ema_m.module.load_state_dict(clean_state_dict(checkpoint["ema_model"]))
                 else:
                     del self.ema_m
                     self.ema_m = ModelEma(model, decay=args.ema_decay, tau=args.ema_tau)
@@ -387,12 +317,10 @@ class Model:
                 and "optimizer" in checkpoint
                 and "lr_scheduler" in checkpoint
                 and "epoch" in checkpoint
-                and "global_step" in checkpoint
             ):
                 optimizer.load_state_dict(checkpoint["optimizer"])
                 lr_scheduler.load_state_dict(checkpoint["lr_scheduler"])
                 args.start_epoch = checkpoint["epoch"] + 1
-                args.start_step = checkpoint["global_step"]
 
         if args.eval:
             test_stats, coco_evaluator = evaluate(
@@ -445,313 +373,106 @@ class Model:
         best_map_50 = 0
         best_map_ema_5095 = 0
         best_map_ema_50 = 0
-        
-        # Initialize global step counter
-        global_step = getattr(args, "start_step", 0)
-        
-        # Initialize evaluation and checkpoint frequency
-        eval_save_frequency = getattr(args, "eval_save_frequency", 
-                                      getattr(args, "val_frequency", 
-                                              getattr(args, "checkpoint_frequency", None)))
-        
-        if max_steps is not None and eval_save_frequency is None:
-            # Default evaluation/checkpoint every 10% of total steps if not specified
-            eval_save_frequency = max(1, max_steps // 10)
-            print(f"Validating and saving checkpoint every {eval_save_frequency} steps")
-            
-        # For backward compatibility - all frequencies are now the same
-        val_frequency = eval_save_frequency
-        checkpoint_frequency = eval_save_frequency
+        for epoch in range(args.start_epoch, args.epochs):
+            epoch_start_time = time.time()
+            if args.distributed:
+                sampler_train.set_epoch(epoch)
 
-        # Determine training mode: steps or epochs
-        iter_based_training = max_steps is not None
-        if iter_based_training:
-            # Iter-based training loop
             model.train()
             criterion.train()
-            
-            # Create infinite data loader by cycling through the dataset
-            epoch = args.start_epoch
-            data_iter = iter(data_loader_train)
-            
-            while global_step < max_steps:
-                # Set epoch for distributed sampler to ensure randomness
-                if args.distributed and global_step % num_training_steps_per_epoch == 0:
-                    sampler_train.set_epoch(epoch)
-                    epoch += 1
-                
-                # Get next batch, recreate iterator if needed
-                try:
-                    batch = next(data_iter)
-                except StopIteration:
-                    data_iter = iter(data_loader_train)
-                    batch = next(data_iter)
-                    
-                # Process single batch
-                samples, targets = batch
-                samples = samples.to(device)
-                targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
-                
-                # Run training step
-                it = global_step
-                callback_dict = {
-                    "step": it,
-                    "model": model,
-                    "epoch": epoch,
-                }
-                for callback in callbacks["on_train_batch_start"]:
-                    callback(callback_dict)
-                    
-                # Update dropout/drop_path rates if needed
-                if "dp" in schedules:
-                    if args.distributed:
-                        model.module.update_drop_path(schedules["dp"][it], args.vit_encoder_num_layers)
-                    else:
-                        model.update_drop_path(schedules["dp"][it], args.vit_encoder_num_layers)
-                if "do" in schedules:
-                    if args.distributed:
-                        model.module.update_dropout(schedules["do"][it])
-                    else:
-                        model.update_dropout(schedules["do"][it])
-                
-                # Process batch with gradient accumulation
-                loss_dict_reduced = None
-                loss_dict_reduced_scaled = None
-                loss_dict_reduced_unscaled = None
-                
-                with autocast(**get_autocast_args(args)):
-                    outputs = model(samples, targets)
-                    loss_dict = criterion(outputs, targets)
-                    weight_dict = criterion.weight_dict
-                    losses = sum(
-                        loss_dict[k] * weight_dict[k]
-                        for k in loss_dict
-                        if k in weight_dict
-                    )
-                
-                # Backprop
-                losses.backward()
-                
-                # Gradient clipping if needed
-                if args.clip_max_norm > 0:
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip_max_norm)
-                
-                # Reduce losses over all GPUs for logging
-                loss_dict_reduced = utils.reduce_dict(loss_dict)
-                loss_dict_reduced_unscaled = {f"{k}_unscaled": v for k, v in loss_dict_reduced.items()}
-                loss_dict_reduced_scaled = {
-                    k: v * weight_dict[k] for k, v in loss_dict_reduced.items() if k in weight_dict
-                }
-                losses_reduced_scaled = sum(loss_dict_reduced_scaled.values())
-                
-                # Step optimizer and scheduler
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
-                
-                # Update EMA model if available
-                if self.ema_m is not None:
-                    self.ema_m.update(model)
-                
-                # Log step stats
-                if global_step % 10 == 0:  # Log every 10 steps
-                    print(f"Step {global_step}/{max_steps}, Loss: {losses_reduced_scaled.item():.4f}, LR: {optimizer.param_groups[0]['lr']:.6f}")
-                
-                # Validate if needed
-                if val_frequency and global_step > 0 and global_step % val_frequency == 0:
-                    with torch.inference_mode():
-                        model.eval()
-                        test_stats, coco_evaluator = evaluate(
-                            model, criterion, postprocessors, data_loader_val, base_ds, device, args=args
-                        )
-                        model.train()
-                        
-                        # Log validation results
-                        map_regular = test_stats["coco_eval_bbox"][0]
-                        _isbest = best_map_holder.update(map_regular, epoch, is_ema=False)
-                        
-                        if _isbest:
-                            best_map_5095 = max(best_map_5095, map_regular)
-                            best_map_50 = max(best_map_50, test_stats["coco_eval_bbox"][1])
-                            checkpoint_path = output_dir / "checkpoint_best_regular.pth"
-                            if not args.dont_save_weights:
-                                utils.save_on_master(
-                                    {
-                                        "model": model_without_ddp.state_dict(),
-                                        "optimizer": optimizer.state_dict(),
-                                        "lr_scheduler": lr_scheduler.state_dict(),
-                                        "epoch": epoch,
-                                        "global_step": global_step,
-                                        "args": args,
-                                    },
-                                    checkpoint_path,
-                                )
-                                
-                        # EMA evaluation
-                        if args.use_ema:
-                            ema_test_stats, _ = evaluate(
-                                self.ema_m.module,
-                                criterion,
-                                postprocessors,
-                                data_loader_val,
-                                base_ds,
-                                device,
-                                args=args,
-                            )
-                            
-                            map_ema = ema_test_stats["coco_eval_bbox"][0]
-                            best_map_ema_5095 = max(best_map_ema_5095, map_ema)
-                            _isbest = best_map_holder.update(map_ema, epoch, is_ema=True)
-                            
-                            if _isbest:
-                                best_map_ema_50 = max(best_map_ema_50, ema_test_stats["coco_eval_bbox"][1])
-                                checkpoint_path = output_dir / "checkpoint_best_ema.pth"
-                                if not args.dont_save_weights:
-                                    utils.save_on_master(
-                                        {
-                                            "model": self.ema_m.module.state_dict(),
-                                            "optimizer": optimizer.state_dict(),
-                                            "lr_scheduler": lr_scheduler.state_dict(),
-                                            "epoch": epoch,
-                                            "global_step": global_step,
-                                            "args": args,
-                                        },
-                                        checkpoint_path,
-                                    )
-                        
-                        print(f"Step {global_step}: mAP: {map_regular:.4f}, Best mAP: {best_map_5095:.4f}")
-                        
-                        # Create log_stats for callbacks
-                        log_stats = {
-                            **{f"train_loss": losses_reduced_scaled.item()},
-                            **{f"test_{k}": v for k, v in test_stats.items()},
-                            "step": global_step,
-                            "epoch": epoch,
-                            "n_parameters": n_parameters,
-                        }
-                        
-                        if args.use_ema:
-                            log_stats.update({f"ema_test_{k}": v for k, v in ema_test_stats.items()})
-                            
-                        log_stats.update(best_map_holder.summary())
-                        
-                        # Call epoch_end callback
-                        for callback in callbacks["on_fit_epoch_end"]:
-                            callback(log_stats)
-                
-                # Save checkpoint if needed
-                if checkpoint_frequency and global_step > 0 and global_step % checkpoint_frequency == 0:
-                    checkpoint_path = output_dir / f"checkpoint_step_{global_step:07d}.pth"
-                    if not args.dont_save_weights:
-                        utils.save_on_master(
+            train_stats = train_one_epoch(
+                model,
+                criterion,
+                lr_scheduler,
+                data_loader_train,
+                optimizer,
+                device,
+                epoch,
+                effective_batch_size,
+                args.clip_max_norm,
+                ema_m=self.ema_m,
+                schedules=schedules,
+                num_training_steps_per_epoch=num_training_steps_per_epoch,
+                vit_encoder_num_layers=args.vit_encoder_num_layers,
+                args=args,
+                callbacks=callbacks,
+            )
+            train_epoch_time = time.time() - epoch_start_time
+            train_epoch_time_str = str(datetime.timedelta(seconds=int(train_epoch_time)))
+            if args.output_dir:
+                checkpoint_paths = [output_dir / "checkpoint.pth"]
+                # extra checkpoint before LR drop and every `checkpoint_interval` epochs
+                if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % args.checkpoint_interval == 0:
+                    checkpoint_paths.append(output_dir / f"checkpoint{epoch:04}.pth")
+                for checkpoint_path in checkpoint_paths:
+                    weights = {
+                        "model": model_without_ddp.state_dict(),
+                        "optimizer": optimizer.state_dict(),
+                        "lr_scheduler": lr_scheduler.state_dict(),
+                        "epoch": epoch,
+                        "args": args,
+                    }
+                    if args.use_ema:
+                        weights.update(
                             {
-                                "model": model_without_ddp.state_dict(),
-                                "optimizer": optimizer.state_dict(),
-                                "lr_scheduler": lr_scheduler.state_dict(),
-                                "epoch": epoch,
-                                "global_step": global_step,
-                                "args": args,
-                            },
-                            checkpoint_path,
+                                "ema_model": self.ema_m.module.state_dict(),
+                            }
                         )
-                        
-                    # Also save latest checkpoint
-                    checkpoint_path = output_dir / "checkpoint.pth"
                     if not args.dont_save_weights:
-                        utils.save_on_master(
-                            {
-                                "model": model_without_ddp.state_dict(),
-                                "optimizer": optimizer.state_dict(),
-                                "lr_scheduler": lr_scheduler.state_dict(),
-                                "epoch": epoch,
-                                "global_step": global_step,
-                                "args": args,
-                            },
-                            checkpoint_path,
-                        )
-                
-                # Check for early stopping
-                if self.stop_early:
-                    print(f"Early stopping requested, stopping at step {global_step}")
-                    break
-                    
-                # Increment global step
-                global_step += 1
-                
-            # Final validation after training is complete
+                        # create checkpoint dir
+                        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+
+                        utils.save_on_master(weights, checkpoint_path)
+
             with torch.inference_mode():
                 test_stats, coco_evaluator = evaluate(
                     model, criterion, postprocessors, data_loader_val, base_ds, device, args=args
                 )
-                
-        else:
-            # Epoch-based training (original code)
-            for epoch in range(args.start_epoch, args.epochs):
-                epoch_start_time = time.time()
-                if args.distributed:
-                    sampler_train.set_epoch(epoch)
 
-                model.train()
-                criterion.train()
-                train_stats = train_one_epoch(
-                    model,
-                    criterion,
-                    lr_scheduler,
-                    data_loader_train,
-                    optimizer,
-                    device,
-                    epoch,
-                    effective_batch_size,
-                    args.clip_max_norm,
-                    ema_m=self.ema_m,
-                    schedules=schedules,
-                    num_training_steps_per_epoch=num_training_steps_per_epoch,
-                    vit_encoder_num_layers=args.vit_encoder_num_layers,
-                    args=args,
-                    callbacks=callbacks,
-                )
-                train_epoch_time = time.time() - epoch_start_time
-                train_epoch_time_str = str(datetime.timedelta(seconds=int(train_epoch_time)))
-                if args.output_dir:
-                    checkpoint_paths = [output_dir / "checkpoint.pth"]
-                    # extra checkpoint before LR drop and every `checkpoint_interval` epochs
-                    if (epoch + 1) % args.lr_drop == 0 or (epoch + 1) % args.checkpoint_interval == 0:
-                        checkpoint_paths.append(output_dir / f"checkpoint{epoch:04}.pth")
-                    for checkpoint_path in checkpoint_paths:
-                        weights = {
+            map_regular = test_stats["coco_eval_bbox"][0]
+            _isbest = best_map_holder.update(map_regular, epoch, is_ema=False)
+            if _isbest:
+                best_map_5095 = max(best_map_5095, map_regular)
+                best_map_50 = max(best_map_50, test_stats["coco_eval_bbox"][1])
+                checkpoint_path = output_dir / "checkpoint_best_regular.pth"
+                if not args.dont_save_weights:
+                    utils.save_on_master(
+                        {
                             "model": model_without_ddp.state_dict(),
                             "optimizer": optimizer.state_dict(),
                             "lr_scheduler": lr_scheduler.state_dict(),
                             "epoch": epoch,
                             "args": args,
-                        }
-                        if args.use_ema:
-                            weights.update(
-                                {
-                                    "ema_model": self.ema_m.module.state_dict(),
-                                }
-                            )
-                        if not args.dont_save_weights:
-                            # create checkpoint dir
-                            checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-
-                            utils.save_on_master(weights, checkpoint_path)
-
-                with torch.inference_mode():
-                    test_stats, coco_evaluator = evaluate(
-                        model, criterion, postprocessors, data_loader_val, base_ds, device, args=args
+                        },
+                        checkpoint_path,
                     )
-
-                map_regular = test_stats["coco_eval_bbox"][0]
-                _isbest = best_map_holder.update(map_regular, epoch, is_ema=False)
+            log_stats = {
+                **{f"train_{k}": v for k, v in train_stats.items()},
+                **{f"test_{k}": v for k, v in test_stats.items()},
+                "epoch": epoch,
+                "n_parameters": n_parameters,
+            }
+            if args.use_ema:
+                ema_test_stats, _ = evaluate(
+                    self.ema_m.module,
+                    criterion,
+                    postprocessors,
+                    data_loader_val,
+                    base_ds,
+                    device,
+                    args=args,
+                )
+                log_stats.update({f"ema_test_{k}": v for k, v in ema_test_stats.items()})
+                map_ema = ema_test_stats["coco_eval_bbox"][0]
+                best_map_ema_5095 = max(best_map_ema_5095, map_ema)
+                _isbest = best_map_holder.update(map_ema, epoch, is_ema=True)
                 if _isbest:
-                    best_map_5095 = max(best_map_5095, map_regular)
-                    best_map_50 = max(best_map_50, test_stats["coco_eval_bbox"][1])
-                    checkpoint_path = output_dir / "checkpoint_best_regular.pth"
+                    best_map_ema_50 = max(best_map_ema_50, ema_test_stats["coco_eval_bbox"][1])
+                    checkpoint_path = output_dir / "checkpoint_best_ema.pth"
                     if not args.dont_save_weights:
                         utils.save_on_master(
                             {
-                                "model": model_without_ddp.state_dict(),
+                                "model": self.ema_m.module.state_dict(),
                                 "optimizer": optimizer.state_dict(),
                                 "lr_scheduler": lr_scheduler.state_dict(),
                                 "epoch": epoch,
@@ -759,73 +480,39 @@ class Model:
                             },
                             checkpoint_path,
                         )
-                log_stats = {
-                    **{f"train_{k}": v for k, v in train_stats.items()},
-                    **{f"test_{k}": v for k, v in test_stats.items()},
-                    "epoch": epoch,
-                    "n_parameters": n_parameters,
-                }
-                if args.use_ema:
-                    ema_test_stats, _ = evaluate(
-                        self.ema_m.module,
-                        criterion,
-                        postprocessors,
-                        data_loader_val,
-                        base_ds,
-                        device,
-                        args=args,
-                    )
-                    log_stats.update({f"ema_test_{k}": v for k, v in ema_test_stats.items()})
-                    map_ema = ema_test_stats["coco_eval_bbox"][0]
-                    best_map_ema_5095 = max(best_map_ema_5095, map_ema)
-                    _isbest = best_map_holder.update(map_ema, epoch, is_ema=True)
-                    if _isbest:
-                        best_map_ema_50 = max(best_map_ema_50, ema_test_stats["coco_eval_bbox"][1])
-                        checkpoint_path = output_dir / "checkpoint_best_ema.pth"
-                        if not args.dont_save_weights:
-                            utils.save_on_master(
-                                {
-                                    "model": self.ema_m.module.state_dict(),
-                                    "optimizer": optimizer.state_dict(),
-                                    "lr_scheduler": lr_scheduler.state_dict(),
-                                    "epoch": epoch,
-                                    "args": args,
-                                },
-                                checkpoint_path,
+            log_stats.update(best_map_holder.summary())
+
+            # epoch parameters
+            ep_paras = {"epoch": epoch, "n_parameters": n_parameters}
+            log_stats.update(ep_paras)
+            with contextlib.suppress(Exception):
+                log_stats.update({"now_time": str(datetime.datetime.now())})
+            log_stats["train_epoch_time"] = train_epoch_time_str
+            epoch_time = time.time() - epoch_start_time
+            epoch_time_str = str(datetime.timedelta(seconds=int(epoch_time)))
+            log_stats["epoch_time"] = epoch_time_str
+            if args.output_dir and utils.is_main_process():
+                with (output_dir / "log.txt").open("a") as f:
+                    f.write(json.dumps(log_stats) + "\n")
+
+                # for evaluation logs
+                if coco_evaluator is not None:
+                    (output_dir / "eval").mkdir(exist_ok=True)
+                    if "bbox" in coco_evaluator.coco_eval:
+                        filenames = ["latest.pth"]
+                        if epoch % 50 == 0:
+                            filenames.append(f"{epoch:03}.pth")
+                        for name in filenames:
+                            torch.save(
+                                coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval" / name
                             )
-                log_stats.update(best_map_holder.summary())
 
-                # epoch parameters
-                ep_paras = {"epoch": epoch, "n_parameters": n_parameters}
-                log_stats.update(ep_paras)
-                with contextlib.suppress(Exception):
-                    log_stats.update({"now_time": str(datetime.datetime.now())})
-                log_stats["train_epoch_time"] = train_epoch_time_str
-                epoch_time = time.time() - epoch_start_time
-                epoch_time_str = str(datetime.timedelta(seconds=int(epoch_time)))
-                log_stats["epoch_time"] = epoch_time_str
-                if args.output_dir and utils.is_main_process():
-                    with (output_dir / "log.txt").open("a") as f:
-                        f.write(json.dumps(log_stats) + "\n")
+            for callback in callbacks["on_fit_epoch_end"]:
+                callback(log_stats)
 
-                    # for evaluation logs
-                    if coco_evaluator is not None:
-                        (output_dir / "eval").mkdir(exist_ok=True)
-                        if "bbox" in coco_evaluator.coco_eval:
-                            filenames = ["latest.pth"]
-                            if epoch % 50 == 0:
-                                filenames.append(f"{epoch:03}.pth")
-                            for name in filenames:
-                                torch.save(
-                                    coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval" / name
-                                )
-
-                for callback in callbacks["on_fit_epoch_end"]:
-                    callback(log_stats)
-
-                if self.stop_early:
-                    print(f"Early stopping requested, stopping at epoch {epoch}")
-                    break
+            if self.stop_early:
+                print(f"Early stopping requested, stopping at epoch {epoch}")
+                break
 
         best_is_ema = best_map_ema_5095 > best_map_5095
 
@@ -1043,21 +730,7 @@ def get_args_parser():
     parser.add_argument("--lr_encoder", default=1.5e-4, type=float)
     parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--weight_decay", default=1e-4, type=float)
-    
-    # Training duration arguments - either epochs or max_steps can be specified
-    parser.add_argument("--epochs", default=12, type=int, 
-                       help="Number of epochs to train for (ignored if max_steps is provided)")
-    parser.add_argument("--max_steps", default=None, type=int,
-                       help="Maximum number of training steps (overrides epochs if provided)")
-    parser.add_argument("--eval_save_frequency", default=None, type=int,
-                       help="Run validation and save checkpoint every N steps (for iteration-based training)")
-    parser.add_argument("--val_frequency", default=None, type=int,
-                       help="Run validation every N steps (deprecated, use eval_save_frequency)")
-    parser.add_argument("--checkpoint_frequency", default=None, type=int,
-                       help="Save checkpoint every N steps (deprecated, use eval_save_frequency)")
-    parser.add_argument("--warmup_ratio", default=0.0, type=float,
-                       help="Percentage of total training steps to use for warmup")
-    
+    parser.add_argument("--epochs", default=12, type=int)
     parser.add_argument("--lr_drop", default=11, type=int)
     parser.add_argument(
         "--clip_max_norm", default=0.1, type=float, help="gradient clipping max norm"
@@ -1177,6 +850,7 @@ def get_args_parser():
     parser.add_argument(
         "--group_detr", default=13, type=int, help="Number of groups to speed up detr training"
     )
+    parser.add_argument("--two_stage", action="store_true")
     parser.add_argument(
         "--projector_scale", default="P4", type=str, nargs="+", choices=("P3", "P4", "P5", "P6")
     )
@@ -1361,11 +1035,6 @@ def populate_args(
     batch_size=2,
     weight_decay=1e-4,
     epochs=12,
-    max_steps=None,
-    eval_save_frequency=None,
-    val_frequency=None,
-    checkpoint_frequency=None,
-    warmup_ratio=0.0,
     lr_drop=11,
     clip_max_norm=0.1,
     lr_vit_layer_decay=0.8,
@@ -1479,11 +1148,6 @@ def populate_args(
         batch_size=batch_size,
         weight_decay=weight_decay,
         epochs=epochs,
-        max_steps=max_steps,
-        eval_save_frequency=eval_save_frequency,
-        val_frequency=val_frequency,
-        checkpoint_frequency=checkpoint_frequency,
-        warmup_ratio=warmup_ratio,
         lr_drop=lr_drop,
         clip_max_norm=clip_max_norm,
         lr_vit_layer_decay=lr_vit_layer_decay,

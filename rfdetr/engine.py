@@ -73,8 +73,6 @@ def train_one_epoch(
     vit_encoder_num_layers=None,
     args=None,
     callbacks: Optional[defaultdict[str, list[Callable]]] = None,
-    max_steps: Optional[int] = None,
-    current_step: Optional[int] = 0,
 ):
     if schedules is None:
         schedules = {}
@@ -98,24 +96,14 @@ def train_one_epoch(
     assert batch_size % args.grad_accum_steps == 0
     sub_batch_size = batch_size // args.grad_accum_steps
     logger.info(f"LENGTH OF DATA LOADER: {len(data_loader)}")
-    
-    # If max_steps is specified, track steps and limit accordingly
-    step_counter = current_step
-    
     for data_iter_step, (samples, targets) in enumerate(
         metric_logger.log_every(data_loader, print_freq, header)
     ):
-        # Check if we've reached max_steps (if specified)
-        if max_steps is not None and step_counter >= max_steps:
-            logger.info(f"Reached max_steps ({max_steps}), stopping training")
-            break
-            
         it = start_steps + data_iter_step
         callback_dict = {
             "step": it,
             "model": model,
             "epoch": epoch,
-            "global_step": step_counter,
         }
         for callback in callbacks["on_train_batch_start"]:
             callback(callback_dict)
@@ -129,9 +117,6 @@ def train_one_epoch(
                 model.module.update_dropout(schedules["do"][it])
             else:
                 model.update_dropout(schedules["do"][it])
-                
-        # Update step counter
-        step_counter += 1
 
         for i in range(args.grad_accum_steps):
             start_idx = i * sub_batch_size
@@ -187,12 +172,7 @@ def train_one_epoch(
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     logger.info(f"Averaged stats: {metric_logger}")
-    stats = {k: meter.global_avg for k, meter in metric_logger.meters.items()}
-    
-    # Include global step in the return
-    stats["global_step"] = step_counter
-    
-    return stats
+    return {k: meter.global_avg for k, meter in metric_logger.meters.items()}
 
 
 def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, args=None):

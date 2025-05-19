@@ -1,20 +1,22 @@
 #!/usr/bin/env python3
 """Minimal test script to verify segmentation functionality"""
 
+import cv2
 import numpy as np
-import supervision as sv
 import torch
 from PIL import Image
 
 # Import RF-DETR with mask support
 from rfdetr import RFDETRBase
-from rfdetr.util.coco_classes import COCO_CLASSES
+from rfdetr.util.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def test_segmentation():
     """Test basic segmentation functionality"""
 
-    print("Testing RF-DETR-MASK segmentation...")
+    logger.info("Testing RF-DETR-MASK segmentation...")
 
     # Clear GPU memory
     if torch.cuda.is_available():
@@ -57,25 +59,36 @@ def test_segmentation():
                 print("\nCreating visualization...")
                 annotated_image = image.copy()
 
-                # Create annotators
-                box_annotator = sv.BoxAnnotator()
-                mask_annotator = sv.MaskAnnotator()
-                label_annotator = sv.LabelAnnotator()
+                # Skip using supervision library for masks in test mode
+                print("Skipping supervision library mask annotations in test mode")
+                # Apply a simple visualization
+                for i in range(len(detections_with_masks)):
+                    # Use masks directly if available
+                    if detections_with_masks.mask is not None:
+                        # Convert mask to boolean if needed
+                        if detections_with_masks.mask.dtype != bool:
+                            try:
+                                mask = detections_with_masks.mask[i].astype(bool)
+                            except Exception as e:
+                                logger.error(
+                                    f"Could not convert mask to boolean: {detections_with_masks.mask.dtype}. Error: {e}"
+                                )
+                                continue
+                        else:
+                            mask = detections_with_masks.mask[i]
 
-                # Create labels
-                labels = [
-                    f"{COCO_CLASSES[class_id]} {confidence:.2f}"
-                    for class_id, confidence in zip(
-                        detections_with_masks.class_id, detections_with_masks.confidence
-                    )
-                ]
+                        # Apply red tint to mask area
+                        if mask.shape == annotated_image.shape[:2]:
+                            annotated_image[mask, 2] = 255  # Set red channel to max
 
-                # Apply annotations
-                annotated_image = mask_annotator.annotate(annotated_image, detections_with_masks)
-                annotated_image = box_annotator.annotate(annotated_image, detections_with_masks)
-                annotated_image = label_annotator.annotate(
-                    annotated_image, detections_with_masks, labels
-                )
+                # Draw a basic box for visualization
+                if hasattr(detections_with_masks, "xyxy"):
+                    for i in range(len(detections_with_masks)):
+                        x1, y1, x2, y2 = detections_with_masks.xyxy[i].astype(int)
+                        # Draw box (green)
+                        cv_image = annotated_image.copy()
+                        cv_image = cv2.rectangle(cv_image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                        annotated_image = cv_image
 
                 # Save the result
                 result_image = Image.fromarray(annotated_image)

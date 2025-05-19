@@ -11,6 +11,11 @@ import torch
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from rfdetr.util.error_handling import ConfigurationError
+from rfdetr.util.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 DEVICE = (
     "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 )
@@ -41,10 +46,13 @@ class ModelConfig(BaseModel):
     num_select: int = Field(default=300, gt=0)
 
     @field_validator("resolution")
-    def validate_resolution(self, v):
+    @classmethod
+    def validate_resolution(cls, v):
         """Validate that resolution is divisible by 14 for DINOv2."""
         if v % 14 != 0:
-            raise ValueError(f"Resolution {v} must be divisible by 14 for DINOv2")
+            error_msg = f"Resolution {v} must be divisible by 14 for DINOv2"
+            logger.error(error_msg)
+            raise ConfigurationError(error_msg)
         return v
 
 
@@ -74,7 +82,7 @@ class TrainingConfig(BaseModel):
     square_resize_div_64: bool = True
     output_dir: str = "output"
     multi_scale: bool = True
-    expanded_scales: bool = True
+    expanded_scales: Union[bool, list[int]] = True
     use_ema: bool = True
     num_workers: int = Field(default=2, ge=0)
     weight_decay: float = Field(default=1e-4, ge=0)
@@ -91,10 +99,10 @@ class TrainingConfig(BaseModel):
 class DatasetConfig(BaseModel):
     """Configuration for dataset parameters."""
 
-    coco_path: str
-    coco_train: str
-    coco_val: str
-    coco_img_path: str
+    coco_path: Optional[str] = ""
+    coco_train: Optional[str] = ""
+    coco_val: Optional[str] = ""
+    coco_img_path: Optional[str] = ""
 
 
 class MaskConfig(BaseModel):
@@ -126,19 +134,20 @@ class RFDETRConfig(BaseModel):
     other: OtherConfig
 
     @model_validator(mode="after")
-    def validate_config(self):
+    @classmethod
+    def validate_config(cls, values):
         """Validate that configuration parameters are consistent."""
-        if self.model.num_select != self.training.num_select:
-            raise ValueError(
-                f"Model num_select ({self.model.num_select}) must match training num_select ({self.training.num_select})"
-            )
+        if values.model.num_select != values.training.num_select:
+            error_msg = f"Model num_select ({values.model.num_select}) must match training num_select ({values.training.num_select})"
+            logger.error(error_msg)
+            raise ConfigurationError(error_msg)
 
-        if self.model.group_detr != self.training.group_detr:
-            raise ValueError(
-                f"Model group_detr ({self.model.group_detr}) must match training group_detr ({self.training.group_detr})"
-            )
+        if values.model.group_detr != values.training.group_detr:
+            error_msg = f"Model group_detr ({values.model.group_detr}) must match training group_detr ({values.training.group_detr})"
+            logger.error(error_msg)
+            raise ConfigurationError(error_msg)
 
-        return self
+        return values
 
     def to_args(self):
         """Convert the configuration to an argparse namespace for backward compatibility."""
@@ -229,12 +238,28 @@ class RFDETRConfig(BaseModel):
         """
         yaml_path = Path(yaml_path)
         if not yaml_path.exists():
-            raise FileNotFoundError(f"Config file not found: {yaml_path}")
+            error_msg = f"Config file not found: {yaml_path}"
+            logger.error(error_msg)
+            raise ConfigurationError(error_msg)
 
-        with open(yaml_path) as f:
-            config_dict = yaml.safe_load(f)
+        try:
+            with open(yaml_path) as f:
+                config_dict = yaml.safe_load(f)
+        except yaml.YAMLError as e:
+            error_msg = f"Invalid YAML in configuration file {yaml_path}"
+            logger.error(f"{error_msg}: {e}")
+            raise ConfigurationError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Error reading configuration file {yaml_path}"
+            logger.error(f"{error_msg}: {e}")
+            raise ConfigurationError(error_msg) from e
 
-        return cls.model_validate(config_dict)
+        try:
+            return cls.model_validate(config_dict)
+        except Exception as e:
+            error_msg = f"Invalid configuration data in {yaml_path}"
+            logger.error(f"{error_msg}: {e}")
+            raise ConfigurationError(f"{error_msg}: {e}") from e
 
 
 def load_config(config_path: Union[str, Path]) -> RFDETRConfig:

@@ -52,6 +52,7 @@ class LWDETR(nn.Module):
         num_queries,
         aux_loss=False,
         group_detr=1,
+        two_stage=False,
         lite_refpoint_refine=False,
         bbox_reparam=False,
     ):
@@ -102,34 +103,22 @@ class LWDETR(nn.Module):
 
         # Add mask head (28x28 masks, similar to Mask R-CNN)
         self.mask_embed = MLP(hidden_dim, hidden_dim, 28 * 28, 3)
-        # Initialize with zeros for stable training
         nn.init.constant_(self.mask_embed.layers[-1].weight.data, 0)
         nn.init.constant_(self.mask_embed.layers[-1].bias.data, 0)
-        # Initialize other layers with small values for stability 
-        nn.init.xavier_uniform_(self.mask_embed.layers[0].weight.data, gain=0.01)
-        nn.init.constant_(self.mask_embed.layers[0].bias.data, 0)
-        nn.init.xavier_uniform_(self.mask_embed.layers[1].weight.data, gain=0.01)
-        nn.init.constant_(self.mask_embed.layers[1].bias.data, 0)
 
-        # Initialize encoder output class and bbox embeddings
-        self.transformer.enc_out_bbox_embed = nn.ModuleList(
-            [copy.deepcopy(self.bbox_embed) for _ in range(group_detr)]
-        )
-        self.transformer.enc_out_class_embed = nn.ModuleList(
-            [copy.deepcopy(self.class_embed) for _ in range(group_detr)]
-        )
+        # two_stage
+        self.two_stage = two_stage
+        if self.two_stage:
+            self.transformer.enc_out_bbox_embed = nn.ModuleList(
+                [copy.deepcopy(self.bbox_embed) for _ in range(group_detr)]
+            )
+            self.transformer.enc_out_class_embed = nn.ModuleList(
+                [copy.deepcopy(self.class_embed) for _ in range(group_detr)]
+            )
 
         self._export = False
 
     def reinitialize_detection_head(self, num_classes):
-        """Create a new detection head with the specified number of classes.
-        
-        This method is used when loading a checkpoint with a different number
-        of classes than the model was defined with.
-        
-        Args:
-            num_classes (int): The number of classes to use for the new head
-        """
         # Create new classification head
         del self.class_embed
         self.add_module("class_embed", nn.Linear(self.transformer.d_model, num_classes))
@@ -139,15 +128,12 @@ class LWDETR(nn.Module):
         bias_value = -math.log((1 - prior_prob) / prior_prob)
         self.class_embed.bias.data = torch.ones(num_classes) * bias_value
 
-        # Clean up existing module list
-        if hasattr(self.transformer, "enc_out_class_embed"):
+        if self.two_stage:
             del self.transformer.enc_out_class_embed
-            
-        # Create new module list with the correct number of classes
-        self.transformer.add_module(
-            "enc_out_class_embed",
-            nn.ModuleList([copy.deepcopy(self.class_embed) for _ in range(self.group_detr)]),
-        )
+            self.transformer.add_module(
+                "enc_out_class_embed",
+                nn.ModuleList([copy.deepcopy(self.class_embed) for _ in range(self.group_detr)]),
+            )
 
     def export(self):
         self._export = True
@@ -226,15 +212,15 @@ class LWDETR(nn.Module):
         if self.aux_loss:
             out["aux_outputs"] = self._set_aux_loss(outputs_class, outputs_coord, outputs_mask)
 
-        # Process encoder outputs
-        group_detr = self.group_detr if self.training else 1
-        hs_enc_list = hs_enc.chunk(group_detr, dim=1)
-        cls_enc = []
-        for g_idx in range(group_detr):
-            cls_enc_gidx = self.transformer.enc_out_class_embed[g_idx](hs_enc_list[g_idx])
-            cls_enc.append(cls_enc_gidx)
-        cls_enc = torch.cat(cls_enc, dim=1)
-        out["enc_outputs"] = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
+        if self.two_stage:
+            group_detr = self.group_detr if self.training else 1
+            hs_enc_list = hs_enc.chunk(group_detr, dim=1)
+            cls_enc = []
+            for g_idx in range(group_detr):
+                cls_enc_gidx = self.transformer.enc_out_class_embed[g_idx](hs_enc_list[g_idx])
+                cls_enc.append(cls_enc_gidx)
+            cls_enc = torch.cat(cls_enc, dim=1)
+            out["enc_outputs"] = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
         return out
 
     def forward_export(self, tensors):
@@ -917,176 +903,101 @@ class MLP(nn.Module):
         return x
 
 
-def build_model(config):
-    """
-    Build the RF-DETR model using a Pydantic ModelConfig object.
-    
-    Args:
-        config: A Pydantic ModelConfig instance containing all model parameters.
-               For backward compatibility, can also accept a dict or an object with attributes.
-    
-    Returns:
-        A configured LWDETR model instance.
-    """
-    # Import here to avoid circular imports
-    from rfdetr.model_config import ModelConfig
-    
-    # Handle different types of input for backward compatibility
-    if not isinstance(config, ModelConfig):
-        # If a dict is passed, convert to ModelConfig
-        if isinstance(config, dict):
-            config = ModelConfig(**config)
-        else:
-            # If an object with attributes is passed, convert to ModelConfig
-            # by first converting to dict
-            config_dict = {
-                k: getattr(config, k) for k in dir(config) 
-                if not k.startswith('_') and not callable(getattr(config, k))
-            }
-            config = ModelConfig(**config_dict)
-    
+def build_model(args):
     # the `num_classes` naming here is somewhat misleading.
     # it indeed corresponds to `max_obj_id + 1`, where max_obj_id
     # is the maximum id for a class in your dataset. For example,
     # COCO has a max_obj_id of 90, so we pass `num_classes` to be 91.
-    num_classes = config.num_classes + 1
-    device = torch.device(config.device)
-    
-    # Determine target shape
-    target_shape = config.shape if config.shape else (config.resolution, config.resolution)
-    
+    # As another example, for a dataset that has a single class with id 1,
+    # you should pass `num_classes` to be 2 (max_obj_id + 1).
+    # For more details on this, check the following discussion
+    # https://github.com/facebookresearch/detr/issues/108#issuecomment-650269223
+    num_classes = args.num_classes + 1
+    torch.device(args.device)
+
     backbone = build_backbone(
-        encoder=config.encoder,
-        vit_encoder_num_layers=config.vit_encoder_num_layers,
-        pretrained_encoder=config.pretrained_encoder,
-        window_block_indexes=config.window_block_indexes,
-        drop_path=config.drop_path,
-        out_channels=config.hidden_dim,
-        out_feature_indexes=config.out_feature_indexes,
-        projector_scale=config.projector_scale,
-        use_cls_token=config.use_cls_token,
-        hidden_dim=config.hidden_dim,
-        position_embedding=config.position_embedding,
-        freeze_encoder=config.freeze_encoder,
-        layer_norm=config.layer_norm,
-        target_shape=target_shape,
-        rms_norm=config.rms_norm,
-        backbone_lora=config.backbone_lora,
-        force_no_pretrain=config.force_no_pretrain,
-        gradient_checkpointing=config.gradient_checkpointing,
-        load_dinov2_weights=config.pretrain_weights is None,
+        encoder=args.encoder,
+        vit_encoder_num_layers=args.vit_encoder_num_layers,
+        pretrained_encoder=args.pretrained_encoder,
+        window_block_indexes=args.window_block_indexes,
+        drop_path=args.drop_path,
+        out_channels=args.hidden_dim,
+        out_feature_indexes=args.out_feature_indexes,
+        projector_scale=args.projector_scale,
+        use_cls_token=args.use_cls_token,
+        hidden_dim=args.hidden_dim,
+        position_embedding=args.position_embedding,
+        freeze_encoder=args.freeze_encoder,
+        layer_norm=args.layer_norm,
+        target_shape=args.shape
+        if hasattr(args, "shape")
+        else (args.resolution, args.resolution)
+        if hasattr(args, "resolution")
+        else (640, 640),
+        rms_norm=args.rms_norm,
+        backbone_lora=args.backbone_lora,
+        force_no_pretrain=args.force_no_pretrain,
+        gradient_checkpointing=args.gradient_checkpointing,
+        load_dinov2_weights=args.pretrain_weights is None,
     )
-    
-    # Special return cases
-    if hasattr(config, "encoder_only") and config.encoder_only:
+    if args.encoder_only:
         return backbone[0].encoder, None, None
-    if hasattr(config, "backbone_only") and config.backbone_only:
+    if args.backbone_only:
         return backbone, None, None
 
-    # Set num_feature_levels based on projector_scale length
-    feature_levels = len(config.projector_scale)
-    
-    # Create a dict version of the config for transformer (will be updated later)
-    transformer_config = config.dict_for_model_build()
-    transformer_config["num_feature_levels"] = feature_levels
-    
-    # Set default transformer parameters if they don't exist
-    if "decoder_norm" not in transformer_config:
-        transformer_config["decoder_norm"] = "LN"
-    if "dec_n_points" not in transformer_config:
-        transformer_config["dec_n_points"] = 4
-    
-    # Convert dict to an object with attribute access
-    class AttributeDict(dict):
-        def __init__(self, *args, **kwargs):
-            super(AttributeDict, self).__init__(*args, **kwargs)
-            self.__dict__ = self
-    
-    transformer_config_obj = AttributeDict(transformer_config)
-    transformer = build_transformer(transformer_config_obj)
+    args.num_feature_levels = len(args.projector_scale)
+    transformer = build_transformer(args)
 
     model = LWDETR(
         backbone,
         transformer,
         num_classes=num_classes,
-        num_queries=config.num_queries,
-        aux_loss=config.aux_loss,
-        group_detr=config.group_detr,
-        lite_refpoint_refine=config.lite_refpoint_refine,
-        bbox_reparam=config.bbox_reparam,
+        num_queries=args.num_queries,
+        aux_loss=args.aux_loss,
+        group_detr=args.group_detr,
+        two_stage=args.two_stage,
+        lite_refpoint_refine=args.lite_refpoint_refine,
+        bbox_reparam=args.bbox_reparam,
     )
     return model
 
 
-def build_criterion_and_postprocessors(config):
-    """
-    Build the criterion and postprocessors for model training and inference.
-    
-    Args:
-        config: A Pydantic ModelConfig instance containing all model parameters.
-               For backward compatibility, can also accept a dict or an object with attributes.
-    
-    Returns:
-        Tuple of (criterion, postprocessors)
-    """
-    # Import here to avoid circular imports
-    from rfdetr.model_config import ModelConfig
-    
-    # Handle different types of input for backward compatibility
-    if not isinstance(config, ModelConfig):
-        # If a dict is passed, convert to ModelConfig
-        if isinstance(config, dict):
-            config = ModelConfig(**config)
-        else:
-            # If an object with attributes is passed, convert to ModelConfig
-            # by first converting to dict
-            config_dict = {
-                k: getattr(config, k) for k in dir(config) 
-                if not k.startswith('_') and not callable(getattr(config, k))
-            }
-            config = ModelConfig(**config_dict)
-    
-    device = torch.device(config.device)
-    matcher = build_matcher(config)
-    
-    # Set up weight dictionary
-    weight_dict = {
-        "loss_ce": config.cls_loss_coef, 
-        "loss_bbox": config.bbox_loss_coef,
-        "loss_giou": config.giou_loss_coef,
-        "loss_mask": 1.0  # Default weight for mask loss
-    }
-    
-    # Add auxiliary loss weights if enabled
-    if config.aux_loss:
+def build_criterion_and_postprocessors(args):
+    device = torch.device(args.device)
+    matcher = build_matcher(args)
+    weight_dict = {"loss_ce": args.cls_loss_coef, "loss_bbox": args.bbox_loss_coef}
+    weight_dict["loss_giou"] = args.giou_loss_coef
+    weight_dict["loss_mask"] = 1.0  # Add weight for mask loss
+    # TODO this is a hack
+    if args.aux_loss:
         aux_weight_dict = {}
-        for i in range(config.dec_layers - 1):
+        for i in range(args.dec_layers - 1):
             aux_weight_dict.update({k + f"_{i}": v for k, v in weight_dict.items()})
-        # Always include encoder outputs
-        aux_weight_dict.update({k + "_enc": v for k, v in weight_dict.items()})
+        if args.two_stage:
+            aux_weight_dict.update({k + "_enc": v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
-    # Define losses to compute
     losses = ["labels", "boxes", "cardinality", "masks"]
 
-    # Create criterion
+    try:
+        sum_group_losses = args.sum_group_losses
+    except:
+        sum_group_losses = False
     criterion = SetCriterion(
-        config.num_classes + 1,
+        args.num_classes + 1,
         matcher=matcher,
         weight_dict=weight_dict,
-        focal_alpha=config.focal_alpha,
+        focal_alpha=args.focal_alpha,
         losses=losses,
-        group_detr=config.group_detr,
-        sum_group_losses=config.sum_group_losses,
-        use_varifocal_loss=config.use_varifocal_loss,
-        use_position_supervised_loss=config.use_position_supervised_loss,
-        ia_bce_loss=config.ia_bce_loss,
+        group_detr=args.group_detr,
+        sum_group_losses=sum_group_losses,
+        use_varifocal_loss=args.use_varifocal_loss,
+        use_position_supervised_loss=args.use_position_supervised_loss,
+        ia_bce_loss=args.ia_bce_loss,
     )
     criterion.to(device)
-    
-    # Set up postprocessors
-    postprocessors = {"bbox": PostProcess(num_select=config.num_select)}
-    
+    postprocessors = {"bbox": PostProcess(num_select=args.num_select)}
+
     # Add segmentation postprocessor
     postprocessors.update({"segm": PostProcessSegm()})
 
