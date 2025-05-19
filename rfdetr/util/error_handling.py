@@ -133,11 +133,11 @@ def handle_exception(
 def try_except(
     operation: str,
     logger: Optional[logging.Logger] = None,
-    exception_types: tuple = (Exception,),
+    exception_types: tuple[Type[Exception], ...] = (Exception,),
     reraise: bool = True,
     fallback: Any = None,
     log_level: int = logging.ERROR,
-) -> Callable[[Any], Any]:
+) -> Any:
     """
     Context manager for standardized exception handling.
 
@@ -156,18 +156,20 @@ def try_except(
 
     # Use a class to hold the result so it can be modified within the context
     class Result:
-        def __init__(self):
-            self.value = None
-            self.exception = None
-            self.success = False
+        def __init__(self) -> None:
+            self.value: Any = None
+            self.exception: Optional[Exception] = None
+            self.success: bool = False
 
     result = Result()
 
     class TryExcept:
-        def __enter__(self):
+        def __enter__(self) -> Result:
             return result
 
-        def __exit__(self, exc_type, exc_val, exc_tb):
+        def __exit__(self, exc_type: Optional[Type[BaseException]], 
+                    exc_val: Optional[BaseException], 
+                    exc_tb: Optional[traceback.TracebackType]) -> bool:
             if exc_type is not None and issubclass(exc_type, exception_types):
                 # Get the logger if not provided
                 nonlocal logger
@@ -178,6 +180,7 @@ def try_except(
                     logger = get_logger(module)
 
                 # Log the exception
+                assert exc_val is not None  # for type checking
                 log_exception(logger, exc_val, f"Error while {operation}", log_level)
 
                 # Store exception info

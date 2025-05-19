@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 
 
-def init_logs_directory(base_dir: str = None) -> str:
+def init_logs_directory(base_dir: str | None = None) -> str:
     """
     Create the logs directory structure if it doesn't exist.
 
