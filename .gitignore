@@ -100,7 +100,8 @@ coverage.xml
 # Other
 .cache/
 
-# Aider
+# AI Assistants
 .aider/
 .aider*
 aider-*
+.claude*
