@@ -380,6 +380,9 @@ class Model:
 
             model.train()
             criterion.train()
+            # Define evaluation frequency in steps
+            eval_freq = getattr(args, "eval_freq_steps", 1000)  # Default to 1000 steps if not provided
+            
             train_stats = train_one_epoch(
                 model,
                 criterion,
@@ -396,6 +399,10 @@ class Model:
                 vit_encoder_num_layers=args.vit_encoder_num_layers,
                 args=args,
                 callbacks=callbacks,
+                eval_freq=eval_freq,
+                val_data_loader=data_loader_val,
+                base_ds=base_ds,
+                postprocessors=postprocessors,
             )
             train_epoch_time = time.time() - epoch_start_time
             train_epoch_time_str = str(datetime.timedelta(seconds=int(train_epoch_time)))
@@ -993,6 +1000,13 @@ def get_args_parser():
         action="store_true",
         help="Use EMA model metrics for early stopping",
     )
+    # In-training evaluation parameters
+    parser.add_argument(
+        "--eval_freq_steps",
+        default=1000,
+        type=int,
+        help="Run COCO API evaluation every N steps during training",
+    )
     # subparsers
     subparsers = parser.add_subparsers(
         title="sub-commands",
@@ -1130,6 +1144,7 @@ def populate_args(
     early_stopping_patience=10,
     early_stopping_min_delta=0.001,
     early_stopping_use_ema=False,
+    eval_freq_steps=1000,
     gradient_checkpointing=False,
     # Additional
     subcommand=None,
@@ -1230,6 +1245,7 @@ def populate_args(
         early_stopping_patience=early_stopping_patience,
         early_stopping_min_delta=early_stopping_min_delta,
         early_stopping_use_ema=early_stopping_use_ema,
+        eval_freq_steps=eval_freq_steps,
         gradient_checkpointing=gradient_checkpointing,
         **extra_kwargs,
     )

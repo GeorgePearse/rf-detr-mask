@@ -73,6 +73,10 @@ def train_one_epoch(
     callbacks: Optional[defaultdict[str, list[Callable]]] = None,
     max_steps: Optional[int] = None,
     current_step: Optional[int] = 0,
+    eval_freq: Optional[int] = None,
+    val_data_loader: Optional[Iterable] = None,
+    base_ds = None,
+    postprocessors = None,
 ):
     if schedules is None:
         schedules = {}
@@ -107,6 +111,18 @@ def train_one_epoch(
         if max_steps is not None and step_counter >= max_steps:
             logger.info(f"Reached max_steps ({max_steps}), stopping training")
             break
+            
+        # Periodic evaluation during training if enabled
+        if eval_freq is not None and val_data_loader is not None and base_ds is not None and postprocessors is not None:
+            if step_counter > 0 and step_counter % eval_freq == 0:
+                logger.info(f"Running evaluation at step {step_counter}")
+                model.eval()
+                with torch.no_grad():
+                    eval_stats, coco_evaluator = evaluate(
+                        model, criterion, postprocessors, val_data_loader, base_ds, device, args=args
+                    )
+                    logger.info(f"Step {step_counter} evaluation: mAP={eval_stats['coco_eval_bbox'][0]:.4f}")
+                model.train()
             
         it = start_steps + data_iter_step
         callback_dict = {
