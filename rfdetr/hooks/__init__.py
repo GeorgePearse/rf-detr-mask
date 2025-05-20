@@ -2,6 +2,6 @@
 Hooks for RF-DETR-Mask training.
 """
 
-from rfdetr.hooks.onnx_checkpoint_hook import ONNXCheckpointHook
+# ONNX export hooks removed
 
-__all__ = ["ONNXCheckpointHook"]
+__all__ = []

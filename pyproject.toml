@@ -61,12 +61,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-onnxexport = [
-    "onnx",
-    "onnxsim",
-    "onnx_graphsurgeon",
-    "onnxruntime"
-]
 metrics = [
     "tensorboard>=2.13.0",
     "wandb"

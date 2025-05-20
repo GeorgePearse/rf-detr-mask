@@ -146,11 +146,8 @@ class TrainingConfig(BaseModel):
     project: Optional[str] = Field(None, description="Project name for logging")
     run: Optional[str] = Field(None, description="Run name for logging")
 
-    # ONNX export
-    export_onnx: bool = Field(False, description="Export to ONNX format")
+    # Model export
     export_torch: bool = Field(True, description="Export PyTorch model")
-    simplify_onnx: bool = Field(False, description="Simplify ONNX model")
-    opset_version: int = Field(17, description="ONNX opset version")
 
     # Distributed training parameters
     world_size: int = Field(1, description="Number of distributed processes")

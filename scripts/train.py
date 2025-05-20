@@ -26,7 +26,7 @@ from lightning.pytorch.strategies import DDPStrategy
 
 import rfdetr.util.misc as utils
 from rfdetr.config_utils import load_config
-from rfdetr.hooks import ONNXCheckpointHook
+# ONNX export functionality removed
 from rfdetr.lightning_module import RFDETRDataModule, RFDETRLightningModule
 from rfdetr.util.logging_config import get_logger
 
@@ -192,28 +192,7 @@ def main(
     )
     callbacks.append(best_checkpoint_callback)
 
-    # For now, disable ONNX export
-    export_onnx = False
-    export_torch = False
-    if export_onnx or export_torch:
-        # Create export directory
-        export_dir = Path(config.training.output_dir) / "exports"
-        export_dir.mkdir(parents=True, exist_ok=True)
-
-        onnx_hook = ONNXCheckpointHook(
-            export_dir=export_dir,
-            export_onnx=config.export_onnx,
-            export_torch=config.export_torch,
-            simplify_onnx=config.simplify_onnx,
-            export_frequency=getattr(
-                config,
-                "eval_save_frequency",
-                getattr(config, "checkpoint_frequency", getattr(config, "val_frequency", 200)),
-            ),
-            input_shape=(config.resolution, config.resolution),
-            opset_version=config.opset_version,
-        )
-        callbacks.append(onnx_hook)
+    # Export functionality removed
 
     # Learning rate monitor
     lr_monitor = LearningRateMonitor(logging_interval="step")
@@ -249,11 +228,8 @@ def main(
     val_frequency = (
         config.other.steps_per_validation if config.other.steps_per_validation > 0 else 200
     )
-    checkpoint_frequency = (
-        config.training.checkpoint_interval
-        if hasattr(config.training, "checkpoint_interval")
-        else 10
-    )
+    # Get checkpoint_frequency from config or use default value of 10
+    checkpoint_frequency = getattr(config.training, "checkpoint_interval", 10)
 
     # Override if in test mode
     if config.dataset.test_mode:

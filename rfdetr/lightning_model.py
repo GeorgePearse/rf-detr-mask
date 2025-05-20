@@ -17,6 +17,7 @@ import numpy as np
 import torch
 import torch.amp
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
+from torch.optim.lr_scheduler import LambdaLR
 
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
@@ -27,7 +28,6 @@ from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.get_param_dicts import get_param_dict
 from rfdetr.util.logging_config import get_logger
 from rfdetr.util.utils import ModelEma
-from torch.optim.lr_scheduler import LambdaLR
 
 
 logger = get_logger(__name__)
@@ -77,7 +77,7 @@ class RFDETRLightningModule(pl.LightningModule):
         self.val_frequency = self.config.val_frequency
 
         # Setup export directories
-        self.export_dir = Path(output_dir)
+        self.export_dir = Path(self.config.training.output_dir)
         self.export_dir.mkdir(parents=True, exist_ok=True)
 
         # Setup autocast for mixed precision training
@@ -294,26 +294,113 @@ class RFDETRLightningModule(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         """Process validation epoch results."""
+        # Default metric values
+        map_value = 0.0
+        mask_map_value = 0.0
 
-        if self.trainer.world_size > 1:
-            self.coco_evaluator.synchronize_between_processes()
+        # Ensure we log a default value for the mAP metric even if evaluation fails
+        # Use both slash and underscore formats for better compatibility
+        self.log("val/mAP", 0.0, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val/best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+        
+        # Log with underscore format for ModelCheckpoint compatibility
+        self.log("val_mAP", 0.0, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val_best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
 
-        self.coco_evaluator.accumulate()
-        self.coco_evaluator.summarize()
-                    # Log with underscore format for Mo
+        # Try to use COCO evaluator if available
+        if self.coco_evaluator is not None:
+            try:
+                # Synchronize if distributed
+                if self.trainer.world_size > 1:
+                    self.coco_evaluator.synchronize_between_processes()
+
+                # Accumulate and summarize
+                self.coco_evaluator.accumulate()
+                self.coco_evaluator.summarize()
+
+                # Extract stats for bounding boxes
+                if "bbox" in self.postprocessors and hasattr(self.coco_evaluator, "coco_eval") and "bbox" in self.coco_evaluator.coco_eval:
+                    stats = self.coco_evaluator.coco_eval["bbox"].stats
+                    if stats is not None and len(stats) > 0:
+                        map_value = float(stats[0])
+                        
+                        # Track best model
+                        if map_value > self.best_map:
+                            self.best_map = map_value
+
+                        # Update the logged value with the computed one
+                        self.log("val/mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
+                        self.log("val/best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+                        
+                        # Log with underscore format for ModelCheckpoint compatibility
+                        self.log("val_mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
+                        self.log("val_best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+                
+                # Extract stats for segmentation masks if available
+                if "segm" in self.postprocessors and hasattr(self.coco_evaluator, "coco_eval") and "segm" in self.coco_evaluator.coco_eval:
+                    stats = self.coco_evaluator.coco_eval["segm"].stats
+                    if stats is not None and len(stats) > 0:
+                        mask_map_value = float(stats[0])
+                        self.log("val/mask_mAP", mask_map_value, on_step=False, on_epoch=True, sync_dist=True)
+                        self.log("val_mask_mAP", mask_map_value, on_step=False, on_epoch=True, sync_dist=True)
+            
+            except Exception as e:
+                logger.error(f"Error during COCO evaluation: {e}")
+                # Continue with validation even if evaluation fails
+        
+        # Log any additional metrics that might be useful
+        if len(self.val_metrics) > 0:
+            # Calculate average of validation metrics
+            avg_loss = sum(m.get('loss', 0.0) for m in self.val_metrics) / max(len(self.val_metrics), 1)
+            self.log("val/avg_loss", avg_loss, on_step=False, on_epoch=True, sync_dist=True)
+            self.log("val_avg_loss", avg_loss, on_step=False, on_epoch=True, sync_dist=True)
 
     def configure_optimizers(self):
         """Configure optimizers and learning rate scheduler for iteration-based training."""
+        # Get parameters from config for optimizer
+        lr = self.config.training.lr
+        weight_decay = self.config.training.weight_decay
+
+        # Get parameter groups with different learning rates
+        param_dicts = get_param_dict(self.config, self.model)
+        
+        # Create optimizer
+        optimizer = torch.optim.AdamW(
+            param_dicts,
+            lr=lr,
+            weight_decay=weight_decay,
+            fused=False,
+            eps=1e-4,
+        )
+        
+        # Get total training steps and warmup steps
+        max_steps = self.config.training.max_steps
+        warmup_ratio = 0.1
+        lr_min_factor = 0.0
+        
+        warmup_steps = int(max_steps * warmup_ratio)
+        
+        # Define lambda function for scheduler
+        def lr_lambda(current_step: int):
+            if current_step < warmup_steps:
+                # Linear warmup
+                return float(current_step) / float(max(1, warmup_steps))
+            else:
+                # Cosine annealing from multiplier 1.0 down to lr_min_factor
+                progress = float(current_step - warmup_steps) / float(
+                    max(1, max_steps - warmup_steps)
+                )
+                return lr_min_factor + (1 - lr_min_factor) * 0.5 * (
+                    1 + math.cos(math.pi * progress)
+                )
+        
+        # Create LambdaLR scheduler
+        lr_scheduler = LambdaLR(optimizer, lr_lambda=lr_lambda)
+        
         return {
-            "optimizer": torch.optim.AdamW(
-                param_dicts,
-                lr=lr,
-                weight_decay=weight_decay,
-                fused=False,
-                eps=1e-4,
-            ),
+            "optimizer": optimizer,
             "lr_scheduler": {
-                "scheduler": LambdaLR(optimizer),
+                "scheduler": lr_scheduler,
                 "interval": "step",  # Step-based scheduling
                 "frequency": 1,
             },

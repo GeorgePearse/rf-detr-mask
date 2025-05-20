@@ -10,9 +10,8 @@ from typing import Any, Dict, Optional, Protocol, runtime_checkable
 
 @runtime_checkable
 class Exportable(Protocol):
-    """Protocol for objects that can be exported to ONNX or other formats."""
+    """Protocol for objects that can be exported to PyTorch format."""
 
-    export_onnx: bool
     export_torch: bool
     export_dir: Optional[Path]
 

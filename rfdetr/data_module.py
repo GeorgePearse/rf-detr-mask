@@ -1,6 +1,9 @@
-import pytorch_lightning as pl
+import lightning.pytorch as pl
+import torch
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
-from rfdetr.data import build_dataset
+
+import rfdetr.util.misc as utils
+from rfdetr.datasets import build_dataset
 from rfdetr.model_config import ModelConfig
 
 class RFDETRDataModule(pl.LightningDataModule):
@@ -13,12 +16,59 @@ class RFDETRDataModule(pl.LightningDataModule):
             config: Configuration as a Pydantic model or compatible dict/object
         """
         super().__init__()
-        # Import here to avoid circular imports
-        self.config = ModelConfig(**config)
-        self.batch_size = self.config.batch_size 
-        self.num_workers = self.config.num_workers
-        self.training_width = self.config.training_width
-        self.training_height = self.config.training_height
+        
+        # Convert config to ModelConfig if it's not already a ModelConfig
+        if isinstance(config, dict):
+            try:
+                self.config = ModelConfig(**config)
+            except Exception:
+                self.config = config  # Keep original if conversion fails
+        else:
+            self.config = config
+            
+        # Extract configuration values with proper defaults
+        # Handle dict type config
+        if isinstance(self.config, dict):
+            self.batch_size = self.config.get("batch_size", 4)
+            self.num_workers = self.config.get("num_workers", 2)
+            self.training_width = self.config.get("training_width", 560)
+            self.training_height = self.config.get("training_height", 560)
+        else:
+            # For structured config objects, check for training attributes first
+            # Training parameters
+            try:
+                self.batch_size = self.config.training.batch_size
+            except (AttributeError, KeyError):
+                # Fallback to direct attribute or default
+                try:
+                    self.batch_size = self.config.batch_size
+                except (AttributeError, KeyError):
+                    self.batch_size = 4
+                    
+            try:
+                self.num_workers = self.config.training.num_workers
+            except (AttributeError, KeyError):
+                try:
+                    self.num_workers = self.config.num_workers
+                except (AttributeError, KeyError):
+                    self.num_workers = 2
+                    
+            # Model parameters
+            try:
+                self.training_width = self.config.model.training_width
+            except (AttributeError, KeyError):
+                try:
+                    self.training_width = self.config.training_width
+                except (AttributeError, KeyError):
+                    self.training_width = 560
+                    
+            try:
+                self.training_height = self.config.model.training_height
+            except (AttributeError, KeyError):
+                try:
+                    self.training_height = self.config.training_height
+                except (AttributeError, KeyError):
+                    self.training_height = 560
 
     def setup(self, stage=None):
         """Set up datasets for training and validation."""
