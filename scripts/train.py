@@ -36,8 +36,8 @@ logger = get_logger(__name__)
 def get_number_of_classes(config) -> int:
     """Get the number of classes from the annotation file."""
     # Extract paths from RFDETRConfig structure
-    coco_path = Path(config.data.coco_path)
-    coco_train = config.data.coco_train
+    coco_path = Path(config.data.annotation_directory)
+    coco_train = config.data.training_annotation_file
     
     annotation_file = (
         coco_path / coco_train
