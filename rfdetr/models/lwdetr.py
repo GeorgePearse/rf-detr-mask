@@ -875,7 +875,7 @@ def build_model(model_config: ModelConfig):
     num_classes = model_config.num_classes + 1
     torch.device(model_config.device)
 
-    target_shape = (model_config.training_height, model_config.training_width)
+    target_shape = (model_config.model_training_height, model_config.model_training_width)
     logger.info(f"Target shape within the model is {target_shape}")
 
     backbone = build_backbone(

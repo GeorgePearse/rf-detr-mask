@@ -13,7 +13,7 @@ from typing import Any, Literal, Optional, Union
 
 import torch
 import yaml
-from pydantic import BaseModel, Field, validator, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from rfdetr.util.error_handling import ConfigurationError
 from rfdetr.util.logging_config import get_logger
@@ -24,7 +24,8 @@ DEVICE = (
     "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 )
 
-class TransformerConfig(BaseModel): 
+
+class TransformerConfig(BaseModel):
     hidden_dim: int = Field(default=256, gt=0)
     sa_nheads: int = Field(default=8, gt=0)
     ca_nheads: int = Field(default=8, gt=0)
@@ -39,12 +40,14 @@ class TransformerConfig(BaseModel):
     decoder_norm: Literal["LN", "BN"] = "LN"
     bbox_reparam: bool = False
 
+
 # Basic model configurations
 class ModelConfig(BaseModel):
     """
     Comprehensive configuration for RF-DETR model construction and training.
     This replaces the use of dictionary arguments or attribute access objects.
     """
+
     transformer: TransformerConfig
 
     # Core model parameters
@@ -75,15 +78,19 @@ class ModelConfig(BaseModel):
     gradient_checkpointing: bool = False
     freeze_encoder: bool = False
 
-    # For determining the target_shape within the LWDETR model, should be able to remove it 
+    # For determining the target_shape within the LWDETR model, should be able to remove it
     # as a separate param later
-    model_training_width: int = Field(gt=0, description="Width during training, must be divisible by 56")
-    model_training_height: int = Field(gt=0, description="Height during training, must be divisible by 56")
+    model_training_width: int = Field(
+        gt=0, description="Width during training, must be divisible by 56"
+    )
+    model_training_height: int = Field(
+        gt=0, description="Height during training, must be divisible by 56"
+    )
 
     # Learning rate parameters
     lr: float = Field(default=1e-4, ge=0.0)
     lr_encoder: float = Field(default=1e-5, ge=0.0)
-    lr_projector: float = Field(default=1e-5, ge=0.0) 
+    lr_projector: float = Field(default=1e-5, ge=0.0)
     lr_scheduler: Literal["cosine", "step"] = "cosine"
     warmup_ratio: float = Field(default=0.1, ge=0.0, le=1.0)
     lr_min_factor: float = Field(default=0.0, ge=0.0)
@@ -132,7 +139,6 @@ class ModelConfig(BaseModel):
     set_cost_bbox: float = Field(default=5.0, ge=0.0)
     set_cost_giou: float = Field(default=2.0, ge=0.0)
 
-
     def dict_for_model_build(self) -> dict[str, Any]:
         """
         Convert this Pydantic model to a dictionary for backward compatibility
@@ -147,7 +153,7 @@ class ModelConfig(BaseModel):
 
 class RFDETRBaseConfig(ModelConfig):
     """Base configuration for RF-DETR models."""
-    
+
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = "dinov2_windowed_small"
     hidden_dim: int = 256
     sa_nheads: int = 8
@@ -162,7 +168,7 @@ class RFDETRBaseConfig(ModelConfig):
 
 class RFDETRLargeConfig(RFDETRBaseConfig):
     """Large configuration for RF-DETR models."""
-    
+
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = "dinov2_windowed_base"
     hidden_dim: int = 384
     sa_nheads: int = 12
@@ -227,8 +233,8 @@ class DataConfig(BaseModel):
     image_directory: Optional[str] = ""
     training_annotation_file: Optional[str] = ""
     validation_annotation_file: Optional[str] = ""
-    
-    @field_validator('image_directory')
+
+    @field_validator("image_directory")
     @classmethod
     def validate_image_directory(cls, v: Optional[str]) -> Optional[str]:
         if v and v.strip():
@@ -238,8 +244,8 @@ class DataConfig(BaseModel):
             if not path.is_dir():
                 raise ValueError(f"Image directory path is not a directory: {v}")
         return v
-        
-    @field_validator('training_annotation_file', 'validation_annotation_file')
+
+    @field_validator("training_annotation_file", "validation_annotation_file")
     @classmethod
     def validate_annotation_files(cls, v: Optional[str]) -> Optional[str]:
         if v and v.strip():
@@ -249,7 +255,7 @@ class DataConfig(BaseModel):
             if not path.is_file():
                 raise ValueError(f"Annotation file path is not a file: {v}")
         return v
-   
+
     val_limit: Optional[int] = None
     test_mode: bool = False
     val_limit_test_mode: int = 20
@@ -265,10 +271,14 @@ class DataConfig(BaseModel):
     validation_batch_size: int = Field(default=4, gt=0)
     validation_num_workers: int = Field(default=2, ge=0)
 
-    input_training_width: int = Field(gt=0, description="Width during training, must be divisible by 56")
-    input_training_height: int = Field(gt=0, description="Height during training, must be divisible by 56")
+    input_training_width: int = Field(
+        gt=0, description="Width during training, must be divisible by 56"
+    )
+    input_training_height: int = Field(
+        gt=0, description="Height during training, must be divisible by 56"
+    )
 
-    @field_validator('training_width', 'training_height')
+    @field_validator("input_training_width", "input_training_height")
     @classmethod
     def validate_dimensions_divisible_by_56(cls, v: int, info) -> int:
         if v % 56 != 0:
@@ -351,8 +361,8 @@ class RFDETRConfig(BaseModel):
             "num_classes": self.model.num_classes,
             "pretrain_weights": self.model.pretrain_weights,
             "device": self.model.device,
-            "training_width": self.model.training_width,
-            "training_height": self.model.training_height,
+            "model_training_width": self.model.model_training_width,
+            "model_training_height": self.model.model_training_height,
             "group_detr": self.model.group_detr,
             "gradient_checkpointing": self.model.gradient_checkpointing,
             "num_queries": self.model.num_queries,
@@ -387,11 +397,11 @@ class RFDETRConfig(BaseModel):
             "early_stopping_min_delta": self.training.early_stopping_min_delta,
             "early_stopping_use_ema": self.training.early_stopping_use_ema,
             # Dataset parameters
-            "coco_path": self.dataset.coco_path,
-            "coco_train": self.dataset.coco_train,
-            "coco_val": self.dataset.coco_val,
-            "coco_img_path": self.dataset.coco_img_path,
-            "val_limit": self.dataset.val_limit,
+            "coco_path": self.data.coco_path,
+            "coco_train": self.data.coco_train,
+            "coco_val": self.data.coco_val,
+            "coco_img_path": self.data.coco_img_path,
+            "val_limit": self.data.val_limit,
             # Mask parameters
             "masks": self.mask.enabled,
             "loss_mask_coef": self.mask.loss_mask_coef,
@@ -406,7 +416,7 @@ class RFDETRConfig(BaseModel):
             "max_steps": self.training.max_steps,
             "val_frequency": self.training.val_frequency,
             "checkpoint_frequency": self.training.checkpoint_frequency,
-            "test_mode": self.dataset.test_mode,
+            "test_mode": self.data.test_mode,
         }
 
         return args_dict
@@ -459,15 +469,19 @@ class RFDETRConfig(BaseModel):
             raise ConfigurationError(error_msg)
 
         try:
-            with open(yaml_path, 'r') as f:
+            with open(yaml_path) as f:
                 config_dict = yaml.safe_load(f)
-                
+
             # Check for duplicate key names
             duplicates = find_duplicate_keys(config_dict)
             if duplicates:
-                duplicate_info = "\n".join([f"Key '{key}' found at: {', '.join(paths)}" for key, paths in duplicates])
-                logger.warning(f"Duplicate key names found in configuration file {yaml_path}:\n{duplicate_info}")
-                
+                duplicate_info = "\n".join(
+                    [f"Key '{key}' found at: {', '.join(paths)}" for key, paths in duplicates]
+                )
+                logger.warning(
+                    f"Duplicate key names found in configuration file {yaml_path}:\n{duplicate_info}"
+                )
+
         except Exception as e:
             error_msg = f"Failed to load configuration from {yaml_path}"
             logger.error(f"{error_msg}: {e}")
@@ -484,25 +498,25 @@ class RFDETRConfig(BaseModel):
 def check_duplicate_key_names(config_dict: dict, path: str = "") -> dict:
     """
     Check for duplicate key names (regardless of path) in the configuration.
-    
+
     Args:
         config_dict: Configuration dictionary to check
         path: Current path in the configuration (for recursive calls)
-        
+
     Returns:
         Dictionary mapping key names to their paths
     """
     key_paths = {}
-    
+
     for key, value in config_dict.items():
         current_path = f"{path}.{key}" if path else key
-        
+
         # Add this key to our tracking dict
         if key in key_paths:
             key_paths[key].append(current_path)
         else:
             key_paths[key] = [current_path]
-            
+
         # Recursively check nested dictionaries
         if isinstance(value, dict):
             nested_keys = check_duplicate_key_names(value, current_path)
@@ -511,22 +525,24 @@ def check_duplicate_key_names(config_dict: dict, path: str = "") -> dict:
                     key_paths[nested_key].extend(nested_paths)
                 else:
                     key_paths[nested_key] = nested_paths
-                    
+
     return key_paths
+
 
 def find_duplicate_keys(config_dict: dict) -> list:
     """
     Find keys with the same name at different paths in the configuration.
-    
+
     Args:
         config_dict: Configuration dictionary to check
-        
+
     Returns:
         List of tuples (key_name, paths) for keys with duplicate names
     """
     key_paths = check_duplicate_key_names(config_dict)
     duplicates = [(key, paths) for key, paths in key_paths.items() if len(paths) > 1]
     return duplicates
+
 
 def load_config(config_path: Union[str, Path]) -> RFDETRConfig:
     """

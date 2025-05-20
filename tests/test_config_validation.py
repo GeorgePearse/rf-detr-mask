@@ -1,187 +1,114 @@
+#!/usr/bin/env python
+# ------------------------------------------------------------------------
+# RF-DETR
+# Copyright (c) 2025 Roboflow. All Rights Reserved.
+# Licensed under the Apache License, Version 2.0 [see LICENSE for details]
+# ------------------------------------------------------------------------
+
 """
-Tests the config validation system, ensuring YAML config files are consistent with Pydantic models.
+Test to validate that the default YAML config properly instantiates a valid config object
+and that all keys are used (no mismatches between config file and Pydantic models).
 """
 
 import unittest
 from pathlib import Path
+from typing import Any, Dict, Set
 
 import yaml
 
-from rfdetr.config import (
-    DatasetConfig,
-    MaskConfig,
-    ModelConfig,
-    OtherConfig,
-    RFDETRConfig,
-    TrainingConfig,
-)
+from rfdetr.adapters.config import RFDETRConfig
+from rfdetr.util.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class TestConfigValidation(unittest.TestCase):
-    def test_yaml_fields_exist_in_pydantic_models(self):
-        """
-        Test that all fields in the YAML config file are defined in the Pydantic models.
-        This ensures that we don't have fields in YAML that aren't represented in the model,
-        which would cause them to be silently ignored.
-        """
-        # Path to the default config file
+    """Test to validate config.yaml instantiation and key usage."""
+
+    def test_default_yaml_instantiation(self):
+        """Test that the default YAML config can be instantiated as a valid config object."""
+        config_path = Path(__file__).parent.parent / "configs" / "default.yaml"
+        self.assertTrue(config_path.exists(), f"Config file not found: {config_path}")
+
+        # Load the config file
+        config = RFDETRConfig.from_yaml(config_path)
+
+        # Verify basic properties to ensure it loaded correctly
+        self.assertIsNotNone(config.model)
+        self.assertIsNotNone(config.training)
+        self.assertIsNotNone(config.data)
+        self.assertIsNotNone(config.mask)
+        self.assertIsNotNone(config.other)
+
+        # Assert some specific values to confirm proper loading
+        self.assertEqual(config.model.hidden_dim, 256)
+        self.assertEqual(config.model.encoder, "dinov2_windowed_small")
+        self.assertEqual(config.data.coco_path, "/home/georgepearse/data/cmr/annotations")
+        self.assertEqual(config.mask.enabled, True)
+        self.assertEqual(config.other.seed, 42)
+
+    def test_all_yaml_keys_used(self):
+        """Test that all keys in the YAML file are properly used in the config object."""
         config_path = Path(__file__).parent.parent / "configs" / "default.yaml"
 
-        # Load the YAML config
+        # Read the raw YAML file
         with open(config_path) as f:
-            config_data = yaml.safe_load(f)
+            yaml_data = yaml.safe_load(f)
 
-        # Get all fields from Pydantic models in the sections dictionary below
+        # Instantiate the config
+        config = RFDETRConfig.from_yaml(config_path)
 
-        # Track all missing fields to provide a comprehensive report
-        all_missing_fields = {}
+        # Convert the config back to a dict for comparison
+        config_dict = config.model_dump()
 
-        # Check fields for each section
-        sections = {
-            "model": set(ModelConfig.model_fields.keys()),
-            "training": set(TrainingConfig.model_fields.keys()),
-            "dataset": set(DatasetConfig.model_fields.keys()),
-            "mask": set(MaskConfig.model_fields.keys()),
-            "other": set(OtherConfig.model_fields.keys()),
-        }
+        # Check all YAML keys are used in the config
+        yaml_keys = self.extract_all_keys_from_dict(yaml_data)
+        config_keys = self.extract_all_keys_from_dict(config_dict)
 
-        # Check all sections
-        for section, fields in sections.items():
-            yaml_fields = set(config_data[section].keys())
-            missing_fields = yaml_fields - fields
-            if missing_fields:
-                all_missing_fields[section] = missing_fields
+        # Find keys in YAML but not in config (indicates unused keys)
+        unused_keys = yaml_keys - config_keys
+        if unused_keys:
+            logger.warning(f"Found keys in YAML not used in config: {unused_keys}")
+        self.assertEqual(len(unused_keys), 0, f"Found unused keys in YAML: {unused_keys}")
 
-        # Assert no missing fields and provide a detailed error message if there are any
-        self.assertEqual(
-            all_missing_fields,
-            {},
-            f"Fields in YAML missing from Pydantic models: {all_missing_fields}\n"
-            f"These fields will be silently ignored when loading the config.",
-        )
+        # Also check for keys in config not in YAML (might indicate default values used)
+        missing_from_yaml = config_keys - yaml_keys
+        if missing_from_yaml:
+            logger.info(
+                f"Keys in config not specified in YAML (using defaults): {missing_from_yaml}"
+            )
 
-    def test_yaml_loads_without_errors(self):
-        """
-        Test that the default YAML config can be loaded into the Pydantic model without errors.
-        """
+    def test_transformer_config_consistency(self):
+        """Test that transformer config values in model section match the nested transformer config."""
         config_path = Path(__file__).parent.parent / "configs" / "default.yaml"
-        try:
-            config = RFDETRConfig.from_yaml(config_path)
-            self.assertIsInstance(config, RFDETRConfig)
-        except Exception as e:
-            self.fail(f"Loading config failed with error: {e}")
 
-    def test_default_and_base_configs_validate(self):
-        """
-        Test that the default.yaml and base_config.yaml files can be loaded and validated.
-        These are the main configuration files that should be complete and valid.
-        """
-        # List of configs we want to test (the main ones that should be complete)
-        config_files = [
-            Path(__file__).parent.parent / "configs" / "default.yaml",
-        ]
+        # Read the raw YAML file
+        with open(config_path) as f:
+            yaml_data = yaml.safe_load(f)
 
-        # Try to load and validate each config file
-        for config_file in config_files:
-            self.assertTrue(config_file.exists(), f"Config file {config_file.name} not found")
-            try:
-                config = RFDETRConfig.from_yaml(config_file)
-                self.assertIsInstance(
-                    config, RFDETRConfig, f"Config {config_file.name} didn't load properly"
+        # Check transformer configuration consistency
+        transformer_config = yaml_data["model"]["transformer"]
+        model_config = yaml_data["model"]
+
+        # Check for duplicate keys with different values
+        for key in transformer_config:
+            if key in model_config and key not in ["transformer"]:
+                # If the same key exists at both levels, they should have the same value
+                self.assertEqual(
+                    transformer_config[key],
+                    model_config[key],
+                    f"Key '{key}' has different values in model ({model_config[key]}) and transformer ({transformer_config[key]})",
                 )
-            except Exception as e:
-                self.fail(f"Loading config {config_file.name} failed with error: {e}")
 
-    def test_pydantic_model_fields_all_in_yaml(self):
-        """
-        Test that every field in the Pydantic models has a corresponding entry in the YAML.
-        This helps detect fields that are defined in the model but missing from the config,
-        which could lead to unexpected default values being used.
-        """
-        # Path to the default config file
-        config_path = Path(__file__).parent.parent / "configs" / "default.yaml"
-
-        # Load the YAML config
-        with open(config_path) as f:
-            config_data = yaml.safe_load(f)
-
-        # Get all Pydantic model fields - we'll use these to compare with YAML fields
-        # Read model fields
-
-        # Get all fields from YAML
-        model_yaml_fields = set(config_data["model"].keys())
-        training_yaml_fields = set(config_data["training"].keys())
-        dataset_yaml_fields = set(config_data["dataset"].keys())
-        mask_yaml_fields = set(config_data["mask"].keys())
-        other_yaml_fields = set(config_data["other"].keys())
-
-        # Track all fields in Pydantic but missing from YAML
-        # Don't include optional fields with default values
-        all_missing_from_yaml = {}
-
-        # Get required fields for each model
-        required_model_fields = {
-            f for f, field in ModelConfig.model_fields.items() if field.is_required()
-        }
-        required_training_fields = {
-            f for f, field in TrainingConfig.model_fields.items() if field.is_required()
-        }
-        required_dataset_fields = {
-            f for f, field in DatasetConfig.model_fields.items() if field.is_required()
-        }
-        required_mask_fields = {
-            f for f, field in MaskConfig.model_fields.items() if field.is_required()
-        }
-        required_other_fields = {
-            f for f, field in OtherConfig.model_fields.items() if field.is_required()
-        }
-
-        # Check required fields that are missing from YAML
-        missing_model_fields = required_model_fields - model_yaml_fields
-        if missing_model_fields:
-            all_missing_from_yaml["model"] = missing_model_fields
-
-        missing_training_fields = required_training_fields - training_yaml_fields
-        if missing_training_fields:
-            all_missing_from_yaml["training"] = missing_training_fields
-
-        missing_dataset_fields = required_dataset_fields - dataset_yaml_fields
-        if missing_dataset_fields:
-            all_missing_from_yaml["dataset"] = missing_dataset_fields
-
-        missing_mask_fields = required_mask_fields - mask_yaml_fields
-        if missing_mask_fields:
-            all_missing_from_yaml["mask"] = missing_mask_fields
-
-        missing_other_fields = required_other_fields - other_yaml_fields
-        if missing_other_fields:
-            all_missing_from_yaml["other"] = missing_other_fields
-
-        # Assert no missing fields
-        self.assertEqual(
-            all_missing_from_yaml,
-            {},
-            f"Required fields in Pydantic model missing from YAML: {all_missing_from_yaml}",
-        )
-
-    def test_config_validation(self):
-        """
-        Test that the default YAML config can be loaded into the Pydantic model without errors.
-        This helps ensure that the YAML values match the expected types in the Pydantic model.
-        """
-        # Path to the default config file
-        config_path = Path(__file__).parent.parent / "configs" / "default.yaml"
-
-        # Load the YAML config
-        with open(config_path) as f:
-            config_data = yaml.safe_load(f)
-
-        # Try to validate the config
-        try:
-            config = RFDETRConfig.model_validate(config_data)
-            self.assertIsInstance(config, RFDETRConfig)
-        except Exception as e:
-            self.fail(f"Validation failed: {e}")
+    def extract_all_keys_from_dict(self, d: Dict[str, Any], prefix: str = "") -> Set[str]:
+        """Extract all keys including nested ones from a dictionary."""
+        keys = set()
+        for k, v in d.items():
+            key_path = f"{prefix}.{k}" if prefix else k
+            keys.add(key_path)
+            if isinstance(v, dict):
+                keys.update(self.extract_all_keys_from_dict(v, key_path))
+        return keys
 
 
 if __name__ == "__main__":

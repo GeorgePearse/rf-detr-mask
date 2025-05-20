@@ -1,28 +1,35 @@
-import lightning.pytorch as pl
 from typing import Optional
 
+import lightning.pytorch as pl
 import torch
-from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 import torchvision.transforms as transforms
+from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 
 import rfdetr.util.misc as utils
+from rfdetr.adapters.config import DataConfig
 from rfdetr.adapters.dataset import CocoDetection
-from rfdetr.adapters.config import DataConfig, ModelConfig
 from rfdetr.util.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
 def get_training_transforms(image_width: int, image_height: int) -> transforms.Compose:
-    return transforms.Compose([
-        transforms.ToTensor(),  
-        transforms.Resize((image_width, image_height)),
-    ])
+    return transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Resize((image_width, image_height)),
+        ]
+    )
+
 
 def get_validation_transforms(image_width: int, image_height: int) -> transforms.Compose:
-    return transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Resize((image_width, image_height)),
-    ])
+    return transforms.Compose(
+        [
+            transforms.ToTensor(),
+            transforms.Resize((image_width, image_height)),
+        ]
+    )
+
 
 class RFDETRDataModule(pl.LightningDataModule):
     """Lightning data module for RF-DETR-Mask."""
@@ -39,24 +46,28 @@ class RFDETRDataModule(pl.LightningDataModule):
         self.training_num_workers = config.training_num_workers
         self.validation_batch_size = config.validation_batch_size
         self.validation_num_workers = config.validation_num_workers
-        
+
         # Image dimensions from model config
-        self.training_width = config.training_width 
-        self.training_height = config.training_height
-        
+        self.training_width = config.input_training_width
+        self.training_height = config.input_training_height
+
         # Data paths
         self.image_directory = config.image_directory
         self.training_annotation_file = config.training_annotation_file
         self.validation_annotation_file = config.validation_annotation_file
-        
+
         # Initialize transforms
-        self.training_transforms = get_training_transforms(self.training_width, self.training_height)
-        self.validation_transforms = get_validation_transforms(self.training_width, self.training_height)
-        
+        self.training_transforms = get_training_transforms(
+            self.training_width, self.training_height
+        )
+        self.validation_transforms = get_validation_transforms(
+            self.training_width, self.training_height
+        )
+
         # Initialize datasets to None
         self.dataset_train: Optional[CocoDetection] = None
         self.dataset_val: Optional[CocoDetection] = None
-        
+
         # Log paths for debugging
         logger.info(f"Image directory: {self.image_directory}")
         logger.info(f"Training annotation file: {self.training_annotation_file}")
@@ -64,12 +75,14 @@ class RFDETRDataModule(pl.LightningDataModule):
 
     def setup(self, stage: Optional[str] = None) -> None:
         """Set up datasets for training and validation.
-        
+
         Args:
             stage: Optional stage parameter required by Lightning, but not used here
         """
         # We need to set up datasets for all stages
-        logger.info(f"Setting up training dataset with annotation file: {self.training_annotation_file}")
+        logger.info(
+            f"Setting up training dataset with annotation file: {self.training_annotation_file}"
+        )
         self.dataset_train = CocoDetection(
             img_folder=self.image_directory,
             ann_file=self.training_annotation_file,
@@ -77,7 +90,9 @@ class RFDETRDataModule(pl.LightningDataModule):
             test_limit=None,
         )
         logger.info(f"Training dataset has {len(self.dataset_train)} samples")
-        logger.info(f"Setting up validation dataset with annotation file: {self.validation_annotation_file}")
+        logger.info(
+            f"Setting up validation dataset with annotation file: {self.validation_annotation_file}"
+        )
         self.dataset_val = CocoDetection(
             img_folder=self.image_directory,
             ann_file=self.validation_annotation_file,
@@ -88,7 +103,7 @@ class RFDETRDataModule(pl.LightningDataModule):
 
     def train_dataloader(self) -> DataLoader:
         """Create training data loader.
-        
+
         Returns:
             DataLoader: The training data loader
         """
@@ -112,7 +127,7 @@ class RFDETRDataModule(pl.LightningDataModule):
 
     def val_dataloader(self) -> DataLoader:
         """Create validation data loader.
-        
+
         Returns:
             DataLoader: The validation data loader
         """
@@ -120,7 +135,9 @@ class RFDETRDataModule(pl.LightningDataModule):
         # Shuffling validation data would make metrics less stable between runs
         # DO NOT change this to RandomSampler unless specifically testing data randomization effects
         if self.trainer is not None and self.trainer.world_size > 1:
-            sampler_val: torch.utils.data.Sampler = DistributedSampler(self.dataset_val, shuffle=False)
+            sampler_val: torch.utils.data.Sampler = DistributedSampler(
+                self.dataset_val, shuffle=False
+            )
         else:
             sampler_val = SequentialSampler(self.dataset_val)
 

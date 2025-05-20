@@ -32,8 +32,8 @@ model:
   # num_classes is now determined automatically from annotation file
   pretrain_weights: null
   device: "cuda"
-  training_width: 560  # Divisible by 56
-  training_height: 672  # Divisible by 56
+  model_training_width: 560  # Divisible by 56
+  model_training_height: 672  # Divisible by 56
   group_detr: 13
   gradient_checkpointing: true
   num_queries: 100
