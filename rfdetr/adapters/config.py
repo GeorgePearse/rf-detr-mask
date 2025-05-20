@@ -464,14 +464,17 @@ class RFDETRConfig(BaseModel):
             raise ConfigurationError(error_msg)
 
         try:
-            with open(yaml_path) as f:
+            with open(yaml_path, 'r') as f:
                 config_dict = yaml.safe_load(f)
-        except yaml.YAMLError as e:
-            error_msg = f"Invalid YAML in configuration file {yaml_path}"
-            logger.error(f"{error_msg}: {e}")
-            raise ConfigurationError(error_msg) from e
+                
+            # Check for duplicate key names
+            duplicates = find_duplicate_keys(config_dict)
+            if duplicates:
+                duplicate_info = "\n".join([f"Key '{key}' found at: {', '.join(paths)}" for key, paths in duplicates])
+                logger.warning(f"Duplicate key names found in configuration file {yaml_path}:\n{duplicate_info}")
+                
         except Exception as e:
-            error_msg = f"Error reading configuration file {yaml_path}"
+            error_msg = f"Failed to load configuration from {yaml_path}"
             logger.error(f"{error_msg}: {e}")
             raise ConfigurationError(error_msg) from e
 
@@ -482,6 +485,53 @@ class RFDETRConfig(BaseModel):
             logger.error(f"{error_msg}: {e}")
             raise ConfigurationError(f"{error_msg}: {e}") from e
 
+
+def check_duplicate_key_names(config_dict: dict, path: str = "") -> dict:
+    """
+    Check for duplicate key names (regardless of path) in the configuration.
+    
+    Args:
+        config_dict: Configuration dictionary to check
+        path: Current path in the configuration (for recursive calls)
+        
+    Returns:
+        Dictionary mapping key names to their paths
+    """
+    key_paths = {}
+    
+    for key, value in config_dict.items():
+        current_path = f"{path}.{key}" if path else key
+        
+        # Add this key to our tracking dict
+        if key in key_paths:
+            key_paths[key].append(current_path)
+        else:
+            key_paths[key] = [current_path]
+            
+        # Recursively check nested dictionaries
+        if isinstance(value, dict):
+            nested_keys = check_duplicate_key_names(value, current_path)
+            for nested_key, nested_paths in nested_keys.items():
+                if nested_key in key_paths:
+                    key_paths[nested_key].extend(nested_paths)
+                else:
+                    key_paths[nested_key] = nested_paths
+                    
+    return key_paths
+
+def find_duplicate_keys(config_dict: dict) -> list:
+    """
+    Find keys with the same name at different paths in the configuration.
+    
+    Args:
+        config_dict: Configuration dictionary to check
+        
+    Returns:
+        List of tuples (key_name, paths) for keys with duplicate names
+    """
+    key_paths = check_duplicate_key_names(config_dict)
+    duplicates = [(key, paths) for key, paths in key_paths.items() if len(paths) > 1]
+    return duplicates
 
 def load_config(config_path: Union[str, Path]) -> RFDETRConfig:
     """

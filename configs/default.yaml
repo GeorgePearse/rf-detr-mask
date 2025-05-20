@@ -88,7 +88,7 @@ data:
 
 # Mask Configuration
 mask:
-  enabled: false
+  enabled: true
   loss_mask_coef: 1.0
   loss_dice_coef: 1.0
 
