@@ -1,0 +1,26 @@
+Fix the following Python formatting error C901 in rfdetr/hooks/onnx_checkpoint_hook.py at line 104, column 9:
+
+Error details:
+    |
+102 |         return nested_tensor
+103 |
+104 |     def on_validation_epoch_start(self, trainer, pl_module):
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^ C901
+105 |         """
+106 |         Called before validation epoch starts.
+    |
+rfdetr/lightning_module.py:235:9: C901 `validation_step` is too complex (12 > 10)
+    |
+
+Here's the current code:
+
+        return nested_tensor
+
+    def on_validation_epoch_start(self, trainer, pl_module):
+        """
+        Called before validation epoch starts.
+
+        Args:
+            trainer: PyTorch Lightning trainer
+
+Return only the corrected code snippet, nothing else. No explanations.

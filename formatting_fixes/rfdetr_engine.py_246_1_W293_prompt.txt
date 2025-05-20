@@ -1,0 +1,26 @@
+Fix the following Python formatting error W293 in rfdetr/engine.py at line 246, column 1:
+
+Error details:
+    |
+244 | def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, args=None):
+245 |     """Evaluate model on validation dataset.
+246 |     
+    | ^^^^ W293
+247 |     If args.test_mode is True, the validation will be limited to args.val_limit_test_mode samples.
+248 |     """
+    |
+    = help: Remove whitespace from blank line
+rfdetr/engine.py:260:1: W293 [*] Blank line contains whitespace
+
+Here's the current code:
+    
+    If args.test_mode is True, the validation will be limited to args.val_limit_test_mode samples.
+    """
+    model.eval()
+    if args.fp16_eval:
+        model.half()
+    criterion.eval()
+
+    metric_logger = utils.MetricLogger(delimiter="  ")
+
+Return only the corrected code snippet, nothing else. No explanations.

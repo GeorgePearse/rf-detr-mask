@@ -1,0 +1,26 @@
+Fix the following Python formatting error E402 in rfdetr/engine.py at line 37, column 1:
+
+Error details:
+   |
+36 | # Import AMP utilities
+37 | from torch.amp import GradScaler, autocast
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ E402
+   |
+rfdetr/engine.py:48:9: F841 Local variable `original_test_mode` is assigned to but never used
+   |
+46 |     with torch.no_grad():
+47 |         # If in test_mode, set val_limit_test_mode for quicker validation
+48 |         original_test_mode = getattr(args, "test_mode", False)
+
+Here's the current code:
+logger = get_logger(__name__)
+
+# Import AMP utilities
+from torch.amp import GradScaler, autocast
+
+
+def do_evaluation_during_training(
+    model, criterion, postprocessors, val_data_loader, base_ds, device, args, step_counter, logger
+):
+
+Return only the corrected code snippet, nothing else. No explanations.

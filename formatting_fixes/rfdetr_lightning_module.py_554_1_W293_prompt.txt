@@ -1,0 +1,26 @@
+Fix the following Python formatting error W293 in rfdetr/lightning_module.py at line 554, column 1:
+
+Error details:
+    |
+552 |                         and hasattr(self.coco_evaluator.coco_eval["segm"], "stats")
+553 |                     )
+554 |                     
+    | ^^^^^^^^^^^^^^^^^^^^ W293
+555 |                     if segm_valid:
+556 |                         stats = self.coco_evaluator.coco_eval["segm"].stats
+    |
+    = help: Remove whitespace from blank line
+rfdetr/lightning_module.py:568:1: W293 [*] Blank line contains whitespace
+
+Here's the current code:
+                            
+                            # Log with underscore format for ModelCheckpoint compatibility
+                            self.log("val_mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
+                            self.log("val_best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+
+                    # Extract stats for segmentation masks
+                    segm_valid = (
+                        "segm" in self.postprocessors
+                        and hasattr(self.coco_evaluator, "coco_eval")
+
+Return only the corrected code snippet, nothing else. No explanations.

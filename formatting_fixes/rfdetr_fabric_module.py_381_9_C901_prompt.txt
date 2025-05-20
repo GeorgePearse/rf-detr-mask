@@ -1,0 +1,26 @@
+Fix the following Python formatting error C901 in rfdetr/fabric_module.py at line 381, column 9:
+
+Error details:
+    |
+379 |         return {"metrics": val_metrics, "results": res, "targets": targets}
+380 |
+381 |     def export_model(self, epoch):
+    |         ^^^^^^^^^^^^ C901
+382 |         """Export model to ONNX and save PyTorch weights.
+    |
+rfdetr/fabric_module.py:575:5: C901 `train_with_fabric` is too complex (20 > 10)
+    |
+575 | def train_with_fabric(
+
+Here's the current code:
+
+    def export_model(self, epoch):
+        """Export model to ONNX and save PyTorch weights.
+
+        Args:
+            epoch: Current epoch number
+        """
+        if not hasattr(self, "export_onnx") or not hasattr(self, "export_torch"):
+            return
+
+Return only the corrected code snippet, nothing else. No explanations.

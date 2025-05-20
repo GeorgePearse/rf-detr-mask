@@ -1,0 +1,26 @@
+Fix the following Python formatting error F821 in rfdetr/models/attention.py at line 715, column 41:
+
+Error details:
+    |
+713 |                 b_q = b_kv = None
+714 |             else:
+715 |                 b_q, b_kv = b.split([E, E * 2])
+    |                                         ^ F821
+716 |             return (F.linear(q, w_q, b_q), *F.linear(k, w_kv, b_kv).chunk(2, dim=-1))
+717 |     else:
+    |
+rfdetr/models/backbone/__init__.py:10:1: I001 [*] Import block is un-sorted or un-formatted
+   |
+
+Here's the current code:
+            if b is None:
+                b_q = b_kv = None
+            else:
+                b_q, b_kv = b.split([embedding_dim, embedding_dim * 2])
+            return (F.linear(q, w_q, b_q), *F.linear(k, w_kv, b_kv).chunk(2, dim=-1))
+    else:
+        w_q, w_k, w_v = w.chunk(3)
+        if b is None:
+            b_q = b_k = b_v = None
+
+Return only the corrected code snippet, nothing else. No explanations.

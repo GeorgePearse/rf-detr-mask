@@ -1,0 +1,25 @@
+Fix the following Python formatting error C901 in rfdetr/lightning_module.py at line 488, column 9:
+
+Error details:
+    |
+486 |                 print(f"Error updating COCO evaluator: {e}")
+487 |
+488 |     def on_validation_epoch_end(self):
+    |         ^^^^^^^^^^^^^^^^^^^^^^^ C901
+489 |         """Process validation epoch results."""
+490 |         # Default metric values
+    |
+rfdetr/lightning_module.py:503:1: W293 [*] Blank line contains whitespace
+    |
+
+Here's the current code:
+            except Exception as e:
+                print(f"Error updating COCO evaluator: {e}")
+
+    def on_validation_epoch_end(self):
+        """Process validation epoch results."""
+        # Default metric values
+        map_value = 0.0
+        mask_map_value = 0.0
+
+Return only the corrected code snippet, nothing else. No explanations.

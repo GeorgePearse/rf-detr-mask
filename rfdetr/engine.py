@@ -24,6 +24,7 @@ from collections.abc import Iterable
 from typing import Callable, Optional
 
 import torch
+from torch.amp import GradScaler, autocast
 
 import rfdetr.util.misc as utils
 from rfdetr.datasets.coco_eval import CocoEvaluator
@@ -33,9 +34,6 @@ from rfdetr.util.misc import NestedTensor
 
 logger = get_logger(__name__)
 
-# Import AMP utilities
-from torch.amp import GradScaler, autocast
-
 
 def do_evaluation_during_training(
     model, criterion, postprocessors, val_data_loader, base_ds, device, args, step_counter, logger
@@ -44,23 +42,22 @@ def do_evaluation_during_training(
     logger.info(f"Running evaluation at step {step_counter}")
     model.eval()
     with torch.no_grad():
-        # If in test_mode, set val_limit_test_mode for quicker validation
-        original_test_mode = getattr(args, "test_mode", False)
-        original_val_limit = getattr(args, "val_limit", None)
-        
+        # Save original validation configuration if needed in the future
+        # original_test_mode = getattr(args, "test_mode", False)
+        # original_val_limit = getattr(args, "val_limit", None)
         if hasattr(args, "test_mode") and args.test_mode:
             logger.info(f"Using test mode with validation limit of {args.val_limit_test_mode}")
-        
+
         eval_stats, coco_evaluator = evaluate(
-            model,
-            criterion,
-            postprocessors,
-            val_data_loader,
-            base_ds,
-            device,
-            args=args,
+        model,
+        criterion,
+        postprocessors,
+        val_data_loader,
+        base_ds,
+        device,
+        args=args,
         )
-        
+
         logger.info(
             f"Step {step_counter} evaluation: mAP={eval_stats['coco_eval_bbox'][0]:.4f}"
         )
@@ -139,7 +136,7 @@ def train_one_epoch(
             and val_data_loader is not None
             and base_ds is not None
             and postprocessors is not None
-            and step_counter > 0 
+            and step_counter > 0
             and step_counter % eval_freq == 0
         ):
             do_evaluation_during_training(
@@ -243,7 +240,7 @@ def train_one_epoch(
 
 def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, args=None):
     """Evaluate model on validation dataset.
-    
+
     If args.test_mode is True, the validation will be limited to args.val_limit_test_mode samples.
     """
     model.eval()
@@ -257,13 +254,13 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
 
     iou_types = tuple(k for k in ("segm", "bbox") if k in postprocessors)
     coco_evaluator = CocoEvaluator(base_ds, iou_types)
-    
+
     # If test_mode is enabled, limit evaluation to specified number of samples
     max_samples = None
     if hasattr(args, "test_mode") and args.test_mode and hasattr(args, "val_limit_test_mode"):
         max_samples = args.val_limit_test_mode
         logger.info(f"Test mode enabled: limiting validation to {max_samples} samples")
-    
+
     sample_count = 0
 
     for samples, targets in metric_logger.log_every(data_loader, 1, header):
@@ -271,7 +268,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
         if max_samples is not None and sample_count >= max_samples:
             logger.info(f"Evaluation stopped at {sample_count} samples due to test_mode")
             break
-        
+
         # Increment the sample counter
         sample_count += len(targets)
         samples = samples.to(device)

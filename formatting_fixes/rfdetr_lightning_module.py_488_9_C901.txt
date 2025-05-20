@@ -1,0 +1,114 @@
+```python
+            except Exception as e:
+                print(f"Error updating COCO evaluator: {e}")
+
+    def _process_coco_evaluation(self):
+        """Process COCO evaluation results and return metrics."""
+        map_value = 0.0
+        mask_map_value = 0.0
+        
+        if self.coco_evaluator is None:
+            print("No COCO evaluator available. Using default metrics.")
+            return map_value, mask_map_value
+            
+        try:
+            # Check if we have enough data to evaluate
+            eval_imgs_valid = False
+            
+            if hasattr(self.coco_evaluator, "eval_imgs") and self.coco_evaluator.eval_imgs:
+                for iou_type, imgs in self.coco_evaluator.eval_imgs.items():
+                    if isinstance(imgs, list) and len(imgs) > 0:
+                        eval_imgs_valid = True
+                        break
+                    elif isinstance(imgs, np.ndarray) and imgs.size > 0:
+                        eval_imgs_valid = True
+                        break
+            
+            if not eval_imgs_valid:
+                print("Skipping COCO evaluation - not enough evaluation images")
+                return map_value, mask_map_value
+                
+            # Synchronize if distributed
+            if self.trainer.world_size > 1:
+                self.coco_evaluator.synchronize_between_processes()
+
+            # Accumulate and summarize
+            try:
+                self.coco_evaluator.accumulate()
+                self.coco_evaluator.summarize()
+            except Exception as e:
+                print(f"Error in COCO accumulate/summarize: {e}. Continuing with validation.")
+                return map_value, mask_map_value
+
+            # Extract stats for bounding boxes
+            bbox_valid = (
+                "bbox" in self.postprocessors
+                and hasattr(self.coco_evaluator, "coco_eval")
+                and "bbox" in self.coco_evaluator.coco_eval
+                and hasattr(self.coco_evaluator.coco_eval["bbox"], "stats")
+            )
+            
+            if bbox_valid:
+                stats = self.coco_evaluator.coco_eval["bbox"].stats
+                if hasattr(stats, "tolist"):
+                    map_value = float(stats[0]) if stats[0] is not None else 0.0
+
+            # Extract stats for segmentation masks
+            segm_valid = (
+                "segm" in self.postprocessors
+                and hasattr(self.coco_evaluator, "coco_eval")
+                and "segm" in self.coco_evaluator.coco_eval
+                and hasattr(self.coco_evaluator.coco_eval["segm"], "stats")
+            )
+            
+            if segm_valid:
+                stats = self.coco_evaluator.coco_eval["segm"].stats
+                if hasattr(stats, "tolist"):
+                    mask_map_value = float(stats[0]) if stats[0] is not None else 0.0
+                    
+        except Exception as e:
+            print(f"Error during COCO evaluation: {e}. This can happen with small validation sets.")
+            
+        return map_value, mask_map_value
+
+    def on_validation_epoch_end(self):
+        """Process validation epoch results."""
+        # Default metric values
+        map_value = 0.0
+        mask_map_value = 0.0
+
+        # Ensure we log a default value for the mAP metric even if evaluation fails
+        # Use both slash and underscore formats for better compatibility
+        self.log("val/mAP", 0.0, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val/best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+        
+        # Log with underscore format for ModelCheckpoint compatibility
+        self.log("val_mAP", 0.0, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val_best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+
+        # Process COCO evaluation
+        map_value, mask_map_value = self._process_coco_evaluation()
+            
+        # Update best mAP if needed
+        if map_value > self.best_map:
+            self.best_map = map_value
+            
+        # Log computed metrics
+        self.log("val/mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val/best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val_mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val_best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+        
+        # Log mask mAP if available
+        if "segm" in self.postprocessors:
+            self.log("val/mask_mAP", mask_map_value, on_step=False, on_epoch=True, sync_dist=True)
+            self.log("val_mask_mAP", mask_map_value, on_step=False, on_epoch=True, sync_dist=True)
+            
+        # Log any additional metrics that might be useful
+        if len(self.val_metrics) > 0:
+            # Calculate average of validation metrics
+            avg_loss = sum(m.get('loss', 0.0) for m in self.val_metrics) / max(len(self.val_metrics), 1)
+            self.log("val/avg_loss", avg_loss, on_step=False, on_epoch=True, sync_dist=True)
+            self.log("val_avg_loss", avg_loss, on_step=False, on_epoch=True, sync_dist=True)
+```
+

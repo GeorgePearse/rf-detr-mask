@@ -1,0 +1,11 @@
+```python
+# Get weights of V
+weights_v = node_v.inputs[1].values
+# Input number of channels to K and V
+c = weights_k.shape[0]
+# Number of heads
+h = heads
+# Dimension per head
+d = weights_k.shape[1] // h
+```
+

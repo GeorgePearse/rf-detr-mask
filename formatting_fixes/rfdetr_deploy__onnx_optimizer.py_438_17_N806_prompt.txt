@@ -1,0 +1,26 @@
+Fix the following Python formatting error N806 in rfdetr/deploy/_onnx/optimizer.py at line 438, column 17:
+
+Error details:
+    |
+436 |                 )
+437 |                 self.graph.nodes.append(layerNormN)
+438 |                 nLayerNormPlugin += 1
+    |                 ^^^^^^^^^^^^^^^^ N806
+439 |
+440 |                 if betaNode.outputs[0] in self.graph.outputs:
+    |
+rfdetr/deploy/_onnx/optimizer.py:438:17: F821 Undefined name `nLayerNormPlugin`
+    |
+
+Here's the current code:
+                    outputs=[layer_norm_v],
+                )
+                self.graph.nodes.append(layer_norm_n)
+                n_layer_norm_plugin += 1
+
+                if beta_node.outputs[0] in self.graph.outputs:
+                    index = self.graph.outputs.index(beta_node.outputs[0])
+                    self.graph.outputs[index] = layer_norm_v
+                else:
+
+Return only the corrected code snippet, nothing else. No explanations.

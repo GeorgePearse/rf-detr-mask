@@ -1,0 +1,26 @@
+Fix the following Python formatting error F821 in rfdetr/deploy/_onnx/optimizer.py at line 423, column 44:
+
+Error details:
+    |
+421 |                 beta = np.array(deepcopy(betaNode.inputs[index].values.tolist()), dtype=np.float32)
+422 |                 constantBeta = gs.Constant(
+423 |                     "LayerNormBeta-" + str(nLayerNormPlugin), np.ascontiguousarray(beta.reshape(-1))
+    |                                            ^^^^^^^^^^^^^^^^ F821
+424 |                 )
+    |
+rfdetr/deploy/_onnx/optimizer.py:426:17: N806 Variable `inputList` in function should be lowercase
+    |
+424 |                 )
+
+Here's the current code:
+                index = [isinstance(i, gs.ir.tensor.Constant) for i in beta_node.inputs].index(True)
+                beta = np.array(deepcopy(beta_node.inputs[index].values.tolist()), dtype=np.float32)
+                constant_beta = gs.Constant(
+                    "LayerNormBeta-" + str(n_layer_norm_plugin), np.ascontiguousarray(beta.reshape(-1))
+                )
+
+                input_list = [input_tensor, constant_gamma, constant_beta]
+                layer_norm_v = gs.Variable(
+                    "LayerNormV-" + str(n_layer_norm_plugin), np.dtype(np.float32), input_tensor.shape
+
+Return only the corrected code snippet, nothing else. No explanations.

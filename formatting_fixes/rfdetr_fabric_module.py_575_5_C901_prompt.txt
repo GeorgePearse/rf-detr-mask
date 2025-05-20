@@ -1,0 +1,26 @@
+Fix the following Python formatting error C901 in rfdetr/fabric_module.py at line 575, column 5:
+
+Error details:
+    |
+575 | def train_with_fabric(
+    |     ^^^^^^^^^^^^^^^^^ C901
+576 |     config, output_dir=None, callbacks=None, precision="32-true", devices=1, accelerator="auto"
+577 | ):
+    |
+rfdetr/hooks/onnx_checkpoint_hook.py:104:9: C901 `on_validation_epoch_start` is too complex (18 > 10)
+    |
+102 |         return nested_tensor
+103 |
+
+Here's the current code:
+
+def train_with_fabric(
+    config, output_dir=None, callbacks=None, precision="32-true", devices=1, accelerator="auto"
+):
+    """Train RF-DETR model using Lightning Fabric.
+
+    Args:
+        config: The model configuration
+        output_dir: Directory to save outputs (overrides config value)
+
+Return only the corrected code snippet, nothing else. No explanations.

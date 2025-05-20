@@ -1,0 +1,26 @@
+Fix the following Python formatting error I001 in rfdetr/deploy/export.py at line 14, column 1:
+
+Error details:
+   |
+12 |   """
+13 |
+14 | / import os
+15 | | import random
+16 | | import re
+17 | | import subprocess
+18 | |
+19 | | import numpy as np
+20 | | import onnx
+
+Here's the current code:
+export ONNX model and TensorRT engine for deployment
+"""
+
+import os
+import random
+import re
+import subprocess
+
+import numpy as np
+
+Return only the corrected code snippet, nothing else. No explanations.

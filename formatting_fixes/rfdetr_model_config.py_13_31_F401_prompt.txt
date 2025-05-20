@@ -1,0 +1,26 @@
+Fix the following Python formatting error F401 in rfdetr/model_config.py at line 13, column 31:
+
+Error details:
+   |
+11 | from typing import Any, List, Literal, Optional
+12 | # Use modern type annotation style
+13 | from typing_extensions import ClassVar
+   |                               ^^^^^^^^ F401
+14 |
+15 | import torch
+   |
+   = help: Remove unused import: `typing_extensions.ClassVar`
+rfdetr/model_config.py:103:36: UP006 Use `list` instead of `List` for type annotation
+
+Here's the current code:
+
+from typing import Any, List, Literal, Optional
+# Use modern type annotation style
+
+import torch
+from pydantic import BaseModel, Field, field_validator
+
+DEVICE = (
+    "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+
+Return only the corrected code snippet, nothing else. No explanations.

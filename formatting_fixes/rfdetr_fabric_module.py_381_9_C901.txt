@@ -1,0 +1,112 @@
+```python
+def export_model(self, epoch):
+    """Export model to ONNX and save PyTorch weights.
+
+    Args:
+        epoch: Current epoch number
+    """
+    if not hasattr(self, "export_onnx") or not hasattr(self, "export_torch"):
+        return
+
+    if not (self.export_onnx or self.export_torch):
+        return
+
+    # Use CPU for exports to avoid CUDA errors
+    device = torch.device("cpu")
+
+    # Create export path
+    export_path = self._prepare_export_path(epoch)
+    print(f"Exporting model to {export_path}")
+
+    # Get model to export (use EMA if available)
+    model_to_export = self.ema.ema if self.ema is not None else self.model
+    model_to_export = model_to_export.to(device)
+    model_to_export.eval()
+
+    try:
+        self._export_torch_weights(model_to_export, export_path, epoch) if self.export_torch else None
+        self._export_onnx_model(model_to_export, export_path) if self.export_onnx else None
+    finally:
+        # Move model back to original device
+        if hasattr(self, "fabric"):
+            device = getattr(self.fabric, "device", None)
+            if device:
+                model_to_export.to(device)
+
+def _prepare_export_path(self, epoch):
+    """Prepare the export directory path.
+    
+    Args:
+        epoch: Current epoch number
+        
+    Returns:
+        Path: The export directory path
+    """
+    # Create timestamped directory for this export
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Make sure we have an export directory
+    if not hasattr(self, "export_dir") or self.export_dir is None:
+        self.export_dir = Path("exports")
+
+    export_path = self.export_dir / f"epoch_{epoch:04d}_{timestamp}"
+    export_path.mkdir(parents=True, exist_ok=True)
+    return export_path
+
+def _export_torch_weights(self, model_to_export, export_path, epoch):
+    """Export PyTorch weights.
+    
+    Args:
+        model_to_export: Model to export
+        export_path: Path to save the weights
+        epoch: Current epoch number
+    """
+    try:
+        torch_path = export_path / "model.pth"
+        config_data = self.config.model_dump() if hasattr(self.config, "model_dump") else self.config
+        torch.save(
+            {
+                "model": model_to_export.state_dict(),
+                "config": config_data,
+                "epoch": epoch,
+                "map": self.best_map,
+            },
+            torch_path,
+        )
+        print(f"Saved PyTorch weights to {torch_path}")
+    except Exception as e:
+        print(f"Error during PyTorch export: {e}")
+
+def _export_onnx_model(self, model_to_export, export_path):
+    """Export model to ONNX format.
+    
+    Args:
+        model_to_export: Model to export
+        export_path: Path to save the ONNX model
+    """
+    try:
+        # Import ONNX export modules
+        from rfdetr.deploy.export import export_onnx, onnx_simplify
+
+        # Export to ONNX format
+        dummy_input = self._make_dummy_input()
+        onnx_path = export_path / "inference_model.onnx"
+
+        # Perform export
+        export_onnx(
+            output_dir=export_path,
+            model=model_to_export,
+            input_tensors=dummy_input,
+            verbose=False,
+            opset_version=getattr(self.config, "opset_version", 17),
+        )
+
+        # Simplify if requested
+        if self.simplify_onnx:
+            onnx_simplify(onnx_dir=onnx_path, input_tensors=dummy_input)
+    except ImportError:
+        print('ONNX export dependencies not found. Install with: pip install ".[onnxexport]"')
+    except Exception as e:
+        print(f"Error during ONNX export: {e}")
+```
+

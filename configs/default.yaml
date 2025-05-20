@@ -61,6 +61,7 @@ training:
   early_stopping_use_ema: false
   tensorboard: true
   wandb: false
+  test_mode: false
 
 # Dataset Configuration
 dataset:

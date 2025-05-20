@@ -1,0 +1,26 @@
+Fix the following Python formatting error F821 in rfdetr/models/attention.py at line 711, column 37:
+
+Error details:
+    |
+709 |         else:
+710 |             # encoder-decoder attention
+711 |             w_q, w_kv = w.split([E, E * 2])
+    |                                     ^ F821
+712 |             if b is None:
+713 |                 b_q = b_kv = None
+    |
+rfdetr/models/attention.py:715:38: F821 Undefined name `E`
+    |
+
+Here's the current code:
+        else:
+            # encoder-decoder attention
+            embedding_dim = q.size(-1)  # Using descriptive name instead of single capital
+            w_q, w_kv = w.split([embedding_dim, embedding_dim * 2])
+            if b is None:
+                b_q = b_kv = None
+            else:
+                b_q, b_kv = b.split([embedding_dim, embedding_dim * 2])
+            return (F.linear(q, w_q, b_q), *F.linear(k, w_kv, b_kv).chunk(2, dim=-1))
+
+Return only the corrected code snippet, nothing else. No explanations.

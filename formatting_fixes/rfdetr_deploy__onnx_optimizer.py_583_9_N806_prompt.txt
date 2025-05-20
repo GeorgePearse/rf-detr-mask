@@ -1,0 +1,26 @@
+Fix the following Python formatting error N806 in rfdetr/deploy/_onnx/optimizer.py at line 583, column 9:
+
+Error details:
+    |
+581 |         C = weights_k.shape[0]
+582 |         # Number of heads
+583 |         H = heads
+    |         ^ N806
+584 |         # Hidden dimension per head
+585 |         D = weights_k.shape[1] // H
+    |
+rfdetr/deploy/_onnx/optimizer.py:585:9: N806 Variable `D` in function should be lowercase
+    |
+
+Here's the current code:
+        # Input number of channels to Q, K and V
+        c = weights_k.shape[0]
+        # Number of heads
+        h = heads
+        # Hidden dimension per head
+        d = weights_k.shape[1] // h
+
+        # Concat and interleave weights such that the output of fused QKV GEMM has [b, s, h, 3, d] shape
+        weights_qkv = np.dstack(
+
+Return only the corrected code snippet, nothing else. No explanations.

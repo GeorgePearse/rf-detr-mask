@@ -1,0 +1,26 @@
+Fix the following Python formatting error N806 in rfdetr/deploy/_onnx/optimizer.py at line 405, column 17:
+
+Error details:
+    |
+403 |                 and len(node.o().o(0).o().o().o().o().o().inputs[1].values.shape) == 1
+404 |             ):
+405 |                 inputTensor = (
+    |                 ^^^^^^^^^^^ N806
+406 |                     node.inputs[0] if node.i().op == "Add" else node.i().inputs[0]
+407 |                 )  # CLIP or UNet and VAE
+    |
+rfdetr/deploy/_onnx/optimizer.py:409:17: N806 Variable `gammaNode` in function should be lowercase
+    |
+
+Here's the current code:
+                and node.o().o(0).o().o().o().o().o().o().op == "Add"
+                and len(node.o().o(0).o().o().o().o().o().inputs[1].values.shape) == 1
+            ):
+                input_tensor = (
+                    node.inputs[0] if node.i().op == "Add" else node.i().inputs[0]
+                )  # CLIP or UNet and VAE
+
+                gamma_node = node.o().o().o().o().o().o().o()
+                index = [isinstance(i, gs.ir.tensor.Constant) for i in gamma_node.inputs].index(True)
+
+Return only the corrected code snippet, nothing else. No explanations.

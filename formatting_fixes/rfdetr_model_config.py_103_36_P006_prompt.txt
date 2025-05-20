@@ -1,0 +1,26 @@
+Fix the following Python formatting error P006 in rfdetr/model_config.py at line 103, column 36:
+
+Error details:
+    |
+101 |     vit_encoder_num_layers: int = Field(default=12, gt=0)
+102 |     pretrained_encoder: bool = True
+103 |     window_block_indexes: Optional[List[int]] = None
+    |                                    ^^^^ UP006
+104 |     drop_path: float = Field(default=0.0, ge=0.0, le=1.0)
+    |
+    = help: Replace with `list`
+rfdetr/models/attention.py:96:32: RUF012 Mutable class attributes should be annotated with `typing.ClassVar`
+   |
+
+Here's the current code:
+    vit_encoder_num_layers: int = Field(default=12, gt=0)
+    pretrained_encoder: bool = True
+    window_block_indexes: Optional[list[int]] = None
+    drop_path: float = Field(default=0.0, ge=0.0, le=1.0)
+
+    # Loss parameters
+    aux_loss: bool = True
+    cls_loss_coef: float = Field(default=1.0, ge=0.0)
+    bbox_loss_coef: float = Field(default=5.0, ge=0.0)
+
+Return only the corrected code snippet, nothing else. No explanations.

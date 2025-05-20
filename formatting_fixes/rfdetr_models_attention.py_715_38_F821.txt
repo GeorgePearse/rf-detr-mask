@@ -1,0 +1,4 @@
+```python
+                b_q, b_kv = b.split([embedding_dim, embedding_dim * 2])
+```
+

@@ -451,9 +451,6 @@ class OnnxOptimizer:
         self.cleanup()
         return n_layer_norm_plugin
 
-        self.cleanup()
-        return n_layer_norm_plugin
-
     def fuse_kv(self, node_k, node_v, fused_kv_idx, heads, num_dynamic=0):
         # Get weights of K
         weights_k = node_k.inputs[1].values
@@ -464,11 +461,11 @@ class OnnxOptimizer:
         # Number of heads
         H = heads
         # Dimension per head
-        D = weights_k.shape[1] // H
+        d = weights_k.shape[1] // H
 
         # Concat and interleave weights such that the output of fused KV GEMM has [b, s_kv, h, 2, d] shape
-        weights_kv = np.dstack([weights_k.reshape(C, H, D), weights_v.reshape(C, H, D)]).reshape(
-            C, 2 * H * D
+        weights_kv = np.dstack([weights_k.reshape(C, H, d), weights_v.reshape(C, H, d)]).reshape(
+            C, 2 * H * d
         )
 
         # K and V have the same input
@@ -581,16 +578,16 @@ class OnnxOptimizer:
         weights_v = node_v.inputs[1].values
 
         # Input number of channels to Q, K and V
-        C = weights_k.shape[0]
+        c = weights_k.shape[0]
         # Number of heads
-        H = heads
+        h = heads
         # Hidden dimension per head
-        D = weights_k.shape[1] // H
+        d = weights_k.shape[1] // h
 
         # Concat and interleave weights such that the output of fused QKV GEMM has [b, s, h, 3, d] shape
         weights_qkv = np.dstack(
-            [weights_q.reshape(C, H, D), weights_k.reshape(C, H, D), weights_v.reshape(C, H, D)]
-        ).reshape(C, 3 * H * D)
+            [weights_q.reshape(c, h, d), weights_k.reshape(c, h, d), weights_v.reshape(c, h, d)]
+        ).reshape(c, 3 * h * d)
 
         input_tensor = node_k.inputs[0]  # K and V have the same input
         # Q, K and V must have the same output which we feed into fmha plugin

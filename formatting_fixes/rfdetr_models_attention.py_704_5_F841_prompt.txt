@@ -1,0 +1,26 @@
+Fix the following Python formatting error F841 in rfdetr/models/attention.py at line 704, column 5:
+
+Error details:
+    |
+702 |             same shape as the corresponding input tensor.
+703 |     """
+704 |     embedding_dim = q.size(-1)  # Using descriptive name instead of single capital
+    |     ^^^^^^^^^^^^^ F841
+705 |     if k is v:
+706 |         if q is k:
+    |
+    = help: Remove assignment to unused variable `embedding_dim`
+rfdetr/models/attention.py:711:34: F821 Undefined name `E`
+
+Here's the current code:
+        - in output list :math:`[q', k', v']`, each output tensor will have the
+            same shape as the corresponding input tensor.
+    """
+    embedding_dim = q.size(-1)  # Using descriptive name instead of single capital
+    if k is v:
+        if q is k:
+            # self-attention
+            return F.linear(q, w, b).chunk(3, dim=-1)
+        else:
+
+Return only the corrected code snippet, nothing else. No explanations.

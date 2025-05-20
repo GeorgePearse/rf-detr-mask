@@ -9,38 +9,18 @@ Create modified version of validation annotations with randomly flipped classifi
 to use as test predictions for evaluation.
 """
 
-import argparse
 import json
 import random
 from pathlib import Path
+from typing import Optional
 
 
-def get_args_parser():
-    parser = argparse.ArgumentParser("Create Test Annotations", add_help=True)
-    parser.add_argument(
-        "--coco_path", type=str, required=True, help="Path to the annotations directory"
-    )
-    parser.add_argument(
-        "--coco_val", type=str, required=True, help="Validation annotation file name"
-    )
-    parser.add_argument(
-        "--output_file",
-        type=str,
-        default="test_predictions.json",
-        help="Output file name for modified annotations",
-    )
-    parser.add_argument(
-        "--flip_ratio",
-        type=float,
-        default=0.3,
-        help="Percentage of annotations to flip classifications for (0.0-1.0)",
-    )
-    return parser
+# This function is no longer needed with direct parameter passing
 
 
-def main(args):
+def main(coco_path: str, coco_val: str, output_file: str = "test_predictions.json", flip_ratio: float = 0.3):
     # Load the validation annotations
-    val_path = Path(args.coco_path) / args.coco_val
+    val_path = Path(coco_path) / coco_val
     print(f"Looking for validation file at: {val_path}")
     try:
         with open(val_path) as f:
@@ -91,14 +71,14 @@ def main(args):
 
     # Randomly flip classifications for annotations
     for i, ann in enumerate(test_annotations.get("annotations", [])):
-        if random.random() < args.flip_ratio:
+        if random.random() < flip_ratio:
             # Get a random category ID different from the current one
             available_cats = [cat_id for cat_id in category_ids if cat_id != ann["category_id"]]
             if available_cats:
                 ann["category_id"] = random.choice(available_cats)
 
     # Save the modified annotations
-    output_path = Path(args.coco_path) / args.output_file
+    output_path = Path(coco_path) / output_file
     with open(output_path, "w") as f:
         json.dump(test_annotations, f)
 
@@ -107,6 +87,35 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = get_args_parser()
-    args = parser.parse_args()
-    main(args)
+    import sys
+    
+    # Default values
+    coco_path = None
+    coco_val = None
+    output_file = "test_predictions.json"
+    flip_ratio = 0.3
+    
+    # Parse command line arguments
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg == "--coco_path" and i+1 < len(sys.argv):
+            coco_path = sys.argv[i+1]
+            i += 2
+        elif arg == "--coco_val" and i+1 < len(sys.argv):
+            coco_val = sys.argv[i+1]
+            i += 2
+        elif arg == "--output_file" and i+1 < len(sys.argv):
+            output_file = sys.argv[i+1]
+            i += 2
+        elif arg == "--flip_ratio" and i+1 < len(sys.argv):
+            flip_ratio = float(sys.argv[i+1])
+            i += 2
+        else:
+            i += 1
+            
+    if coco_path is None or coco_val is None:
+        print("Error: --coco_path and --coco_val parameters are required")
+        sys.exit(1)
+        
+    main(coco_path=coco_path, coco_val=coco_val, output_file=output_file, flip_ratio=flip_ratio)

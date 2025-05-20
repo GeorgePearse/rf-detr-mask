@@ -160,7 +160,7 @@ class RFDETRConfig(BaseModel):
         return values
 
     def to_args(self):
-        """Convert the configuration to an argparse namespace for backward compatibility."""
+        """Convert the configuration to a dictionary for backward compatibility."""
         from rfdetr.main import populate_args
 
         # Start with basic model settings
@@ -237,7 +237,120 @@ class RFDETRConfig(BaseModel):
         # Use the populate_args function to fill in missing values with defaults
         args = populate_args(**args_dict)
         return args
+        
+    def to_args_dict(self):
+        """Convert the configuration to a dictionary for compatibility with existing code.
+        Unlike to_args(), this doesn't use populate_args to add default values."""
+        # Start with basic model settings
+        args_dict = {
+            # Model parameters
+            "encoder": self.model.encoder,
+            "out_feature_indexes": self.model.out_feature_indexes,
+            "dec_layers": self.model.dec_layers,
+            "projector_scale": self.model.projector_scale,
+            "hidden_dim": self.model.hidden_dim,
+            "sa_nheads": self.model.sa_nheads,
+            "ca_nheads": self.model.ca_nheads,
+            "dec_n_points": self.model.dec_n_points,
+            "bbox_reparam": self.model.bbox_reparam,
+            "lite_refpoint_refine": self.model.lite_refpoint_refine,
+            "layer_norm": self.model.layer_norm,
+            "amp": self.model.amp,
+            "num_classes": self.model.num_classes,
+            "pretrain_weights": self.model.pretrain_weights,
+            "device": self.model.device,
+            "training_width": self.model.training_width,
+            "training_height": self.model.training_height,
+            "group_detr": self.model.group_detr,
+            "gradient_checkpointing": self.model.gradient_checkpointing,
+            "num_queries": self.model.num_queries,
+            "num_select": self.model.num_select,
+            # Training parameters
+            "lr": self.training.lr,
+            "lr_encoder": self.training.lr_encoder,
+            "batch_size": self.training.batch_size,
+            "grad_accum_steps": self.training.grad_accum_steps,
+            "epochs": self.training.epochs,
+            "ema_decay": self.training.ema_decay,
+            "ema_tau": self.training.ema_tau,
+            "lr_drop": self.training.lr_drop,
+            "checkpoint_interval": self.training.checkpoint_interval,
+            "warmup_epochs": self.training.warmup_epochs,
+            "lr_vit_layer_decay": self.training.lr_vit_layer_decay,
+            "lr_component_decay": self.training.lr_component_decay,
+            "drop_path": self.training.drop_path,
+            "ia_bce_loss": self.training.ia_bce_loss,
+            "cls_loss_coef": self.training.cls_loss_coef,
+            "bbox_loss_coef": self.training.bbox_loss_coef,
+            "giou_loss_coef": self.training.giou_loss_coef,
+            "square_resize_div_64": self.training.square_resize_div_64,
+            "output_dir": self.training.output_dir,
+            "multi_scale": self.training.multi_scale,
+            "expanded_scales": self.training.expanded_scales,
+            "use_ema": self.training.use_ema,
+            "num_workers": self.training.num_workers,
+            "weight_decay": self.training.weight_decay,
+            "early_stopping": self.training.early_stopping,
+            "early_stopping_patience": self.training.early_stopping_patience,
+            "early_stopping_min_delta": self.training.early_stopping_min_delta,
+            "early_stopping_use_ema": self.training.early_stopping_use_ema,
+            # Dataset parameters
+            "coco_path": self.dataset.coco_path,
+            "coco_train": self.dataset.coco_train,
+            "coco_val": self.dataset.coco_val,
+            "coco_img_path": self.dataset.coco_img_path,
+            "val_limit": self.dataset.val_limit,
+            # Mask parameters
+            "masks": self.mask.enabled,
+            "loss_mask_coef": self.mask.loss_mask_coef,
+            "loss_dice_coef": self.mask.loss_dice_coef,
+            # Other parameters
+            "seed": self.other.seed,
+            "world_size": self.other.world_size,
+            "dist_url": self.other.dist_url,
+            "clip_max_norm": self.other.clip_max_norm,
+            "steps_per_validation": self.other.steps_per_validation,
+            # Add any custom attributes from test_mode
+            "max_steps": getattr(self, "max_steps", None),
+            "val_frequency": getattr(self, "val_frequency", None),
+            "checkpoint_frequency": getattr(self, "checkpoint_frequency", None),
+            "test_mode": self.dataset.test_mode,
+        }
+        
+        return args_dict
 
+    def set_num_classes(self, num_classes: int) -> "RFDETRConfig":
+        """
+        Set the number of classes in the model config.
+        Args:
+            num_classes: Number of classes to set
+        Returns:
+            Self for chaining
+        """
+        # Update the model config
+        self.model.num_classes = num_classes
+        return self
+        
+    def to_yaml(self, file_path: Union[str, Path]) -> None:
+        """
+        Save configuration to a YAML file.
+        Args:
+            file_path: Path to save the YAML configuration file
+        """
+        file_path = Path(file_path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        config_dict = self.model_dump()
+        
+        try:
+            with open(file_path, 'w') as f:
+                yaml.dump(config_dict, f, default_flow_style=False)
+            logger.info(f"Configuration saved to {file_path}")
+        except Exception as e:
+            error_msg = f"Error saving configuration to {file_path}"
+            logger.error(f"{error_msg}: {e}")
+            raise ConfigurationError(error_msg) from e
+    
     @classmethod
     def from_yaml(cls, yaml_path: Union[str, Path]) -> "RFDETRConfig":
         """

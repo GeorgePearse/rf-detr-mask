@@ -93,7 +93,7 @@ class MultiheadAttention(nn.Module):
         >>> attn_output, attn_output_weights = multihead_attn(query, key, value)
     """
 
-    __constants__: list[str] = ["batch_first"]
+    __constants__ = ["batch_first"]  # type: list[str]
     bias_k: Optional[torch.Tensor]
     bias_v: Optional[torch.Tensor]
 
@@ -645,7 +645,7 @@ def _in_projection(
 
     """
     # Using descriptive variable names instead of single capitals
-    dim_q, dim_k, dim_v = q.size(-1), k.size(-1), v.size(-1)  # noqa: N806
+    dim_q, dim_k, dim_v = q.size(-1), k.size(-1), v.size(-1)
     assert w_q.shape == (
         dim_q,
         dim_q,
@@ -701,18 +701,18 @@ def _in_projection_packed(
         - in output list :math:`[q', k', v']`, each output tensor will have the
             same shape as the corresponding input tensor.
     """
-    embedding_dim = q.size(-1)  # Using descriptive name instead of single capital
     if k is v:
         if q is k:
             # self-attention
             return F.linear(q, w, b).chunk(3, dim=-1)
         else:
             # encoder-decoder attention
-            w_q, w_kv = w.split([E, E * 2])
+            embedding_dim = q.size(-1)  # Using descriptive name instead of single capital
+            w_q, w_kv = w.split([embedding_dim, embedding_dim * 2])
             if b is None:
                 b_q = b_kv = None
             else:
-                b_q, b_kv = b.split([E, E * 2])
+                b_q, b_kv = b.split([embedding_dim, embedding_dim * 2])
             return (F.linear(q, w_q, b_q), *F.linear(k, w_kv, b_kv).chunk(2, dim=-1))
     else:
         w_q, w_k, w_v = w.chunk(3)

@@ -20,8 +20,7 @@ from lightning.fabric import Fabric
 from lightning.fabric.strategies import DDPStrategy
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 
-# Import autocast for mixed precision training
-from torch.amp import autocast  # GradScaler is not directly used
+# Note: torch.autocast is used directly for mixed precision training
 
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
@@ -91,7 +90,6 @@ class RFDETRFabricModule:
         if isinstance(self.config, dict):
             # Dictionary access
             self.ema_decay = self.config.get("ema_decay", None)
-            use_ema = self.config.get("use_ema", True)
         else:
             # Object attribute access
             self.ema_decay = getattr(self.config, "ema_decay", None)
@@ -152,11 +150,11 @@ class RFDETRFabricModule:
         """
         # Get dimensions from config
         if isinstance(self.config, dict):
-            training_width = self.config.get("training_width", 560)
-            training_height = self.config.get("training_height", 560)
+            training_width = self.config["training_width"]
+            training_height = self.config["training_height"]
         else:
-            training_width = getattr(self.config, "training_width", 560)
-            training_height = getattr(self.config, "training_height", 560)
+            training_width = getattr(self.config, "training_width")
+            training_height = getattr(self.config, "training_height")
 
         # Create dummy input
         dummy = torch.randint(0, 256, (batch_size, 3, training_height, training_width), dtype=torch.uint8)
@@ -498,13 +496,13 @@ class RFDETRFabricData:
         if isinstance(self.config, dict):
             self.batch_size = self.config.get("batch_size", 4)
             self.num_workers = self.config.get("num_workers", 2)
-            self.training_width = self.config.get("training_width", 560)
-            self.training_height = self.config.get("training_height", 560)
+            self.training_width = self.config["training_width"]
+            self.training_height = self.config["training_height"]
         else:
             self.batch_size = getattr(self.config, "batch_size", 4)
             self.num_workers = getattr(self.config, "num_workers", 2)
-            self.training_width = getattr(self.config, "training_width", 560)
-            self.training_height = getattr(self.config, "training_height", 560)
+            self.training_width = getattr(self.config, "training_width")
+            self.training_height = getattr(self.config, "training_height")
 
         # Datasets will be initialized in setup()
         self.dataset_train = None

@@ -1,0 +1,26 @@
+Fix the following Python formatting error W293 in rfdetr/engine.py at line 53, column 1:
+
+Error details:
+   |
+51 |         if hasattr(args, "test_mode") and args.test_mode:
+52 |             logger.info(f"Using test mode with validation limit of {args.val_limit_test_mode}")
+53 |         
+   | ^^^^^^^^ W293
+54 |         eval_stats, coco_evaluator = evaluate(
+55 |             model,
+   |
+   = help: Remove whitespace from blank line
+rfdetr/engine.py:63:1: W293 [*] Blank line contains whitespace
+
+Here's the current code:
+
+        eval_stats, coco_evaluator = evaluate(
+            model,
+            criterion,
+            postprocessors,
+            val_data_loader,
+            base_ds,
+            device,
+            args=args,
+
+Return only the corrected code snippet, nothing else. No explanations.

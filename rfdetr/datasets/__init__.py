@@ -28,7 +28,16 @@ def get_coco_api_from_dataset(dataset):
 
 def build_dataset(image_set, args, training_width=None, training_height=None):
     # Check if we should use fixed size training dimensions
+    has_training_dims = False
+    
+    # Check for attributes (object style)
     if hasattr(args, "training_width") and hasattr(args, "training_height"):
+        has_training_dims = True
+    # Check for dictionary keys (dict style)
+    elif isinstance(args, dict) and "training_width" in args and "training_height" in args:
+        has_training_dims = True
+        
+    if has_training_dims:
         # Import the function only when needed to avoid circular imports
         from .fixed_size_transforms import make_training_dimensions_transforms
         from .coco import CocoDetection
@@ -90,7 +99,12 @@ def build_dataset(image_set, args, training_width=None, training_height=None):
     # Fall back to original implementation if no training dimensions
     # If training_width and training_height are provided, add them to args
     if training_width is not None and training_height is not None:
-        args.training_width = training_width
-        args.training_height = training_height
+        # Handle both dictionary and object style args
+        if isinstance(args, dict):
+            args["training_width"] = training_width
+            args["training_height"] = training_height
+        else:
+            args.training_width = training_width
+            args.training_height = training_height
         
     return build_coco(image_set, args)

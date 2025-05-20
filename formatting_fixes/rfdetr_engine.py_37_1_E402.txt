@@ -1,0 +1,44 @@
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Edit rfdetr/engine.py[0m                                                        │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  from collections.abc import Iterable[0m                                        │
+│  from typing import Callable, Optional[0m                                       │
+│  [0m                                                                            │
+│  import torch[0m                                                                │
+│ +from torch.amp import GradScaler, autocast[0m                                  │
+│  [0m                                                                            │
+│  import rfdetr.util.misc as utils[0m                                            │
+│  from rfdetr.datasets.coco_eval import CocoEvaluator[0m                         │
+│  from rfdetr.util.error_handling import TrainingError[0m                        │
+│  from rfdetr.util.misc import NestedTensor[0m                                   │
+│  [0m                                                                            │
+│  logger = get_logger(__name__)[0m                                               │
+│  [0m                                                                            │
+│ -# Import AMP utilities[0m                                                      │
+│ -from torch.amp import GradScaler, autocast[0m                                  │
+│  [0m                                                                            │
+│ -[0m                                                                            │
+│  def do_evaluation_during_training([0m                                          │
+│      model, criterion, postprocessors, val_data_loader, base_ds, device, ...[0m │
+│  ):[0m                                                                          │
+│      """Helper function to evaluate model during training."""[0m                │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│ Edit rfdetr/engine.py[0m                                                        │
+├──────────────────────────────────────────────────────────────────────────────┤
+│      """Helper function to evaluate model during training."""[0m                │
+│      logger.info(f"Running evaluation at step {step_counter}")[0m               │
+│      model.eval()[0m                                                            │
+│      with torch.no_grad():[0m                                                   │
+│ -        # If in test_mode, set val_limit_test_mode for quicker validation[0m   │
+│ -        original_test_mode = getattr(args, "test_mode", False)[0m              │
+│ -        original_val_limit = getattr(args, "val_limit", None)[0m               │
+│ +        # Save original validation configuration if needed in the future[0m    │
+│ +        # original_test_mode = getattr(args, "test_mode", False)[0m            │
+│ +        # original_val_limit = getattr(args, "val_limit", None)[0m             │
+│          [0m                                                                    │
+│          if hasattr(args, "test_mode") and args.test_mode:[0m                   │
+│              logger.info(f"Using test mode with validation limit of {args...[0m │
+╰──────────────────────────────────────────────────────────────────────────────╯
+

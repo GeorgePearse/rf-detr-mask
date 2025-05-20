@@ -13,7 +13,7 @@ from typing import Dict, List
 import torch
 from torch import nn
 
-from rfdetr.models.backbone.backbone import *
+from rfdetr.models.backbone.backbone import Backbone
 from rfdetr.models.position_encoding import build_position_encoding
 from rfdetr.util.misc import NestedTensor
 

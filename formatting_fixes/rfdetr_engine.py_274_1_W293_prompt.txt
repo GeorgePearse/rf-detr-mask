@@ -1,0 +1,25 @@
+Fix the following Python formatting error W293 in rfdetr/engine.py at line 274, column 1:
+
+Error details:
+    |
+272 |             logger.info(f"Evaluation stopped at {sample_count} samples due to test_mode")
+273 |             break
+274 |         
+    | ^^^^^^^^ W293
+275 |         # Increment the sample counter
+276 |         sample_count += len(targets)
+    |
+    = help: Remove whitespace from blank line
+rfdetr/fabric_module.py:13:1: I001 [*] Import block is un-sorted or un-formatted
+
+Here's the current code:
+        
+        # Increment the sample counter
+        sample_count += len(targets)
+        samples = samples.to(device)
+        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+
+        if args.fp16_eval:
+            samples.tensors = samples.tensors.half()
+
+Return only the corrected code snippet, nothing else. No explanations.

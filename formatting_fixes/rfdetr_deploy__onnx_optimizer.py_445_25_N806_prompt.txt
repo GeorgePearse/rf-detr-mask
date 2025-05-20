@@ -1,0 +1,26 @@
+Fix the following Python formatting error N806 in rfdetr/deploy/_onnx/optimizer.py at line 445, column 25:
+
+Error details:
+    |
+443 |                 else:
+444 |                     lastNode = betaNode.o() if betaNode.o().op == "Cast" else betaNode
+445 |                     for subNode in self.graph.nodes:
+    |                         ^^^^^^^ N806
+446 |                         if lastNode.outputs[0] in subNode.inputs:
+447 |                             index = subNode.inputs.index(lastNode.outputs[0])
+    |
+rfdetr/deploy/_onnx/optimizer.py:460:9: N806 Variable `C` in function should be lowercase
+    |
+
+Here's the current code:
+                    self.graph.outputs[index] = layer_norm_v
+                else:
+                    last_node = beta_node.o() if beta_node.o().op == "Cast" else beta_node
+                    for sub_node in self.graph.nodes:
+                        if last_node.outputs[0] in sub_node.inputs:
+                            index = sub_node.inputs.index(last_node.outputs[0])
+                            sub_node.inputs[index] = layer_norm_v
+                    last_node.outputs = []
+        
+
+Return only the corrected code snippet, nothing else. No explanations.

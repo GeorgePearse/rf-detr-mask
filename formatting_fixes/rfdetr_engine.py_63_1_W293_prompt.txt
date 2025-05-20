@@ -1,0 +1,26 @@
+Fix the following Python formatting error W293 in rfdetr/engine.py at line 63, column 1:
+
+Error details:
+   |
+61 |             args=args,
+62 |         )
+63 |         
+   | ^^^^^^^^ W293
+64 |         logger.info(
+65 |             f"Step {step_counter} evaluation: mAP={eval_stats['coco_eval_bbox'][0]:.4f}"
+   |
+   = help: Remove whitespace from blank line
+rfdetr/engine.py:82:5: C901 `train_one_epoch` is too complex (14 > 10)
+
+Here's the current code:
+
+        logger.info(
+            f"Step {step_counter} evaluation: mAP={eval_stats['coco_eval_bbox'][0]:.4f}"
+        )
+    model.train()
+    return eval_stats, coco_evaluator
+
+
+def get_autocast_args(args):
+
+Return only the corrected code snippet, nothing else. No explanations.

@@ -1,0 +1,9 @@
+# Save original validation configuration if needed in the future
+        # Removed unused variable assignments
+        
+        if hasattr(args, "test_mode") and args.test_mode:
+            logger.info(f"Using test mode with validation limit of {args.val_limit_test_mode}")
+        
+        eval_stats, coco_evaluator = evaluate(
+            model,
+

@@ -1,0 +1,26 @@
+Fix the following Python formatting error C901 in rfdetr/engine.py at line 244, column 5:
+
+Error details:
+    |
+244 | def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, args=None):
+    |     ^^^^^^^^ C901
+245 |     """Evaluate model on validation dataset.
+    |
+rfdetr/engine.py:246:1: W293 Blank line contains whitespace
+    |
+244 | def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, args=None):
+245 |     """Evaluate model on validation dataset.
+246 |     
+
+Here's the current code:
+def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, args=None):
+    """Evaluate model on validation dataset.
+    
+    If args.test_mode is True, the validation will be limited to args.val_limit_test_mode samples.
+    """
+    model.eval()
+    if args.fp16_eval:
+        model.half()
+    criterion.eval()
+
+Return only the corrected code snippet, nothing else. No explanations.

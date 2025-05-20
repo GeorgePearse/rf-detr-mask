@@ -1,0 +1,4 @@
+input_tensor = (
+                    node.inputs[0] if node.i().op == "Add" else node.i().inputs[0]
+                )  # CLIP or UNet and VAE
+

@@ -8,9 +8,8 @@
 Comprehensive Pydantic model configuration for RF-DETR models.
 """
 
-from typing import Any, List, Literal, Optional
+from typing import Any, Literal, Optional
 # Use modern type annotation style
-from typing_extensions import ClassVar
 
 import torch
 from pydantic import BaseModel, Field, field_validator
@@ -100,7 +99,7 @@ class ModelConfig(BaseModel):
     # Backbone parameters - vit settings
     vit_encoder_num_layers: int = Field(default=12, gt=0)
     pretrained_encoder: bool = True
-    window_block_indexes: Optional[List[int]] = None
+    window_block_indexes: Optional[list[int]] = None
     drop_path: float = Field(default=0.0, ge=0.0, le=1.0)
 
     # Loss parameters

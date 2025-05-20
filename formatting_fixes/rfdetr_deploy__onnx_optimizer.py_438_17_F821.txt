@@ -1,0 +1,12 @@
+layer_norm_n = gs.Node(
+                    "LayerNorm",
+                    "LayerNormN-" + str(n_layer_norm_plugin),
+                    inputs=input_list,
+                    attrs=OrderedDict([("epsilon", 1.0e-5)]),
+                    outputs=[layer_norm_v],
+                )
+                self.graph.nodes.append(layer_norm_n)
+                n_layer_norm_plugin += 1
+
+                if beta_node.outputs[0] in self.graph.outputs:
+

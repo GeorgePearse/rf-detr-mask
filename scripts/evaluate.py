@@ -8,17 +8,17 @@
 Evaluation script for RF-DETR model that calculates and returns per-class mAP50 metrics.
 """
 
-import argparse
 import json
 import os
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, SequentialSampler
 
 import rfdetr.util.misc as utils
-from rfdetr.config_utils import load_config
+from rfdetr.config_utils import load_config, RFDETRConfig
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
 from rfdetr.models import build_criterion_and_postprocessors, build_model
@@ -27,25 +27,7 @@ from rfdetr.util.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-def get_args_parser():
-    parser = argparse.ArgumentParser("RF-DETR Model Evaluation", add_help=True)
-
-    # Required arguments
-    parser.add_argument("--checkpoint", type=str, required=True, help="Path to checkpoint file")
-
-    # Configuration options
-    parser.add_argument("--config", type=str, help="Path to YAML configuration file")
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="eval_results",
-        help="Directory to save evaluation results",
-    )
-
-    # Dataset parameters
-    parser.add_argument("--coco_path", type=str, help="Path to the annotations directory")
-    parser.add_argument("--coco_val", type=str, help="Validation annotation file name")
-    parser.add_argument("--coco_img_path", type=str, help="Path to the images directory")
+# This function is no longer needed with Pydantic configuration and YAML files
 
     # Model parameters
     parser.add_argument("--num_classes", type=int, help="Number of classes")
@@ -365,7 +347,7 @@ def extract_per_class_metrics(coco_evaluator, base_ds):
         return create_mock_metrics(get_categories(base_ds))
 
 
-def main(args):
+def main(checkpoint_path: str, config_path: str = "configs/default.yaml", output_dir: str = "eval_results"):
     # Setup device
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
@@ -645,6 +627,24 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = get_args_parser()
-    args = parser.parse_args()
-    main(args)
+    import sys
+    
+    # Simple argument parsing for backward compatibility
+    checkpoint_path = None
+    config_path = "configs/default.yaml"
+    output_dir = "eval_results"
+    
+    # Simple command-line argument parsing
+    for i, arg in enumerate(sys.argv[1:]):
+        if arg == "--checkpoint" and i+1 < len(sys.argv)-1:
+            checkpoint_path = sys.argv[i+2]
+        elif arg == "--config" and i+1 < len(sys.argv)-1:
+            config_path = sys.argv[i+2]
+        elif arg == "--output_dir" and i+1 < len(sys.argv)-1:
+            output_dir = sys.argv[i+2]
+    
+    if checkpoint_path is None:
+        print("Error: --checkpoint parameter is required")
+        sys.exit(1)
+        
+    main(checkpoint_path=checkpoint_path, config_path=config_path, output_dir=output_dir)

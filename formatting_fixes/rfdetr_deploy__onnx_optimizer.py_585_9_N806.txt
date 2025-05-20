@@ -1,0 +1,12 @@
+```python
+        # Number of heads
+        h = heads
+        # Hidden dimension per head
+        d = weights_k.shape[1] // h
+
+        # Concat and interleave weights such that the output of fused QKV GEMM has [b, s, h, 3, d] shape
+        weights_qkv = np.dstack(
+            [weights_q.reshape(c, h, d), weights_k.reshape(c, h, d), weights_v.reshape(c, h, d)]
+        ).reshape(c, 3 * h * d)
+```
+

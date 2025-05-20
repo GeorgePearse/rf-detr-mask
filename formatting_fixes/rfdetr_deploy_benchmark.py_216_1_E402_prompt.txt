@@ -1,0 +1,25 @@
+Fix the following Python formatting error E402 in rfdetr/deploy/benchmark.py at line 216, column 1:
+
+Error details:
+    |
+216 | import torchvision.transforms.functional as F
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ E402
+217 |
+218 | class ToTensor:
+    |
+rfdetr/deploy/benchmark.py:216:1: I001 [*] Import block is un-sorted or un-formatted
+    |
+216 | import torchvision.transforms.functional as F
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ I001
+
+Here's the current code:
+        return format_string
+
+
+import torchvision.transforms.functional as F
+
+class ToTensor:
+    def __call__(self, img, target):
+        return F.to_tensor(img), target
+
+Return only the corrected code snippet, nothing else. No explanations.

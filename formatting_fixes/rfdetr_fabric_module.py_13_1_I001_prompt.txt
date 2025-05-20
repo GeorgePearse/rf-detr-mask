@@ -1,0 +1,26 @@
+Fix the following Python formatting error I001 in rfdetr/fabric_module.py at line 13, column 1:
+
+Error details:
+   |
+11 |   """
+12 |
+13 | / import datetime
+14 | | import math
+15 | | import os
+16 | | from pathlib import Path
+17 | |
+18 | | import torch
+19 | | from lightning.fabric import Fabric
+
+Here's the current code:
+key distributed training and mixed precision capabilities.
+"""
+
+import datetime
+import math
+import os
+from pathlib import Path
+
+import torch
+
+Return only the corrected code snippet, nothing else. No explanations.

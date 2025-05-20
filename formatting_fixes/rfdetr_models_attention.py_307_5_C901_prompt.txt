@@ -1,0 +1,26 @@
+Fix the following Python formatting error C901 in rfdetr/models/attention.py at line 307, column 5:
+
+Error details:
+    |
+307 | def multi_head_attention_forward(
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ C901
+308 |     query: Tensor,
+309 |     key: Tensor,
+    |
+rfdetr/models/attention.py:648:63: RUF100 [*] Unused `noqa` directive (unused: `N806`)
+    |
+646 |     """
+647 |     # Using descriptive variable names instead of single capitals
+
+Here's the current code:
+            return attn_output, attn_output_weights
+
+
+def multi_head_attention_forward(
+    query: Tensor,
+    key: Tensor,
+    value: Tensor,
+    embed_dim_to_check: int,
+    num_heads: int,
+
+Return only the corrected code snippet, nothing else. No explanations.

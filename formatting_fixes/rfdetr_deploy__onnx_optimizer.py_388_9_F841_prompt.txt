@@ -1,0 +1,26 @@
+Fix the following Python formatting error F841 in rfdetr/deploy/_onnx/optimizer.py at line 388, column 9:
+
+Error details:
+    |
+387 |     def insert_layernorm_plugin(self):
+388 |         n_layer_norm_plugin = 0
+    |         ^^^^^^^^^^^^^^^^^^^ F841
+389 |         for node in self.graph.nodes:
+390 |             if (
+    |
+    = help: Remove assignment to unused variable `n_layer_norm_plugin`
+rfdetr/deploy/_onnx/optimizer.py:405:17: N806 Variable `inputTensor` in function should be lowercase
+    |
+
+Here's the current code:
+        return n_group_norm_plugin
+
+    def insert_layernorm_plugin(self):
+        n_layer_norm_plugin = 0
+        for node in self.graph.nodes:
+            if (
+                node.op == "ReduceMean"
+                and node.o().op == "Sub"
+                and node.o().inputs[0] == node.inputs[0]
+
+Return only the corrected code snippet, nothing else. No explanations.

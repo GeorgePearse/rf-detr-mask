@@ -333,11 +333,11 @@ class RFDETRLightningModule(pl.LightningModule):
         """
         # Get dimensions from config
         if isinstance(self.config, dict):
-            training_width = self.config.get("training_width", 560)
-            training_height = self.config.get("training_height", 560)
+            training_width = self.config["training_width"]
+            training_height = self.config["training_height"]
         else:
-            training_width = getattr(self.config, "training_width", 560)
-            training_height = getattr(self.config, "training_height", 560)
+            training_width = getattr(self.config, "training_width")
+            training_height = getattr(self.config, "training_height")
 
         # Create dummy input
         dummy = np.random.randint(0, 256, (training_height, training_width, 3), dtype=np.uint8)
@@ -505,7 +505,7 @@ class RFDETRLightningModule(pl.LightningModule):
             try:
                 # Check if we have enough data to evaluate
                 eval_imgs_valid = False
-                
+
                 if hasattr(self.coco_evaluator, "eval_imgs") and self.coco_evaluator.eval_imgs:
                     for iou_type, imgs in self.coco_evaluator.eval_imgs.items():
                         if isinstance(imgs, list) and len(imgs) > 0:
@@ -514,7 +514,7 @@ class RFDETRLightningModule(pl.LightningModule):
                         elif isinstance(imgs, np.ndarray) and imgs.size > 0:
                             eval_imgs_valid = True
                             break
-                
+
                 if eval_imgs_valid:
                     # Synchronize if distributed
                     if self.trainer.world_size > 1:
@@ -544,7 +544,7 @@ class RFDETRLightningModule(pl.LightningModule):
                             # Track best model
                             if map_value > self.best_map:
                                 self.best_map = map_value
-                                
+
                             # Update the logged value with the computed one
                             self.log("val/mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
                             self.log("val/best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
@@ -560,7 +560,7 @@ class RFDETRLightningModule(pl.LightningModule):
                         and "segm" in self.coco_evaluator.coco_eval
                         and hasattr(self.coco_evaluator.coco_eval["segm"], "stats")
                     )
-                    
+
                     if segm_valid:
                         stats = self.coco_evaluator.coco_eval["segm"].stats
                         if hasattr(stats, "tolist"):
@@ -576,7 +576,7 @@ class RFDETRLightningModule(pl.LightningModule):
                 print(f"Error during COCO evaluation: {e}. This can happen with small validation sets.")
         else:
             print("No COCO evaluator available. Using default metrics.")
-            
+
         # Log any additional metrics that might be useful
         if len(self.val_metrics) > 0:
             # Calculate average of validation metrics
@@ -706,13 +706,13 @@ class RFDETRDataModule(pl.LightningDataModule):
         if isinstance(self.config, dict):
             self.batch_size = self.config.get("batch_size", 4)
             self.num_workers = self.config.get("num_workers", 2)
-            self.training_width = self.config.get("training_width", 560)
-            self.training_height = self.config.get("training_height", 560)
+            self.training_width = self.config["training_width"]
+            self.training_height = self.config["training_height"]
         else:
             self.batch_size = getattr(self.config, "batch_size", 4)
             self.num_workers = getattr(self.config, "num_workers", 2)
-            self.training_width = getattr(self.config, "training_width", 560)
-            self.training_height = getattr(self.config, "training_height", 560)
+            self.training_width = getattr(self.config, "training_width")
+            self.training_height = getattr(self.config, "training_height")
 
     def setup(self, stage=None):
         """Set up datasets for training and validation."""

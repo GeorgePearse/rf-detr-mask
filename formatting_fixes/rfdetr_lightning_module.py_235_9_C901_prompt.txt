@@ -1,0 +1,26 @@
+Fix the following Python formatting error C901 in rfdetr/lightning_module.py at line 235, column 9:
+
+Error details:
+    |
+233 |         return losses
+234 |
+235 |     def validation_step(self, batch, batch_idx):
+    |         ^^^^^^^^^^^^^^^ C901
+236 |         """Validation step logic."""
+237 |         try:
+    |
+rfdetr/lightning_module.py:488:9: C901 `on_validation_epoch_end` is too complex (17 > 10)
+    |
+
+Here's the current code:
+
+        return losses
+
+    def validation_step(self, batch, batch_idx):
+        """Validation step logic."""
+        try:
+            samples, targets = batch
+
+            # Move to device
+
+Return only the corrected code snippet, nothing else. No explanations.

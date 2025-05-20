@@ -14,7 +14,6 @@ reliable measurements of inference latency using ONNX Runtime or TensorRT
 on the device.
 """
 
-import argparse
 import contextlib
 import copy
 import json
@@ -23,6 +22,7 @@ import os.path as osp
 import random
 import time
 from collections import OrderedDict, namedtuple
+from typing import Optional, Union
 
 import numpy as np
 import onnxruntime as nxrun
@@ -31,22 +31,27 @@ import tensorrt as trt
 import torch
 import tqdm
 from PIL import Image
+import torchvision.transforms.functional as f
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
 from rfdetr.util.box_ops import box_xyxy_to_cxcywh
 
 
-def parser_args():
-    parser = argparse.ArgumentParser("performance benchmark tool for onnx/trt model")
-    parser.add_argument("--path", type=str, help="engine file path")
-    parser.add_argument("--coco_path", type=str, default="data/coco", help="coco dataset path")
-    parser.add_argument("--device", default=0, type=int)
-    parser.add_argument(
-        "--run_benchmark", action="store_true", help="repeat the inference to benchmark the latency"
+def get_benchmark_config(path: Optional[str] = None, 
+                     coco_path: str = "data/coco", 
+                     device: int = 0, 
+                     run_benchmark: bool = False, 
+                     disable_eval: bool = False):
+    """Get benchmark configuration."""
+    from types import SimpleNamespace
+    return SimpleNamespace(
+        path=path,
+        coco_path=coco_path,
+        device=device,
+        run_benchmark=run_benchmark,
+        disable_eval=disable_eval
     )
-    parser.add_argument("--disable_eval", action="store_true", help="disable evaluation")
-    return parser.parse_args()
 
 
 class CocoEvaluator:
@@ -78,7 +83,10 @@ class CocoEvaluator:
 
             coco_eval.cocoDt = coco_dt
             coco_eval.params.imgIds = list(img_ids)
-            img_ids, eval_imgs = evaluate(coco_eval)
+            
+            # Suppress all output during evaluation
+            with open(os.devnull, "w") as devnull, contextlib.redirect_stdout(devnull):
+                img_ids, eval_imgs = evaluate(coco_eval)
 
             self.eval_imgs[iou_type].append(eval_imgs)
 
@@ -143,12 +151,14 @@ def evaluate(self):
     Run per image evaluation on given images and store results (a list of dict) in self.evalImgs
     :return: None
     """
+    # Silence debug messages
     # Running per image evaluation...
     p = self.params
     # add backward compatibility if useSegm is specified in params
     if p.useSegm is not None:
         p.iouType = "segm" if p.useSegm == 1 else "bbox"
-        print(f"useSegm (deprecated) is not None. Running {p.iouType} evaluation")
+        # Silence this message too - it's too verbose when processing batches
+        # print(f"useSegm (deprecated) is not None. Running {p.iouType} evaluation")
     # print('Evaluate annotation type *{}*'.format(p.iouType))
     p.imgIds = list(np.unique(p.imgIds))
     if p.useCats:
@@ -212,12 +222,9 @@ class Compose:
         format_string += "\n)"
         return format_string
 
-
-import torchvision.transforms.functional as F
-
 class ToTensor:
     def __call__(self, img, target):
-        return F.to_tensor(img), target
+        return f.to_tensor(img), target
 
 
 class Normalize:
@@ -226,7 +233,7 @@ class Normalize:
         self.std = std
 
     def __call__(self, image, target=None):
-        image = F.normalize(image, mean=self.mean, std=self.std)
+        image = f.normalize(image, mean=self.mean, std=self.std)
         if target is None:
             return image, None
         target = target.copy()
@@ -246,7 +253,7 @@ class SquareResize:
 
     def __call__(self, img, target=None):
         size = random.choice(self.sizes)
-        rescaled_img = F.resize(img, (size, size))
+        rescaled_img = f.resize(img, (size, size))
         w, h = rescaled_img.size
         if target is None:
             return rescaled_img, None
@@ -630,5 +637,46 @@ def main(args):
 
 
 if __name__ == "__main__":
-    args = parser_args()
+    import sys
+    
+    # Default values
+    path = None
+    coco_path = "data/coco"
+    device = 0
+    run_benchmark = False
+    disable_eval = False
+    
+    # Parse command line arguments
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg == "--path" and i+1 < len(sys.argv):
+            path = sys.argv[i+1]
+            i += 2
+        elif arg == "--coco_path" and i+1 < len(sys.argv):
+            coco_path = sys.argv[i+1]
+            i += 2
+        elif arg == "--device" and i+1 < len(sys.argv):
+            device = int(sys.argv[i+1])
+            i += 2
+        elif arg == "--run_benchmark":
+            run_benchmark = True
+            i += 1
+        elif arg == "--disable_eval":
+            disable_eval = True
+            i += 1
+        else:
+            i += 1
+    
+    if path is None:
+        print("Error: --path parameter is required")
+        sys.exit(1)
+        
+    args = get_benchmark_config(
+        path=path,
+        coco_path=coco_path,
+        device=device,
+        run_benchmark=run_benchmark,
+        disable_eval=disable_eval
+    )
     main(args)

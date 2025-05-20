@@ -1,0 +1,26 @@
+Fix the following Python formatting error N806 in rfdetr/deploy/_onnx/optimizer.py at line 422, column 17:
+
+Error details:
+    |
+420 |                 index = [isinstance(i, gs.ir.tensor.Constant) for i in betaNode.inputs].index(True)
+421 |                 beta = np.array(deepcopy(betaNode.inputs[index].values.tolist()), dtype=np.float32)
+422 |                 constantBeta = gs.Constant(
+    |                 ^^^^^^^^^^^^ N806
+423 |                     "LayerNormBeta-" + str(nLayerNormPlugin), np.ascontiguousarray(beta.reshape(-1))
+424 |                 )
+    |
+rfdetr/deploy/_onnx/optimizer.py:423:44: F821 Undefined name `nLayerNormPlugin`
+    |
+
+Here's the current code:
+                beta_node = gamma_node.o()
+                index = [isinstance(i, gs.ir.tensor.Constant) for i in beta_node.inputs].index(True)
+                beta = np.array(deepcopy(beta_node.inputs[index].values.tolist()), dtype=np.float32)
+                constant_beta = gs.Constant(
+                    "LayerNormBeta-" + str(n_layer_norm_plugin), np.ascontiguousarray(beta.reshape(-1))
+                )
+
+                input_list = [input_tensor, constant_gamma, constant_beta]
+                layer_norm_v = gs.Variable(
+
+Return only the corrected code snippet, nothing else. No explanations.

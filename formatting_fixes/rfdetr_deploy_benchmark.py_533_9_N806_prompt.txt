@@ -1,0 +1,26 @@
+Fix the following Python formatting error N806 in rfdetr/deploy/benchmark.py at line 533, column 9:
+
+Error details:
+    |
+531 |         http://gitlab.baidu.com/paddle-inference/benchmark/blob/main/backend_trt.py#L57
+532 |         """
+533 |         EXPLICIT_BATCH = 1 << (int)(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+    |         ^^^^^^^^^^^^^^ N806
+534 |         with (
+535 |             trt.Builder(self.logger) as builder,
+    |
+rfdetr/deploy/export.py:14:1: I001 [*] Import block is un-sorted or un-formatted
+   |
+
+Here's the current code:
+        """
+        EXPLICIT_BATCH = 1 << (int)(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
+        with (
+            trt.Builder(self.logger) as builder,
+            builder.create_network(EXPLICIT_BATCH) as network,
+            trt.OnnxParser(network, self.logger) as parser,
+            builder.create_builder_config() as config,
+        ):
+            config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 1 << 30)  # 1024 MiB
+
+Return only the corrected code snippet, nothing else. No explanations.

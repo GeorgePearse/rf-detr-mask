@@ -1,0 +1,26 @@
+Fix the following Python formatting error F012 in rfdetr/models/attention.py at line 96, column 32:
+
+Error details:
+   |
+94 |     """
+95 |
+96 |     __constants__: list[str] = ["batch_first"]
+   |                                ^^^^^^^^^^^^^^^ RUF012
+97 |     bias_k: Optional[torch.Tensor]
+98 |     bias_v: Optional[torch.Tensor]
+   |
+rfdetr/models/attention.py:307:5: C901 `multi_head_attention_forward` is too complex (28 > 10)
+    |
+
+Here's the current code:
+        >>> attn_output, attn_output_weights = multihead_attn(query, key, value)
+    """
+
+    __constants__: list[str] = ["batch_first"]
+    bias_k: Optional[torch.Tensor]
+    bias_v: Optional[torch.Tensor]
+
+    def __init__(
+        self,
+
+Return only the corrected code snippet, nothing else. No explanations.

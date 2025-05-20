@@ -1,0 +1,26 @@
+Fix the following Python formatting error P035 in rfdetr/models/backbone/__init__.py at line 11, column 1:
+
+Error details:
+   |
+10 | from typing import Callable
+11 | from typing import Dict, List
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ UP035
+12 |
+13 | import torch
+   |
+rfdetr/models/backbone/__init__.py:11:1: UP035 `typing.List` is deprecated, use `list` instead
+   |
+10 | from typing import Callable
+
+Here's the current code:
+# ------------------------------------------------------------------------
+
+from typing import Callable
+from typing import Dict, List
+
+import torch
+from torch import nn
+
+from rfdetr.models.backbone.backbone import *
+
+Return only the corrected code snippet, nothing else. No explanations.

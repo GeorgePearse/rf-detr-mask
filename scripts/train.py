@@ -7,11 +7,11 @@
 Updated training script for RF-DETR using iteration-based training with pydantic config.
 """
 
-import argparse
 import datetime
 import os
 import random
 from pathlib import Path
+from typing import Optional
 
 import lightning.pytorch as pl
 import numpy as np
@@ -27,44 +27,29 @@ from lightning.pytorch.strategies import DDPStrategy
 import rfdetr.util.misc as utils
 from rfdetr.hooks import ONNXCheckpointHook
 from rfdetr.lightning_module import RFDETRDataModule, RFDETRLightningModule
-from rfdetr.training_config import TrainingConfig
+from rfdetr.config_utils import RFDETRConfig, load_config
 from rfdetr.util.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
-def main():
+def main(config_path: str = "configs/default.yaml", 
+         output_dir: Optional[str] = None, 
+         test_mode: bool = False):
     """Main training function."""
-    parser = argparse.ArgumentParser(description="Train RF-DETR with iteration-based approach")
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="configs/default.yaml",
-        help="Path to YAML configuration file",
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default=None,
-        help="Override output directory from config",
-    )
-    parser.add_argument(
-        "--test_mode",
-        action="store_true",
-        help="Run in test mode with reduced sizes for rapid testing",
-    )
-    args = parser.parse_args()
-
-    # Load configuration
-    config = TrainingConfig.from_yaml(args.config)
-
-    # Apply command line overrides
-    if args.output_dir:
-        config.output_dir = args.output_dir
+    # Load configuration from YAML file
+    config = load_config(config_path)
+    
+    # Apply overrides if provided
+    if output_dir:
+        config.training.output_dir = output_dir
+    
+    if test_mode:
+        config.dataset.test_mode = True
         
     # Determine the number of classes from annotation file
-    coco_path = Path(config.coco_path)
-    annotation_file = coco_path / config.coco_train if not Path(config.coco_train).is_absolute() else Path(config.coco_train)
+    coco_path = Path(config.dataset.coco_path)
+    annotation_file = coco_path / config.dataset.coco_train if not Path(config.dataset.coco_train).is_absolute() else Path(config.dataset.coco_train)
     
     # Get number of classes from annotation file - fail if can't determine
     import json
@@ -81,10 +66,10 @@ def main():
         logger.info(f"Detected {num_classes} classes from annotation file")
     
     # Set the num_classes in config
-    config.num_classes = num_classes
+    config.set_num_classes(num_classes)
 
     # Create output directory
-    output_dir = Path(config.output_dir)
+    output_dir = Path(config.training.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save configuration for reference
@@ -97,7 +82,7 @@ def main():
     logger.info(f"Configuration saved to {config_file}")
 
     # Fix the seed for reproducibility
-    seed = config.seed
+    seed = config.other.seed
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
@@ -106,19 +91,22 @@ def main():
     args_dict = config.to_args_dict()
 
     # For test_limit or test_mode, adjust parameters for faster evaluation
-    if (config.test_limit is not None and config.test_limit > 0) or args.test_mode:
+    if (config.dataset.val_limit is not None and config.dataset.val_limit > 0) or config.dataset.test_mode:
         logger.info("Running in test mode with reduced parameters")
-        config.num_queries = min(100, getattr(config, "num_queries", 100))
-        config.hidden_dim = min(128, getattr(config, "hidden_dim", 256))
-        config.dec_layers = min(2, getattr(config, "dec_layers", 3))
-        config.batch_size = 1
-        config.grad_accum_steps = 1
+        config.model.num_queries = 20  # Much smaller
+        config.model.hidden_dim = 64   # Much smaller
+        config.model.dec_layers = 1    # Just 1 decoder layer
+        config.training.batch_size = 1
+        config.training.grad_accum_steps = 1
+        config.model.device = "cpu"    # Force CPU usage to avoid CUDA OOM errors
+        config.other.device = "cpu"    # Also set device to CPU in other config
 
         # Set a shorter run
-        if args.test_mode:
-            config.max_steps = min(10, getattr(config, "max_steps", 1000))
-            config.val_frequency = 5
-            config.checkpoint_frequency = 5
+        if config.dataset.test_mode:
+            # Setting these as variables to use in the Trainer, not in config
+            max_steps = 10
+            val_frequency = 5
+            checkpoint_frequency = 5
 
     # Create Lightning Module and Data Module
     model = RFDETRLightningModule(args_dict)
@@ -126,29 +114,29 @@ def main():
 
     # Setup logging
     loggers = []
-    if config.tensorboard:
+    if config.training.tensorboard:
         try:
-            tb_logger = TensorBoardLogger(save_dir=config.output_dir, name="lightning_logs")
+            tb_logger = TensorBoardLogger(save_dir=config.training.output_dir, name="lightning_logs")
             loggers.append(tb_logger)
         except ModuleNotFoundError:
             logger.warning("TensorBoard not installed. Skipping TensorBoard logging.")
-            config.tensorboard = False
+            config.training.tensorboard = False
 
-    if config.wandb:
+    if config.training.wandb:
         try:
             wandb_logger = WandbLogger(
-                project=config.project or "rfdetr-mask",
-                name=config.run,
-                save_dir=config.output_dir,
+                project=config.training.project or "rfdetr-mask",
+                name=config.training.run,
+                save_dir=config.training.output_dir,
                 log_model="all",
             )
             loggers.append(wandb_logger)
         except ModuleNotFoundError:
             logger.warning("Weights & Biases not installed. Skipping W&B logging.")
-            config.wandb = False
+            config.training.wandb = False
 
     # Always add CSV logger
-    csv_logger = CSVLogger(save_dir=config.output_dir, name="csv_logs")
+    csv_logger = CSVLogger(save_dir=config.training.output_dir, name="csv_logs")
     loggers.append(csv_logger)
 
     # Setup callbacks
@@ -181,10 +169,12 @@ def main():
     )
     callbacks.append(best_checkpoint_callback)
 
-    # ONNX and torch checkpoint hook
-    if config.export_onnx or config.export_torch:
+    # For now, disable ONNX export
+    export_onnx = False
+    export_torch = False
+    if export_onnx or export_torch:
         # Create export directory
-        export_dir = Path(config.output_dir) / "exports"
+        export_dir = Path(config.training.output_dir) / "exports"
         export_dir.mkdir(parents=True, exist_ok=True)
 
         onnx_hook = ONNXCheckpointHook(
@@ -211,14 +201,14 @@ def main():
     callbacks.append(progress_bar)
 
     # Early stopping if enabled
-    if config.early_stopping:
+    if config.training.early_stopping:
         from lightning.pytorch.callbacks import EarlyStopping
 
         early_stopping_cb = EarlyStopping(
             monitor="val/mAP",
             mode="max",
-            patience=config.early_stopping_patience,
-            min_delta=config.early_stopping_min_delta,
+            patience=config.training.early_stopping_patience,
+            min_delta=config.training.early_stopping_min_delta,
         )
         callbacks.append(early_stopping_cb)
 
@@ -228,24 +218,25 @@ def main():
         strategy = DDPStrategy(find_unused_parameters=True, gradient_as_bucket_view=True)
 
     # Create Trainer
-    accelerator = "cpu" if config.device == "cpu" else "auto"
+    accelerator = "cpu" if config.model.device == "cpu" else "auto"
 
+    # Set default values if not in test mode
+    if not config.dataset.test_mode:
+        max_steps = 1000
+        val_frequency = 200
+        
     trainer = pl.Trainer(
-        max_steps=config.max_steps,
+        max_steps=max_steps,
         max_epochs=None,  # No epoch limit, only step limit
         callbacks=callbacks,
         logger=loggers,
         strategy=strategy,
         precision="32-true",  # Always use full precision (32-bit) to avoid cdist_cuda issues
-        gradient_clip_val=config.clip_max_norm if config.clip_max_norm > 0 else None,
-        accumulate_grad_batches=config.grad_accum_steps,
+        gradient_clip_val=config.other.clip_max_norm if config.other.clip_max_norm > 0 else None,
+        accumulate_grad_batches=config.training.grad_accum_steps,
         log_every_n_steps=1,
-        default_root_dir=config.output_dir,
-        val_check_interval=getattr(
-            config,
-            "eval_save_frequency",
-            getattr(config, "val_frequency", getattr(config, "checkpoint_frequency", 200)),
-        ),
+        default_root_dir=config.training.output_dir,
+        val_check_interval=val_frequency,
         accelerator=accelerator,
         devices=1,
     )
@@ -296,6 +287,7 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
     # Initialize logging
     logger.info(f"git:\n  {utils.get_sha()}\n")
     logger.info("Starting training with PyTorch Lightning - Iteration-based approach")
@@ -309,6 +301,20 @@ if __name__ == "__main__":
         for i in range(torch.cuda.device_count()):
             print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
             print(f"Memory: {torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB")
-
-    # Run main training function
-    main()
+    
+    # Simple argument parsing for backwards compatibility
+    config_path = "configs/default.yaml"
+    output_dir = None
+    test_mode = False
+    
+    # Simple command-line argument parsing
+    for i, arg in enumerate(sys.argv[1:]):
+        if arg == "--config" and i+1 < len(sys.argv)-1:
+            config_path = sys.argv[i+2]
+        elif arg == "--output_dir" and i+1 < len(sys.argv)-1:
+            output_dir = sys.argv[i+2]
+        elif arg == "--test_mode":
+            test_mode = True
+    
+    # Call main with parsed arguments
+    main(config_path=config_path, output_dir=output_dir, test_mode=test_mode)

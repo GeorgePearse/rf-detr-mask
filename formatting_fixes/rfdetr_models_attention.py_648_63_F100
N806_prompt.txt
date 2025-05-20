@@ -1,0 +1,27 @@
+Fix the following Python formatting error F100
+N806 in rfdetr/models/attention.py at line 648, column 63:
+
+Error details:
+    |
+646 |     """
+647 |     # Using descriptive variable names instead of single capitals
+648 |     dim_q, dim_k, dim_v = q.size(-1), k.size(-1), v.size(-1)  # noqa: N806
+    |                                                               ^^^^^^^^^^^^ RUF100
+649 |     assert w_q.shape == (
+650 |         dim_q,
+    |
+    = help: Remove unused `noqa` directive
+rfdetr/models/attention.py:704:5: F841 Local variable `embedding_dim` is assigned to but never used
+
+Here's the current code:
+
+    """
+    # Using descriptive variable names instead of single capitals
+    dim_q, dim_k, dim_v = q.size(-1), k.size(-1), v.size(-1)  # noqa: N806
+    assert w_q.shape == (
+        dim_q,
+        dim_q,
+    ), f"expecting query weights shape of {(dim_q, dim_q)}, but got {w_q.shape}"
+    assert w_k.shape == (dim_q, dim_k), f"expecting key weights shape of {(dim_q, dim_k)}, but got {w_k.shape}"
+
+Return only the corrected code snippet, nothing else. No explanations.

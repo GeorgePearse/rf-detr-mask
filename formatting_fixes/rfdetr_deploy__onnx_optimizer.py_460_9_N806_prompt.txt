@@ -1,0 +1,25 @@
+Fix the following Python formatting error N806 in rfdetr/deploy/_onnx/optimizer.py at line 460, column 9:
+
+Error details:
+    |
+458 |         weights_v = node_v.inputs[1].values
+459 |         # Input number of channels to K and V
+460 |         C = weights_k.shape[0]
+    |         ^ N806
+461 |         # Number of heads
+462 |         H = heads
+    |
+rfdetr/deploy/_onnx/optimizer.py:462:9: N806 Variable `H` in function should be lowercase
+    |
+
+Here's the current code:
+        # Get weights of V
+        weights_v = node_v.inputs[1].values
+        # Input number of channels to K and V
+        C = weights_k.shape[0]
+        # Number of heads
+        H = heads
+        # Dimension per head
+        D = weights_k.shape[1] // H
+
+Return only the corrected code snippet, nothing else. No explanations.

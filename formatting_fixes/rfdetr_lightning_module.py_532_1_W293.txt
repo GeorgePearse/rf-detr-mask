@@ -1,0 +1,10 @@
+# Extract stats for bounding boxes
+                    bbox_valid = (
+                        "bbox" in self.postprocessors
+                        and hasattr(self.coco_evaluator, "coco_eval")
+                        and "bbox" in self.coco_evaluator.coco_eval
+                        and hasattr(self.coco_evaluator.coco_eval["bbox"], "stats")
+                    )
+
+                    if bbox_valid:
+

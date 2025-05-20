@@ -4,6 +4,10 @@
 log_file="formatting_fixes.log"
 echo "Starting formatting fixes at $(date)" > "$log_file"
 
+# Create a directory to store the fixes
+fixes_dir="formatting_fixes"
+mkdir -p "$fixes_dir"
+
 # Process each line in the formatting_failure.md file that starts with rfdetr/
 grep -n '^rfdetr/' formatting_failure.md | while read -r line_with_number; do
     # Get line number in formatting_failure.md file
@@ -28,6 +32,15 @@ grep -n '^rfdetr/' formatting_failure.md | while read -r line_with_number; do
         continue
     fi
     
+    # Create a unique identifier for this error
+    error_id="$(echo "$file_path" | tr '/' '_')_${line_in_file}_${col_in_file}_${error_code}"
+    
+    # Check if we've already processed this error
+    if [ -f "$fixes_dir/$error_id.txt" ]; then
+        echo "Already processed $file_path:$line_in_file:$col_in_file (Error: $error_code)" >> "$log_file"
+        continue
+    fi
+    
     # Extract error description and context (several lines after the error line)
     context_start=$((md_line_number + 1))
     context_end=$((md_line_number + 15))
@@ -47,38 +60,42 @@ grep -n '^rfdetr/' formatting_failure.md | while read -r line_with_number; do
     echo "==== Processing $file_path:$line_in_file:$col_in_file (Error: $error_code) ===="
     echo "Processing $file_path:$line_in_file:$col_in_file (Error: $error_code)" >> "$log_file"
     
-    # Create a temporary prompt file for amp
-    prompt_file=$(mktemp)
+    # Create a prompt file for amp with a 30-second timeout
+    prompt_file="$fixes_dir/${error_id}_prompt.txt"
     cat > "$prompt_file" << EOF
-Fix formatting error $error_code in $file_path at line $line_in_file, column $col_in_file.
+Fix the following Python formatting error $error_code in $file_path at line $line_in_file, column $col_in_file:
 
-Error details from the linter:
+Error details:
 $error_context
 
-Current code context:
+Here's the current code:
 $code_context
 
-Return only the corrected code segment without explanations.
+Return only the corrected code snippet, nothing else. No explanations.
 EOF
     
-    # Execute amp call to fix the issue (pipe the prompt to amp)
-    output_file=$(mktemp)
-    amp < "$prompt_file" > "$output_file" 2>/dev/null
+    # Execute amp call with a timeout to prevent hanging
+    output_file="$fixes_dir/${error_id}.txt"
+    timeout 30s amp < "$prompt_file" > "$output_file" 2>/dev/null
     
-    # Check if amp produced any output
-    if [ -s "$output_file" ]; then
-        echo "Amp generated a fix. Inspect the output in $output_file"
-        cat "$output_file" >> "$log_file"
+    # Check if amp produced any output and the process didn't time out
+    if [ $? -eq 0 ] && [ -s "$output_file" ]; then
+        echo "✓ Amp generated a fix for $file_path:$line_in_file"
+        echo "Fix saved to $output_file" >> "$log_file"
     else
-        echo "Amp did not produce any output for this error" >> "$log_file"
+        echo "✗ Failed to generate a fix for $file_path:$line_in_file"
+        echo "Amp failed to fix $file_path:$line_in_file" >> "$log_file"
+        # Create an empty file to mark this error as processed
+        touch "$output_file"
     fi
     
     # Mark completion in log
     echo "Completed fix attempt for $file_path:$line_in_file" >> "$log_file"
     echo "-----------------------------------"
     
-    # Clean up temporary files
-    rm -f "$prompt_file" "$output_file"
+    # Small delay to prevent overwhelming the system
+    sleep 1
 done
 
 echo "All formatting issues have been processed. See $log_file for details."
+echo "Fixes are stored in the $fixes_dir directory."

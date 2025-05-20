@@ -1,0 +1,26 @@
+Fix the following Python formatting error F821 in rfdetr/deploy/_onnx/optimizer.py at line 428, column 41:
+
+Error details:
+    |
+426 |                 inputList = [inputTensor, constantGamma, constantBeta]
+427 |                 layerNormV = gs.Variable(
+428 |                     "LayerNormV-" + str(nLayerNormPlugin), np.dtype(np.float32), inputTensor.shape
+    |                                         ^^^^^^^^^^^^^^^^ F821
+429 |                 )
+430 |                 layerNormN = gs.Node(
+    |
+rfdetr/deploy/_onnx/optimizer.py:430:17: N806 Variable `layerNormN` in function should be lowercase
+    |
+
+Here's the current code:
+
+                input_list = [input_tensor, constant_gamma, constant_beta]
+                layer_norm_v = gs.Variable(
+                    "LayerNormV-" + str(n_layer_norm_plugin), np.dtype(np.float32), input_tensor.shape
+                )
+                layer_norm_n = gs.Node(
+                    "LayerNorm",
+                    "LayerNormN-" + str(n_layer_norm_plugin),
+                    inputs=input_list,
+
+Return only the corrected code snippet, nothing else. No explanations.

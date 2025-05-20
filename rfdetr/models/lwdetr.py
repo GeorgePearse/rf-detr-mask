@@ -22,6 +22,7 @@ LW-DETR model and criterion classes
 
 import copy
 import math
+from logging import getLogger
 from typing import Callable
 
 import torch
@@ -32,6 +33,7 @@ from torch import nn
 from rfdetr.models.backbone import build_backbone
 from rfdetr.models.matcher import build_matcher
 from rfdetr.models.transformer import build_transformer
+
 from rfdetr.util import box_ops
 from rfdetr.util.misc import (
     NestedTensor,
@@ -40,6 +42,8 @@ from rfdetr.util.misc import (
     is_dist_avail_and_initialized,
     nested_tensor_from_tensor_list,
 )
+
+logger = getLogger(__name__)
 
 
 class LWDETR(nn.Module):
@@ -913,24 +917,8 @@ def build_model(args):
     num_classes = args.num_classes + 1
     torch.device(args.device)
 
-    # Debug prints to understand what's happening
-    print(f"DEBUG: args has shape? {hasattr(args, 'shape')}")
-    if hasattr(args, "shape"):
-        print(f"DEBUG: args.shape = {args.shape}, type: {type(args.shape)}")
-
-    # Calculate target_shape
-    if hasattr(args, "shape") and args.shape is not None:
-        target_shape = tuple(args.shape) if isinstance(args.shape, list) else args.shape
-    elif hasattr(args, "training_width") and hasattr(args, "training_height"):
-        training_width = args.training_width
-        training_height = args.training_height
-        print(f"Using training dimensions: {training_height}x{training_width}")
-        # DinoV2 expects (height, width)
-        target_shape = (training_height, training_width)
-    else:
-        target_shape = (560, 560)
-
-    print(f"DEBUG: target_shape = {target_shape}")
+    target_shape = (args.training_height, args.training_width)
+    logger.info(f'Target shape within the model is {target_shape}')
 
     backbone = build_backbone(
         encoder=args.encoder,

@@ -1,0 +1,26 @@
+Fix the following Python formatting error F403 in rfdetr/models/backbone/__init__.py at line 16, column 1:
+
+Error details:
+   |
+14 | from torch import nn
+15 |
+16 | from rfdetr.models.backbone.backbone import *
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ F403
+17 | from rfdetr.models.position_encoding import build_position_encoding
+18 | from rfdetr.util.misc import NestedTensor
+   |
+rfdetr/models/backbone/__init__.py:86:16: F405 `Backbone` may be undefined, or defined from star imports
+   |
+
+Here's the current code:
+import torch
+from torch import nn
+
+from rfdetr.models.backbone.backbone import *
+from rfdetr.models.position_encoding import build_position_encoding
+from rfdetr.util.misc import NestedTensor
+
+
+class Joiner(nn.Sequential):
+
+Return only the corrected code snippet, nothing else. No explanations.
