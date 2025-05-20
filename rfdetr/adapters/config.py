@@ -75,6 +75,11 @@ class ModelConfig(BaseModel):
     gradient_checkpointing: bool = False
     freeze_encoder: bool = False
 
+    # For determining the target_shape within the LWDETR model, should be able to remove it 
+    # as a separate param later
+    model_training_width: int = Field(gt=0, description="Width during training, must be divisible by 56")
+    model_training_height: int = Field(gt=0, description="Height during training, must be divisible by 56")
+
     # Learning rate parameters
     lr: float = Field(default=1e-4, ge=0.0)
     lr_encoder: float = Field(default=1e-5, ge=0.0)
@@ -260,8 +265,8 @@ class DataConfig(BaseModel):
     validation_batch_size: int = Field(default=4, gt=0)
     validation_num_workers: int = Field(default=2, ge=0)
 
-    training_width: int = Field(gt=0, description="Width during training, must be divisible by 56")
-    training_height: int = Field(gt=0, description="Height during training, must be divisible by 56")
+    input_training_width: int = Field(gt=0, description="Width during training, must be divisible by 56")
+    input_training_height: int = Field(gt=0, description="Height during training, must be divisible by 56")
 
     @field_validator('training_width', 'training_height')
     @classmethod
