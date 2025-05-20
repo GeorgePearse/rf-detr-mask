@@ -28,7 +28,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from config import ModelConfig
+from rfdetr.config import ModelConfig
 from rfdetr.models.backbone import build_backbone
 from rfdetr.models.matcher import build_matcher
 from rfdetr.models.transformer import build_transformer
