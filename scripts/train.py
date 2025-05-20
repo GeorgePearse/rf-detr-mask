@@ -90,13 +90,6 @@ def main(config_path: str = "configs/default.yaml"):
     np.random.seed(seed)
     random.seed(seed)
 
-    # Set a shorter run
-    if config.data.test_mode:
-        # Setting these as variables to use in the Trainer, not in config
-        max_steps = 10
-        val_frequency = 5
-        checkpoint_frequency = 5
-
     # Create Lightning Module and Data Module
     model = RFDETRLightningModule(
         training_config=config.training,
@@ -112,9 +105,6 @@ def main(config_path: str = "configs/default.yaml"):
     csv_logger = CSVLogger(save_dir=config.training.output_dir, name="csv_logs")
     loggers.append(csv_logger)
 
-    # Set default values for training parameters
-    # Initialize max_steps and val_frequency with default values
-    max_steps = 1000
     val_frequency = (
         config.other.steps_per_validation if config.other.steps_per_validation > 0 else 200
     )
@@ -123,7 +113,6 @@ def main(config_path: str = "configs/default.yaml"):
 
     # Override if in test mode
     if config.data.test_mode:
-        max_steps = 10
         val_frequency = 5
         checkpoint_frequency = 5
 
@@ -164,8 +153,6 @@ def main(config_path: str = "configs/default.yaml"):
     if torch.cuda.device_count() > 1:
         strategy = DDPStrategy(find_unused_parameters=True, gradient_as_bucket_view=True)
 
-    # These variables are defined above, before the callbacks
-
     trainer = pl.Trainer(
         max_steps=max_steps,
         max_epochs=None,  # No epoch limit, only step limit
@@ -181,50 +168,7 @@ def main(config_path: str = "configs/default.yaml"):
         accelerator="cuda",
         devices=torch.cuda.device_count(),
     )
-
-    # Resume from checkpoint if specified
-    resume_path = os.environ.get("RESUME_CHECKPOINT", None)
-    if resume_path:
-        # Just evaluate if evaluation mode is requested
-        if os.environ.get("EVAL_ONLY", "0").lower() in ["1", "true"]:
-            logger.info(f"Evaluating model from checkpoint: {resume_path}")
-            trainer.validate(model, datamodule=data_module, ckpt_path=resume_path)
-            return
-
-        # Otherwise resume training
-        logger.info(f"Resuming training from checkpoint: {resume_path}")
-        trainer.fit(model, datamodule=data_module, ckpt_path=resume_path)
-    else:
-        # Just evaluate if evaluation mode is requested
-        if os.environ.get("EVAL_ONLY", "0").lower() in ["1", "true"]:
-            logger.info("Evaluating untrained model")
-            trainer.validate(model, datamodule=data_module)
-            return
-
-        # Start training from scratch
-        logger.info("Starting training from scratch")
-        trainer.fit(model, datamodule=data_module)
-
-    # Log best model and save final checkpoint
-    if checkpoint_callback.best_model_path:
-        logger.info(f"Best model checkpoint: {checkpoint_callback.best_model_path}")
-        logger.info(f"Best mAP: {checkpoint_callback.best_model_score:.4f}")
-
-    # Calculate and log total training time
-    if hasattr(trainer, "callback_metrics") and "val/mAP" in trainer.callback_metrics:
-        logger.info(f"Final mAP: {trainer.callback_metrics['val/mAP']:.4f}")
-
-    # Log total parameters
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    logger.info(f"Total trainable parameters: {n_parameters}")
-
-    total_batches = (
-        trainer.fit_loop.epoch_loop.total_batch_idx
-        if hasattr(trainer.fit_loop.epoch_loop, "total_batch_idx")
-        else 0
-    )
-    logger.info(f"Training completed in {total_batches} batches")
-    return trainer.callback_metrics.get("val/mAP", 0.0)
+    trainer.fit(model, datamodule=data_module)
 
 
 if __name__ == "__main__":
