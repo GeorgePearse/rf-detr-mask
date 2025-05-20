@@ -9,6 +9,7 @@ Updated training script for RF-DETR using iteration-based training with pydantic
 
 import datetime
 import json
+import os
 import random
 from pathlib import Path
 
@@ -103,6 +104,21 @@ def main(config_path: str = "configs/default.yaml"):
     csv_logger = CSVLogger(save_dir=config.training.output_dir, name="csv_logs")
     loggers.append(csv_logger)
 
+    # Set default values for training parameters
+    # Initialize max_steps and val_frequency with default values
+    max_steps = 1000
+    val_frequency = (
+        config.other.steps_per_validation if config.other.steps_per_validation > 0 else 200
+    )
+    # Get checkpoint_frequency from config or use default value of 10
+    checkpoint_frequency = config.training.checkpoint_interval
+    
+    # Override if in test mode
+    if config.dataset.test_mode:
+        max_steps = 10
+        val_frequency = 5
+        checkpoint_frequency = 5
+        
     # Setup callbacks
     callbacks = [
         ModelCheckpoint(
@@ -140,20 +156,7 @@ def main(config_path: str = "configs/default.yaml"):
     if torch.cuda.device_count() > 1:
         strategy = DDPStrategy(find_unused_parameters=True, gradient_as_bucket_view=True)
 
-    # Set default values for training parameters
-    # Initialize max_steps and val_frequency with default values
-    max_steps = 1000
-    val_frequency = (
-        config.other.steps_per_validation if config.other.steps_per_validation > 0 else 200
-    )
-    # Get checkpoint_frequency from config or use default value of 10
-    checkpoint_frequency = getattr(config.training, "checkpoint_interval", 10)
-
-    # Override if in test mode
-    if config.dataset.test_mode:
-        max_steps = 10
-        val_frequency = 5
-        checkpoint_frequency = 5
+    # These variables are defined above, before the callbacks
 
     trainer = pl.Trainer(
         max_steps=max_steps,

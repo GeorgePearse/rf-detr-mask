@@ -45,7 +45,7 @@ class RFDETRLightningModule(pl.LightningModule):
         # Build model, criterion, and postprocessors
         self.model = build_model(self.config.model)
         self.criterion, self.postprocessors = build_criterion_and_postprocessors(self.config)
-        self.ema = ModelEma(self.model, self.ema_decay) if self.ema_decay and use_ema else None
+        self.ema = ModelEma(self.model, self.ema_decay) if self.ema_decay and self.use_ema else None
 
         # Track metrics
         self.train_metrics = []
@@ -76,7 +76,7 @@ class RFDETRLightningModule(pl.LightningModule):
         # Use full precision (float32) by default - avoid cdist_cuda issues
         self.autocast_args = {
             "device_type": "cuda" if torch.cuda.is_available() else "cpu",
-            "enabled": self.config.amp,
+            "enabled": self.config.model.amp,
             "dtype": torch.float32,
         }
 
