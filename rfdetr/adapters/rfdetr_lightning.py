@@ -39,6 +39,9 @@ class RFDETRLightningModule(pl.LightningModule):
             config: Configuration as a Pydantic model or compatible dict/object
         """
         super().__init__()
+        self.training_config = training_config
+        self.model_config = model_config
+
         self.save_hyperparameters()
         self.ema_decay = training_config.ema_decay
         self.use_ema = training_config.use_ema
@@ -163,17 +166,6 @@ class RFDETRLightningModule(pl.LightningModule):
 
             # Determine which model to evaluate (EMA or regular)
             model_to_eval = self.model
-
-            # Half precision for evaluation if specified
-            if isinstance(self.config, dict):
-                fp16_eval = self.config.get("fp16_eval", False)
-            else:
-                fp16_eval = self.config.training.fp16_eval
-
-            if fp16_eval:
-                model_to_eval = model_to_eval.half()
-                samples.tensors = samples.tensors.half()
-
             # Forward pass
             with torch.autocast(**self.autocast_args):
                 outputs = model_to_eval(samples)
@@ -246,10 +238,9 @@ class RFDETRLightningModule(pl.LightningModule):
     def configure_optimizers(self):
         """Configure optimizers and learning rate scheduler for iteration-based training."""
         # Get parameters from config for optimizer
-        lr = self.config.training.lr
 
         return {
-            "optimizer": torch.optim.AdamW(lr=lr, weight_decay=0.0001),
+            "optimizer": torch.optim.AdamW(lr=self.model_config.lr, weight_decay=0.0001),
             "lr_scheduler": {
                 "scheduler": torch.optim.lr_scheduler.LambdaLR(),
                 "interval": "step",
