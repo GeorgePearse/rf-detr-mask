@@ -240,7 +240,7 @@ class RFDETRLightningModule(pl.LightningModule):
         # Get parameters from config for optimizer
 
         return {
-            "optimizer": torch.optim.AdamW(lr=self.model_config.lr, weight_decay=0.0001),
+            "optimizer": torch.optim.AdamW(lr=self.model_config.lr, weight_decay=0.0001, params=self.model.parameters()),
             "lr_scheduler": {
                 "scheduler": torch.optim.lr_scheduler.LambdaLR(),
                 "interval": "step",
