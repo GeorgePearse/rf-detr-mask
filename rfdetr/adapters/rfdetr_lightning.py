@@ -15,7 +15,7 @@ import torch
 import torch.amp
 
 import rfdetr.util.misc as utils
-from rfdetr.adapters.config import RFDETRConfig
+from rfdetr.adapters.config import TrainingConfig, ModelConfig
 from rfdetr.datasets.coco_eval import CocoEvaluator
 from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.logging_config import get_logger
@@ -29,7 +29,9 @@ class RFDETRLightningModule(pl.LightningModule):
 
     def __init__(
         self,
-        config: RFDETRConfig,
+        num_classes: int,
+        training_config: TrainingConfig,
+        model_config: ModelConfig,
     ):
         """Initialize the RF-DETR Lightning Module.
 
@@ -38,12 +40,11 @@ class RFDETRLightningModule(pl.LightningModule):
         """
         super().__init__()
         self.save_hyperparameters()
-        self.config = config
-        self.ema_decay = self.config.training.ema_decay
-        self.use_ema = self.config.training.use_ema
+        self.ema_decay = training_config.ema_decay
+        self.use_ema = training_config.use_ema
         # Build model, criterion, and postprocessors
-        self.model = build_model(self.config.model)
-        self.criterion, self.postprocessors = build_criterion_and_postprocessors(self.config)
+        self.model = build_model(model_config)
+        self.criterion, self.postprocessors = build_criterion_and_postprocessors(training_config)
         self.ema = ModelEma(self.model, self.ema_decay) if self.ema_decay and self.use_ema else None
 
         # Track metrics
@@ -57,14 +58,14 @@ class RFDETRLightningModule(pl.LightningModule):
         # Use automatic optimization to work with gradient clipping
         self.automatic_optimization = True
 
-        self.output_dir = self.config.training.output_dir
-        self.export_onnx = self.config.training.export_onnx
-        self.export_torch = self.config.training.export_torch
-        self.max_steps = self.config.training.max_steps
-        self.val_frequency = self.config.training.val_frequency
+        self.output_dir = training_config.output_dir
+        self.export_onnx = training_config.export_onnx
+        self.export_torch = training_config.export_torch
+        self.max_steps = training_config.max_steps
+        self.val_frequency = training_config.val_frequency
 
         # Setup export directories
-        self.export_dir = Path(self.config.training.output_dir)
+        self.export_dir = Path(self.output_dir)
         self.export_dir.mkdir(parents=True, exist_ok=True)
 
         # Setup autocast for mixed precision training

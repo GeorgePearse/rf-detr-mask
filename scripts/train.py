@@ -98,8 +98,12 @@ def main(config_path: str = "configs/default.yaml"):
         checkpoint_frequency = 5
 
     # Create Lightning Module and Data Module
-    model = RFDETRLightningModule(config)
-    data_module = RFDETRDataModule(config)
+    model = RFDETRLightningModule(
+        training_config=config.training,
+        model_config=config.model,
+        num_classes=num_classes,
+    )
+    data_module = RFDETRDataModule(config.data)
 
     # Setup logging
     loggers = [TensorBoardLogger(save_dir=config.training.output_dir, name="lightning_logs")]
