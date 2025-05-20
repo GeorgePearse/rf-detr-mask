@@ -25,6 +25,7 @@ from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.get_param_dicts import get_param_dict
 from rfdetr.util.logging_config import get_logger
 from rfdetr.util.utils import ModelEma
+from rfdetr.config import RFDETRConfig
 
 
 logger = get_logger(__name__)
