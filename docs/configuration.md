@@ -1,134 +1,147 @@
-# Configuration System
+# Better Configuration Management
 
-RF-DETR-Mask now supports a YAML-based configuration system as an alternative to command-line arguments.
-This makes it easier to manage and reuse configurations for different experiments.
+This document outlines better approaches to configuration management, focusing on replacing anti-patterns like excessive use of `getattr()` with default values.
 
-## Configuration Structure
+## Problems with Current Approach
 
-The configuration is divided into five main sections:
+The current configuration approach has several issues:
 
-1. `model`: Configuration for the RF-DETR model architecture
-2. `training`: Parameters for training (learning rates, batch size, etc.)
-3. `dataset`: Dataset paths and file names
-4. `mask`: Mask prediction related settings
-5. `other`: Miscellaneous settings like seed, device, etc.
+1. **Scattered defaults**: Default values are defined throughout the codebase with `getattr()`
+2. **Implicit options**: It's difficult to discover all available configuration options
+3. **Inconsistent validation**: Some options are validated, others aren't
+4. **Type inconsistency**: Default values might have different types than user-provided values
 
-## Using Configuration Files
+## Better Configuration Approaches
 
-### Basic Usage
+### 1. Use Pydantic for Configuration Classes
 
-To train using a YAML configuration file:
+As mentioned in AGENT.md, Pydantic provides a robust way to define configuration with validation:
 
-```bash
-python scripts/train_from_config.py --config configs/cmr_segmentation.yaml
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, List
+
+class OptimizerConfig(BaseModel):
+    lr: float = Field(default=1e-4, description="Learning rate")
+    weight_decay: float = Field(default=1e-4, description="Weight decay")
+    
+class DataConfig(BaseModel):
+    batch_size: int = Field(default=4, ge=1, description="Batch size")
+    num_workers: int = Field(default=2, ge=0, description="Number of data loader workers")
+    training_width: int = Field(..., description="Training image width")  # Required field
+    training_height: int = Field(..., description="Training image height")  # Required field
+    
+class TrainingConfig(BaseModel):
+    epochs: int = Field(default=300, ge=1, description="Number of training epochs")
+    warmup_ratio: float = Field(default=0.1, ge=0, le=1, description="Warmup ratio")
+    lr_scheduler: str = Field(default="cosine", description="LR scheduler type")
+    lr_min_factor: float = Field(default=0.0, ge=0, le=1, description="Minimum LR factor")
+    clip_max_norm: float = Field(default=0.0, ge=0, description="Gradient clipping max norm")
+    use_ema: bool = Field(default=True, description="Use EMA model averaging")
+    ema_decay: Optional[float] = Field(default=None, description="EMA decay rate")
+    
+class RFDETRConfig(BaseModel):
+    optimizer: OptimizerConfig = Field(default_factory=OptimizerConfig)
+    data: DataConfig
+    training: TrainingConfig = Field(default_factory=TrainingConfig)
+    output_dir: str = Field(default="output", description="Output directory")
+    # Other sections as needed
 ```
 
-### Overriding Configuration Values
+### 2. Load Configuration from YAML
 
-You can override specific values from the command line:
+Use YAML for configuration files:
 
-```bash
-python scripts/train_from_config.py --config configs/cmr_segmentation.yaml --batch_size 2 --epochs 50
+```python
+import yaml
+from pathlib import Path
+
+def load_config(config_path: str) -> RFDETRConfig:
+    """Load configuration from YAML file."""
+    config_path = Path(config_path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+        
+    with open(config_path, "r") as f:
+        config_dict = yaml.safe_load(f)
+        
+    try:
+        return RFDETRConfig(**config_dict)
+    except Exception as e:
+        raise ValueError(f"Invalid configuration in {config_path}: {e}")
 ```
 
-### Available Command-Line Overrides
+### 3. Access Configuration Directly
 
-- `--output_dir`: Override output directory
-- `--pretrain_weights`: Override pretrained weights path
-- `--batch_size`: Override batch size
-- `--epochs`: Override number of epochs
-- `--resume`: Resume from checkpoint
-- `--eval`: Run in evaluation-only mode
-- `--seed`: Override random seed
+With properly defined configuration classes, you can access values directly:
 
-## Configuration Validation
+```python
+# Instead of:
+# lr = getattr(self.config, "lr", 1e-4)
+# weight_decay = getattr(self.config, "weight_decay", 1e-4)
 
-The configuration system uses Pydantic for validation, ensuring that:
-
-- All required parameters are present
-- Parameters are of the correct type
-- Numerical parameters are within valid ranges
-- Training dimensions (width and height) are divisible by 14 for DINOv2
-- Configuration sections are consistent with each other
-
-## Example Configuration
-
-```yaml
-# Model Configuration
-model:
-  encoder: "dinov2_windowed_small"
-  out_feature_indexes: [2, 5, 8, 11]
-  dec_layers: 3
-  two_stage: true
-  projector_scale: ["P4"]
-  hidden_dim: 256
-  sa_nheads: 8
-  ca_nheads: 16
-  dec_n_points: 2
-  bbox_reparam: true
-  lite_refpoint_refine: true
-  layer_norm: true
-  amp: true
-  num_classes: 69  # CMR has 69 classes
-  pretrain_weights: "rf-detr-base.pth"
-  device: "cuda"
-  training_width: 560
-  training_height: 560
-  group_detr: 13
-  gradient_checkpointing: false
-  num_queries: 300
-  num_select: 300
-
-# Training Configuration
-training:
-  lr: 5e-5
-  lr_encoder: 5e-6
-  batch_size: 1
-  grad_accum_steps: 4
-  epochs: 100
-  # ...and more training parameters...
-
-# Dataset Configuration
-dataset:
-  coco_path: "/home/georgepearse/data/cmr/annotations"
-  coco_train: "2025-05-15_12:38:23.077836_train_ordered.json"
-  coco_val: "2025-05-15_12:38:38.270134_val_ordered.json"
-  coco_img_path: "/home/georgepearse/data/images"
-  
-# Mask Configuration
-mask:
-  enabled: true
-  loss_mask_coef: 1.0
-  loss_dice_coef: 1.0
-
-# Other Configuration
-other:
-  seed: 42
-  device: "cuda"
-  world_size: 1
-  dist_url: "env://"
-  clip_max_norm: 0.5
-  steps_per_validation: 0
+# Access directly with proper typing:
+lr = self.config.optimizer.lr
+weight_decay = self.config.optimizer.weight_decay
 ```
 
-## Creating Custom Configurations
+### 4. Handle Legacy Configurations
 
-1. Start by copying one of the example configurations:
-   - `base_config.yaml`: Basic configuration
-   - `cmr_segmentation.yaml`: Configuration optimized for CMR segmentation
+For backward compatibility with existing code:
 
-2. Modify the parameters as needed for your experiment.
+```python
+def normalize_config(config):
+    """Convert various config formats to standard Pydantic model."""
+    if isinstance(config, RFDETRConfig):
+        return config
+        
+    if hasattr(config, "model_dump") and callable(config.model_dump):
+        # Already a Pydantic model, but not our specific type
+        return RFDETRConfig(**config.model_dump())
+        
+    if isinstance(config, dict):
+        # Plain dictionary configuration
+        return RFDETRConfig(**config)
+        
+    # Try to convert from legacy object-based config
+    config_dict = {}
+    for attr in dir(config):
+        if not attr.startswith("_") and not callable(getattr(config, attr)):
+            config_dict[attr] = getattr(config, attr)
+    
+    return RFDETRConfig(**config_dict)
+```
 
-3. Save your custom configuration in the `configs` directory.
+### 5. Define Nested Configurations
 
-## Implementation Details
+Organize related configuration options together:
 
-The configuration system is implemented using:
-- `rfdetr/config_utils.py`: Contains the Pydantic models for configuration validation
-- `scripts/train_from_config.py`: Training script that uses YAML configuration
+```python
+# Instead of flat configuration with prefixes:
+# export_onnx: bool
+# export_torch: bool
+# export_dir: str
 
-The Pydantic models provide:
-- Type checking and validation
-- Default values for optional parameters
-- Value range validation
-- Cross-field validation
+# Use nested configuration:
+class ExportConfig(BaseModel):
+    onnx: bool = Field(default=False, description="Export ONNX model")
+    torch: bool = Field(default=False, description="Export TorchScript model")
+    dir: str = Field(default="exports", description="Export directory")
+
+# Then in main config:
+class RFDETRConfig(BaseModel):
+    # Other fields
+    export: ExportConfig = Field(default_factory=ExportConfig)
+    
+# Access as:
+if self.config.export.onnx:
+    # Export ONNX model
+```
+
+## Implementation Plan
+
+1. Create Pydantic models for all configuration sections
+2. Create a default YAML configuration file
+3. Update code to use direct attribute access instead of getattr
+4. Add conversion utilities for legacy configuration formats
+5. Update documentation to describe all configuration options

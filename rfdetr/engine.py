@@ -42,25 +42,22 @@ def do_evaluation_during_training(
     logger.info(f"Running evaluation at step {step_counter}")
     model.eval()
     with torch.no_grad():
-        # Save original validation configuration if needed in the future
-        # original_test_mode = getattr(args, "test_mode", False)
-        # original_val_limit = getattr(args, "val_limit", None)
-        if hasattr(args, "test_mode") and args.test_mode:
+        # Config validation ensures test_mode and val_limit_test_mode exist in the model
+        # with proper defaults, so we can access directly
+        if args.test_mode:
             logger.info(f"Using test mode with validation limit of {args.val_limit_test_mode}")
 
         eval_stats, coco_evaluator = evaluate(
-        model,
-        criterion,
-        postprocessors,
-        val_data_loader,
-        base_ds,
-        device,
-        args=args,
+            model,
+            criterion,
+            postprocessors,
+            val_data_loader,
+            base_ds,
+            device,
+            args=args,
         )
 
-        logger.info(
-            f"Step {step_counter} evaluation: mAP={eval_stats['coco_eval_bbox'][0]:.4f}"
-        )
+        logger.info(f"Step {step_counter} evaluation: mAP={eval_stats['coco_eval_bbox'][0]:.4f}")
     model.train()
     return eval_stats, coco_evaluator
 
@@ -148,7 +145,7 @@ def train_one_epoch(
                 device=device,
                 args=args,
                 step_counter=step_counter,
-                logger=logger
+                logger=logger,
             )
 
         it = start_steps + data_iter_step
@@ -257,7 +254,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
 
     # If test_mode is enabled, limit evaluation to specified number of samples
     max_samples = None
-    if hasattr(args, "test_mode") and args.test_mode and hasattr(args, "val_limit_test_mode"):
+    if args.test_mode:
         max_samples = args.val_limit_test_mode
         logger.info(f"Test mode enabled: limiting validation to {max_samples} samples")
 

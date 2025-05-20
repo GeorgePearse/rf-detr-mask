@@ -142,26 +142,17 @@ def build_matcher(config):
         HungarianMatcher instance
     """
     # Get cost values with fallbacks, regardless of config type
-    cost_class = (
-        getattr(config, "set_cost_class", 2.0)
-        if not isinstance(config, dict)
-        else config.get("set_cost_class", 2.0)
-    )
-    cost_bbox = (
-        getattr(config, "set_cost_bbox", 5.0)
-        if not isinstance(config, dict)
-        else config.get("set_cost_bbox", 5.0)
-    )
-    cost_giou = (
-        getattr(config, "set_cost_giou", 2.0)
-        if not isinstance(config, dict)
-        else config.get("set_cost_giou", 2.0)
-    )
-    focal_alpha = (
-        getattr(config, "focal_alpha", 0.25)
-        if not isinstance(config, dict)
-        else config.get("focal_alpha", 0.25)
-    )
+    if isinstance(config, dict):
+        cost_class = config.get("set_cost_class", 2.0)
+        cost_bbox = config.get("set_cost_bbox", 5.0)
+        cost_giou = config.get("set_cost_giou", 2.0)
+        focal_alpha = config.get("focal_alpha", 0.25)
+    else:
+        # Model configuration has these fields with default values
+        cost_class = config.set_cost_class
+        cost_bbox = config.set_cost_bbox
+        cost_giou = config.set_cost_giou
+        focal_alpha = config.focal_alpha
     return HungarianMatcher(
         cost_class=cost_class,
         cost_bbox=cost_bbox,

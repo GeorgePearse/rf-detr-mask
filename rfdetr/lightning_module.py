@@ -21,10 +21,14 @@ from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, Sequ
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
+from rfdetr.deploy.export import export_onnx as _export_onnx  # noqa: F401
+from rfdetr.model_config import ModelConfig
 from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.get_param_dicts import get_param_dict
+from rfdetr.util.logging_config import get_logger
 from rfdetr.util.utils import ModelEma
-from rfdetr.model_config import ModelConfig
+
+logger = get_logger(__name__)
 
 
 class RFDETRLightningModule(pl.LightningModule):
@@ -42,8 +46,8 @@ class RFDETRLightningModule(pl.LightningModule):
         # Build model, criterion, and postprocessors
         self.model = build_model(self.config)
         self.criterion, self.postprocessors = build_criterion_and_postprocessors(self.config)
-        self.ema_decay = self.config.ema_decay if hasattr(self.config, "ema_decay") else None
-        use_ema = self.config.use_ema if hasattr(self.config, "use_ema") else True
+        self.ema_decay = self.config.training.ema_decay
+        use_ema = self.config.training.use_ema
         self.ema = ModelEma(self.model, self.ema_decay) if self.ema_decay and use_ema else None
 
         # Track metrics
@@ -51,16 +55,10 @@ class RFDETRLightningModule(pl.LightningModule):
         self.val_metrics = []
         self.test_metrics = []
 
-        # Setup autocast args for mixed precision training
+        # Initialize autocast variables that will be set in _setup_autocast_args
         self._dtype = torch.float32
         self.amp_backend = "torch"
-        self.amp_enabled = self.config.amp
-            
-        self.autocast_args = {
-            "device_type": "cuda" if torch.cuda.is_available() else "cpu",
-            "enabled": amp_enabled,
-            "dtype": self._dtype,
-        }
+        self.autocast_args = {}
 
         # Track best metrics
         self.best_map = 0.0
@@ -68,19 +66,62 @@ class RFDETRLightningModule(pl.LightningModule):
         # Use automatic optimization to work with gradient clipping
         self.automatic_optimization = True
 
-        output_dir = getattr(self.config, "output_dir", "exports")
-        self.export_onnx = getattr(self.config, "export_onnx", True)
-        self.export_torch = getattr(self.config, "export_torch", True)
-        self.simplify_onnx = getattr(self.config, "simplify_onnx", True)
-        self.export_on_validation = getattr(self.config, "export_on_validation", True)
-        self.max_steps = getattr(self.config, "max_steps", 2000)
-        self.val_frequency = getattr(
-            self.config, "eval_save_frequency", getattr(self.config, "val_frequency", 200)
-        )
+        # Get export configuration from training config
+        output_dir = self.config.training.output_dir
+        self.export_onnx = self.config.training.export_onnx
+        self.export_torch = self.config.training.export_torch
+        self.simplify_onnx = self.config.training.simplify_onnx
+        self.export_on_validation = self.config.training.export_on_validation
+        self.max_steps = self.config.training.max_steps
+        self.val_frequency = self.config.training.eval_save_frequency
 
         # Setup export directories
         self.export_dir = Path(output_dir)
         self.export_dir.mkdir(parents=True, exist_ok=True)
+
+        # Setup autocast for mixed precision training
+        self._setup_autocast_args()
+
+    def _setup_autocast_args(self):
+        """Set up arguments for autocast (mixed precision training)."""
+        # Use full precision (float32) by default - avoid cdist_cuda issues
+        self._dtype = torch.float32
+
+        try:
+            import torch.amp
+
+            self.amp_backend = "torch"
+        except ImportError:
+            # Fall back to cuda.amp if needed
+            self.amp_backend = "cuda"
+
+        # Get amp setting from config
+        try:
+            # Try to access from model config first
+            amp_enabled = self.config.model.amp
+        except AttributeError:
+            try:
+                # Try dict access
+                amp_enabled = self.config.get("amp", False)
+            except AttributeError:
+                # Try direct attribute access
+                try:
+                    amp_enabled = self.config.amp
+                except AttributeError:
+                    # Default to False as fallback
+                    amp_enabled = False
+
+        if self.amp_backend == "torch":
+            self.autocast_args = {
+                "device_type": "cuda" if torch.cuda.is_available() else "cpu",
+                "enabled": amp_enabled,
+                "dtype": self._dtype,
+            }
+        else:
+            self.autocast_args = {
+                "enabled": amp_enabled,
+                "dtype": self._dtype,
+            }
 
     def forward(self, samples, targets=None):
         """Forward pass through the model."""
@@ -170,7 +211,7 @@ class RFDETRLightningModule(pl.LightningModule):
             if isinstance(self.config, dict):
                 fp16_eval = self.config.get("fp16_eval", False)
             else:
-                fp16_eval = getattr(self.config, "fp16_eval", False)
+                fp16_eval = self.config.training.fp16_eval
 
             if fp16_eval:
                 model_to_eval = model_to_eval.half()
@@ -245,8 +286,8 @@ class RFDETRLightningModule(pl.LightningModule):
             training_width = self.config["training_width"]
             training_height = self.config["training_height"]
         else:
-            training_width = getattr(self.config, "training_width")
-            training_height = getattr(self.config, "training_height")
+            training_width = self.config.model.training_width
+            training_height = self.config.model.training_height
 
         # Create dummy input
         dummy = np.random.randint(0, 256, (training_height, training_width, 3), dtype=np.uint8)
@@ -272,7 +313,15 @@ class RFDETRLightningModule(pl.LightningModule):
         Args:
             epoch: Current epoch number
         """
-        if not hasattr(self, "export_onnx") or not hasattr(self, "export_torch"):
+        # Early validation for required export attributes
+        try:
+            # Try to access the attributes directly - will raise AttributeError if missing
+            _ = self.export_onnx
+            _ = self.export_torch
+        except AttributeError:
+            logger.warning(
+                "Model export attempted but export_onnx or export_torch attributes are missing"
+            )
             return
 
         if not (self.export_onnx or self.export_torch):
@@ -284,8 +333,13 @@ class RFDETRLightningModule(pl.LightningModule):
         # Create timestamped directory for this export
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Make sure we have an export directory
-        if not hasattr(self, "export_dir") or self.export_dir is None:
+        # Ensure export_dir exists with a default
+        try:
+            if self.export_dir is None:
+                logger.info("export_dir is None, defaulting to 'exports'")
+                self.export_dir = Path("exports")
+        except AttributeError:
+            logger.info("No export_dir attribute, defaulting to 'exports'")
             self.export_dir = Path("exports")
 
         export_path = self.export_dir / f"epoch_{epoch:04d}_{timestamp}"
@@ -304,18 +358,24 @@ class RFDETRLightningModule(pl.LightningModule):
             if self.export_torch:
                 torch_path = export_path / "model.pth"
 
-                # Get config data properly
-                if hasattr(self.config, "model_dump"):
+                # Get config data properly using protocols
+                try:
+                    # Try to use model_dump first
                     config_data = self.config.model_dump()
-                elif isinstance(self.config, dict):
-                    config_data = self.config
-                else:
-                    # Convert object to dict if needed
-                    config_data = {
-                        attr: getattr(self.config, attr)
-                        for attr in dir(self.config)
-                        if not attr.startswith("_") and not callable(getattr(self.config, attr))
-                    }
+                except AttributeError:
+                    try:
+                        # Try direct dict conversion
+                        config_data = dict(self.config)
+                    except (TypeError, ValueError):
+                        # Convert object to dict using attribute inspection as last resort
+                        logger.warning(
+                            "Config object does not have model_dump method, using attribute inspection"
+                        )
+                        config_data = {
+                            attr: getattr(self.config, attr)
+                            for attr in dir(self.config)
+                            if not attr.startswith("_") and not callable(getattr(self.config, attr))
+                        }
 
                 # Save the model weights and config
                 torch.save(
@@ -336,11 +396,15 @@ class RFDETRLightningModule(pl.LightningModule):
                 print(f"ONNX export would save to: {onnx_path} (disabled for testing)")
 
                 # Placeholder for ONNX simplification
-                if hasattr(self, "simplify_onnx") and self.simplify_onnx:
-                    sim_onnx_path = export_path / "inference_model.sim.onnx"
-                    print(
-                        f"ONNX simplification would save to: {sim_onnx_path} (disabled for testing)"
-                    )
+                try:
+                    if self.simplify_onnx:
+                        sim_onnx_path = export_path / "inference_model.sim.onnx"
+                        print(
+                            f"ONNX simplification would save to: {sim_onnx_path} (disabled for testing)"
+                        )
+                except AttributeError:
+                    # Skip simplification if attribute doesn't exist
+                    pass
         except Exception as e:
             print(f"Error during model export: {e}")
         finally:
@@ -354,20 +418,25 @@ class RFDETRLightningModule(pl.LightningModule):
 
         # Create COCO evaluator
         try:
-            if hasattr(self.trainer, "datamodule") and hasattr(
-                self.trainer.datamodule, "dataset_val"
-            ):
-                dataset_val = self.trainer.datamodule.dataset_val
-                base_ds = get_coco_api_from_dataset(dataset_val)
-                if base_ds and hasattr(base_ds, "anns") and base_ds.anns:
+            # Access trainer.datamodule directly - will raise AttributeError if missing
+            dataset_val = self.trainer.datamodule.dataset_val
+            base_ds = get_coco_api_from_dataset(dataset_val)
+
+            # Check if base_ds has annotations
+            try:
+                has_annotations = bool(base_ds.anns)
+                if has_annotations:
                     iou_types = tuple(k for k in ("segm", "bbox") if k in self.postprocessors)
                     self.coco_evaluator = CocoEvaluator(base_ds, iou_types)
                 else:
                     print("COCO dataset has no annotations, skipping evaluator initialization")
                     self.coco_evaluator = None
-            else:
-                print("DataModule not properly initialized, skipping evaluator initialization")
+            except (AttributeError, TypeError):
+                print("COCO dataset is not properly initialized, skipping evaluator initialization")
                 self.coco_evaluator = None
+        except AttributeError:
+            print("DataModule not properly initialized, skipping evaluator initialization")
+            self.coco_evaluator = None
         except Exception as e:
             print(
                 f"Error initializing COCO evaluator: {e}. This can happen with small validation sets."
@@ -376,9 +445,13 @@ class RFDETRLightningModule(pl.LightningModule):
 
         # Export model before validation if enabled
         try:
-            if hasattr(self, "export_on_validation") and self.export_on_validation:
+            export_enabled = self.export_on_validation
+            if export_enabled:
                 current_epoch = self.trainer.current_epoch if self.trainer else 0
                 self.export_model(current_epoch)
+        except AttributeError:
+            # Skip export if the attribute doesn't exist
+            pass
         except Exception as e:
             print(f"Error during model export in on_validation_epoch_start: {e}")
             # Continue with validation even if export fails
@@ -404,7 +477,7 @@ class RFDETRLightningModule(pl.LightningModule):
         # Use both slash and underscore formats for better compatibility
         self.log("val/mAP", 0.0, on_step=False, on_epoch=True, sync_dist=True)
         self.log("val/best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
-        
+
         # Log with underscore format for ModelCheckpoint compatibility
         self.log("val_mAP", 0.0, on_step=False, on_epoch=True, sync_dist=True)
         self.log("val_best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
@@ -412,17 +485,23 @@ class RFDETRLightningModule(pl.LightningModule):
         # Try to use COCO evaluator if available
         if self.coco_evaluator is not None:
             try:
-                # Check if we have enough data to evaluate
+                # Check if we have enough data to evaluate using try-except for robustness
                 eval_imgs_valid = False
 
-                if hasattr(self.coco_evaluator, "eval_imgs") and self.coco_evaluator.eval_imgs:
-                    for iou_type, imgs in self.coco_evaluator.eval_imgs.items():
-                        if isinstance(imgs, list) and len(imgs) > 0:
-                            eval_imgs_valid = True
-                            break
-                        elif isinstance(imgs, np.ndarray) and imgs.size > 0:
-                            eval_imgs_valid = True
-                            break
+                try:
+                    # Access eval_imgs directly - if it doesn't exist, it will raise AttributeError
+                    # which will be caught by the outer try-except block
+                    eval_imgs = self.coco_evaluator.eval_imgs
+                    if eval_imgs:  # Check if it's not None or empty
+                        for iou_type, imgs in eval_imgs.items():
+                            if (isinstance(imgs, list) and len(imgs) > 0) or (
+                                isinstance(imgs, np.ndarray) and imgs.size > 0
+                            ):
+                                eval_imgs_valid = True
+                                break
+                except AttributeError:
+                    # eval_imgs not available, continue with eval_imgs_valid as False
+                    pass
 
                 if eval_imgs_valid:
                     # Synchronize if distributed
@@ -434,20 +513,30 @@ class RFDETRLightningModule(pl.LightningModule):
                         self.coco_evaluator.accumulate()
                         self.coco_evaluator.summarize()
                     except Exception as e:
-                        print(f"Error in COCO accumulate/summarize: {e}. Continuing with validation.")
+                        print(
+                            f"Error in COCO accumulate/summarize: {e}. Continuing with validation."
+                        )
 
-                    # Extract stats for bounding boxes
-                    bbox_valid = (
-                        "bbox" in self.postprocessors
-                        and hasattr(self.coco_evaluator, "coco_eval")
-                        and "bbox" in self.coco_evaluator.coco_eval
-                        and hasattr(self.coco_evaluator.coco_eval["bbox"], "stats")
-                    )
-                    
+                    # Extract stats for bounding boxes using safer access patterns
+                    bbox_valid = "bbox" in self.postprocessors
+
+                    if bbox_valid:
+                        try:
+                            # Try to access the stats directly with better error handling
+                            # This will raise exceptions if any part of the chain is missing
+                            # and properly be caught by the except block
+                            bbox_stats = self.coco_evaluator.coco_eval["bbox"].stats
+                            # If we get here, both coco_eval exists and has bbox stats
+                        except (AttributeError, KeyError, TypeError):
+                            # Either coco_eval doesn't exist or bbox key is missing or stats attribute is missing
+                            bbox_valid = False
+
                     if bbox_valid:
                         stats = self.coco_evaluator.coco_eval["bbox"].stats
-                        if hasattr(stats, "tolist"):
-                            # Log mAP
+
+                        # Convert stats safely using try/except instead of hasattr
+                        try:
+                            # Try to get the first value and convert to float
                             map_value = float(stats[0]) if stats[0] is not None else 0.0
 
                             # Track best model
@@ -455,41 +544,72 @@ class RFDETRLightningModule(pl.LightningModule):
                                 self.best_map = map_value
 
                             # Update the logged value with the computed one
-                            self.log("val/mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
-                            self.log("val/best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
-                            
-                            # Log with underscore format for ModelCheckpoint compatibility
-                            self.log("val_mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
-                            self.log("val_best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+                            self.log(
+                                "val/mAP", map_value, on_step=False, on_epoch=True, sync_dist=True
+                            )
+                            self.log(
+                                "val/best_mAP",
+                                self.best_map,
+                                on_step=False,
+                                on_epoch=True,
+                                sync_dist=True,
+                            )
+                        except (TypeError, IndexError, ValueError):
+                            # If stats can't be accessed properly or conversion fails
+                            logger.warning("Failed to extract or convert mAP value")
 
-                    # Extract stats for segmentation masks
-                    segm_valid = (
-                        "segm" in self.postprocessors
-                        and hasattr(self.coco_evaluator, "coco_eval")
-                        and "segm" in self.coco_evaluator.coco_eval
-                        and hasattr(self.coco_evaluator.coco_eval["segm"], "stats")
+                    # Log with underscore format for ModelCheckpoint compatibility
+                    self.log("val_mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
+                    self.log(
+                        "val_best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True
                     )
 
+                    # Extract stats for segmentation masks
+                    segm_valid = "segm" in self.postprocessors
+
                     if segm_valid:
-                        stats = self.coco_evaluator.coco_eval["segm"].stats
-                        if hasattr(stats, "tolist"):
-                            # Log mask mAP
-                            mask_map_value = float(stats[0]) if stats[0] is not None else 0.0
-                            if "segm" in self.postprocessors:
-                                self.log("val/mask_mAP", mask_map_value, on_step=False, on_epoch=True, sync_dist=True)
-                                # Also log with underscore format
-                                self.log("val_mask_mAP", mask_map_value, on_step=False, on_epoch=True, sync_dist=True)
+                        try:
+                            # Try to access the segm stats directly with nested access
+                            stats = self.coco_evaluator.coco_eval["segm"].stats
+                            # Try to convert stats to correct format
+                            try:
+                                # Log mask mAP
+                                mask_map_value = float(stats[0]) if stats[0] is not None else 0.0
+                                if "segm" in self.postprocessors:
+                                    self.log(
+                                        "val/mask_mAP",
+                                        mask_map_value,
+                                        on_step=False,
+                                        on_epoch=True,
+                                        sync_dist=True,
+                                    )
+                                    # Also log with underscore format
+                                    self.log(
+                                        "val_mask_mAP",
+                                        mask_map_value,
+                                        on_step=False,
+                                        on_epoch=True,
+                                        sync_dist=True,
+                                    )
+                            except (TypeError, IndexError, ValueError):
+                                logger.warning("Failed to extract or convert mask mAP value")
+                        except (AttributeError, KeyError):
+                            logger.warning("Segmentation stats not available in expected format")
                 else:
                     print("Skipping COCO evaluation - not enough evaluation images")
             except Exception as e:
-                print(f"Error during COCO evaluation: {e}. This can happen with small validation sets.")
+                print(
+                    f"Error during COCO evaluation: {e}. This can happen with small validation sets."
+                )
         else:
             print("No COCO evaluator available. Using default metrics.")
 
         # Log any additional metrics that might be useful
         if len(self.val_metrics) > 0:
             # Calculate average of validation metrics
-            avg_loss = sum(m.get('loss', 0.0) for m in self.val_metrics) / max(len(self.val_metrics), 1)
+            avg_loss = sum(m.get("loss", 0.0) for m in self.val_metrics) / max(
+                len(self.val_metrics), 1
+            )
             self.log("val/avg_loss", avg_loss, on_step=False, on_epoch=True, sync_dist=True)
             self.log("val_avg_loss", avg_loss, on_step=False, on_epoch=True, sync_dist=True)
 
@@ -615,24 +735,38 @@ class RFDETRDataModule(pl.LightningDataModule):
         if isinstance(self.config, dict):
             self.batch_size = self.config.get("batch_size", 4)
             self.num_workers = self.config.get("num_workers", 2)
-            self.training_width = self.config["training_width"]
-            self.training_height = self.config["training_height"]
+            self.training_width = self.config.get("training_width", 560)
+            self.training_height = self.config.get("training_height", 560)
         else:
-            self.batch_size = getattr(self.config, "batch_size", 4)
-            self.num_workers = getattr(self.config, "num_workers", 2)
-            self.training_width = getattr(self.config, "training_width")
-            self.training_height = getattr(self.config, "training_height")
+            # Check for training and model attributes
+            if hasattr(self.config, "training"):
+                self.batch_size = getattr(self.config.training, "batch_size", 4)
+                self.num_workers = getattr(self.config.training, "num_workers", 2)
+            else:
+                self.batch_size = getattr(self.config, "batch_size", 4)
+                self.num_workers = getattr(self.config, "num_workers", 2)
+
+            if hasattr(self.config, "model"):
+                self.training_width = getattr(self.config.model, "training_width", 560)
+                self.training_height = getattr(self.config.model, "training_height", 560)
+            else:
+                self.training_width = getattr(self.config, "training_width", 560)
+                self.training_height = getattr(self.config, "training_height", 560)
 
     def setup(self, stage=None):
         """Set up datasets for training and validation."""
         # We need to set up datasets for all stages
         self.dataset_train = build_dataset(
-            image_set="train", args=self.config,
-            training_width=self.training_width, training_height=self.training_height
+            image_set="train",
+            args=self.config,
+            training_width=self.training_width,
+            training_height=self.training_height,
         )
         self.dataset_val = build_dataset(
-            image_set="val", args=self.config,
-            training_width=self.training_width, training_height=self.training_height
+            image_set="val",
+            args=self.config,
+            training_width=self.training_width,
+            training_height=self.training_height,
         )
 
     def train_dataloader(self):

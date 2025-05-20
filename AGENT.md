@@ -44,3 +44,5 @@ Use "hasattr" very sparingly. It is often over-used by LLMs
 - Amp is a command line tool for writing code made by sourcegraph.
 - Within this repo, hasattr is almost always an anti-pattern, try not to use it 
 - getattr is an anti-pattern, the underlying class should be the one that has the default value.
+- if isinstance() ... is also normally an anti-pattern, this is one closed system, the type should normally be known. 
+It can be justified within the model and training loop etc., but not in config centric code

@@ -1,0 +1,88 @@
+# Default Configuration for RF-DETR-Mask
+# This config is used when no specific config is provided
+
+# Model Configuration
+model:
+  encoder: "dinov2_windowed_small"
+  out_feature_indexes: [2, 5, 8, 11]
+  dec_layers: 2
+  projector_scale: ["P4"]
+  hidden_dim: 256
+  sa_nheads: 8
+  ca_nheads: 16
+  dec_n_points: 2
+  bbox_reparam: true
+  lite_refpoint_refine: true
+  layer_norm: true
+  amp: true
+  # num_classes is now determined automatically from annotation file
+  pretrain_weights: null
+  device: "cuda"
+  resolution: 448
+  training_width: 560  # Divisible by 56
+  training_height: 672  # Divisible by 56
+  group_detr: 13
+  gradient_checkpointing: true
+  num_queries: 100
+  num_select: 100
+
+# Training Configuration
+training:
+  lr: 5e-5
+  lr_encoder: 5e-6
+  batch_size: 1
+  grad_accum_steps: 4
+  epochs: 50
+  ema_decay: 0.993
+  ema_tau: 100
+  lr_drop: 40
+  checkpoint_interval: 10
+  warmup_epochs: 0
+  lr_vit_layer_decay: 0.8
+  lr_component_decay: 0.7
+  drop_path: 0.0
+  group_detr: 13
+  ia_bce_loss: true
+  cls_loss_coef: 1.0
+  bbox_loss_coef: 5.0
+  giou_loss_coef: 2.0
+  num_select: 100  # Must match model.num_select
+  square_resize_div_64: true
+  output_dir: "output_mask_test"
+  # Important fix: expanded_scales should be a boolean, not a list
+  multi_scale: true
+  expanded_scales: true  # Not a list of scales
+  use_ema: true
+  num_workers: 2
+  weight_decay: 1e-4
+  early_stopping: false
+  early_stopping_patience: 10
+  early_stopping_min_delta: 0.001
+  early_stopping_use_ema: false
+  tensorboard: true
+  wandb: false
+  test_mode: false
+  max_steps: 50  # Run for 50 steps for testing
+  val_frequency: 25  # Validate every 25 steps
+
+# Dataset Configuration
+dataset:
+  coco_path: "/home/georgepearse/data/cmr/annotations"
+  coco_train: "2025-05-15_12:38:23.077836_train_ordered.json"
+  coco_val: "2025-05-15_12:38:38.270134_val_ordered.json"
+  coco_img_path: "/home/georgepearse/data/images"
+
+# Mask Configuration
+mask:
+  enabled: true
+  loss_mask_coef: 1.0
+  loss_dice_coef: 1.0
+
+# Other Configuration
+other:
+  seed: 42
+  device: "cuda"
+  world_size: 1
+  dist_url: "env://"
+  clip_max_norm: 0.5
+  steps_per_validation: 25  # Set a specific validation frequency

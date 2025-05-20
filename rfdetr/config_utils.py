@@ -48,9 +48,12 @@ class ModelConfig(BaseModel):
     group_detr: int = Field(default=13, gt=0)
     gradient_checkpointing: bool = False
     num_queries: int = Field(default=300, gt=0)
+    # Fields that were previously accessed with getattr
+    set_cost_class: float = 2.0
+    set_cost_bbox: float = 5.0
+    set_cost_giou: float = 2.0
+    focal_alpha: float = 0.25
     num_select: int = Field(default=300, gt=0)
-
-
 
     @field_validator("training_width", "training_height")
     @classmethod
@@ -87,7 +90,7 @@ class TrainingConfig(BaseModel):
     giou_loss_coef: float = Field(default=2.0, ge=0)
     num_select: int = Field(default=300, gt=0)
     square_resize_div_64: bool = True
-    output_dir: str = "output"
+    output_dir: str = "exports"
     multi_scale: bool = True
     expanded_scales: Union[bool, list[int]] = True
     use_ema: bool = True
@@ -101,6 +104,17 @@ class TrainingConfig(BaseModel):
     wandb: bool = False
     project: Optional[str] = None
     run: Optional[str] = None
+    # Fields that were previously accessed with getattr
+    max_steps: int = 2000
+    val_frequency: int = 200
+    checkpoint_frequency: int = 200
+    eval_save_frequency: int = 200
+    export_onnx: bool = True
+    export_torch: bool = True
+    simplify_onnx: bool = True
+    export_on_validation: bool = True
+    fp16_eval: bool = False
+    opset_version: int = 17
 
 
 class DatasetConfig(BaseModel):
@@ -237,7 +251,7 @@ class RFDETRConfig(BaseModel):
         # Use the populate_args function to fill in missing values with defaults
         args = populate_args(**args_dict)
         return args
-        
+
     def to_args_dict(self):
         """Convert the configuration to a dictionary for compatibility with existing code.
         Unlike to_args(), this doesn't use populate_args to add default values."""
@@ -310,13 +324,13 @@ class RFDETRConfig(BaseModel):
             "dist_url": self.other.dist_url,
             "clip_max_norm": self.other.clip_max_norm,
             "steps_per_validation": self.other.steps_per_validation,
-            # Add any custom attributes from test_mode
-            "max_steps": getattr(self, "max_steps", None),
-            "val_frequency": getattr(self, "val_frequency", None),
-            "checkpoint_frequency": getattr(self, "checkpoint_frequency", None),
+            # Include these attributes directly
+            "max_steps": self.training.max_steps,
+            "val_frequency": self.training.val_frequency,
+            "checkpoint_frequency": self.training.checkpoint_frequency,
             "test_mode": self.dataset.test_mode,
         }
-        
+
         return args_dict
 
     def set_num_classes(self, num_classes: int) -> "RFDETRConfig":
@@ -330,7 +344,7 @@ class RFDETRConfig(BaseModel):
         # Update the model config
         self.model.num_classes = num_classes
         return self
-        
+
     def to_yaml(self, file_path: Union[str, Path]) -> None:
         """
         Save configuration to a YAML file.
@@ -339,18 +353,18 @@ class RFDETRConfig(BaseModel):
         """
         file_path = Path(file_path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         config_dict = self.model_dump()
-        
+
         try:
-            with open(file_path, 'w') as f:
+            with open(file_path, "w") as f:
                 yaml.dump(config_dict, f, default_flow_style=False)
             logger.info(f"Configuration saved to {file_path}")
         except Exception as e:
             error_msg = f"Error saving configuration to {file_path}"
             logger.error(f"{error_msg}: {e}")
             raise ConfigurationError(error_msg) from e
-    
+
     @classmethod
     def from_yaml(cls, yaml_path: Union[str, Path]) -> "RFDETRConfig":
         """

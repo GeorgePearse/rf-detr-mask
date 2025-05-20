@@ -25,46 +25,53 @@ from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger, WandbLogger
 from lightning.pytorch.strategies import DDPStrategy
 
 import rfdetr.util.misc as utils
+from rfdetr.config_utils import load_config
 from rfdetr.hooks import ONNXCheckpointHook
 from rfdetr.lightning_module import RFDETRDataModule, RFDETRLightningModule
-from rfdetr.config_utils import RFDETRConfig, load_config
 from rfdetr.util.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
-def main(config_path: str = "configs/default.yaml", 
-         output_dir: Optional[str] = None, 
-         test_mode: bool = False):
+def main(
+    config_path: str = "configs/default.yaml",
+    output_dir: Optional[str] = None,
+    test_mode: bool = False,
+):
     """Main training function."""
     # Load configuration from YAML file
     config = load_config(config_path)
-    
+
     # Apply overrides if provided
     if output_dir:
         config.training.output_dir = output_dir
-    
+
     if test_mode:
         config.dataset.test_mode = True
-        
+
     # Determine the number of classes from annotation file
     coco_path = Path(config.dataset.coco_path)
-    annotation_file = coco_path / config.dataset.coco_train if not Path(config.dataset.coco_train).is_absolute() else Path(config.dataset.coco_train)
-    
+    annotation_file = (
+        coco_path / config.dataset.coco_train
+        if not Path(config.dataset.coco_train).is_absolute()
+        else Path(config.dataset.coco_train)
+    )
+
     # Get number of classes from annotation file - fail if can't determine
     import json
+
     if not annotation_file.exists():
         raise FileNotFoundError(f"Annotation file not found: {annotation_file}")
-        
+
     with open(annotation_file) as f:
         annotations = json.load(f)
         categories = annotations.get("categories", [])
         if not categories:
             raise ValueError(f"No categories found in annotation file: {annotation_file}")
-        
+
         num_classes = len(categories)
         logger.info(f"Detected {num_classes} classes from annotation file")
-    
+
     # Set the num_classes in config
     config.set_num_classes(num_classes)
 
@@ -91,15 +98,17 @@ def main(config_path: str = "configs/default.yaml",
     args_dict = config.to_args_dict()
 
     # For test_limit or test_mode, adjust parameters for faster evaluation
-    if (config.dataset.val_limit is not None and config.dataset.val_limit > 0) or config.dataset.test_mode:
+    if (
+        config.dataset.val_limit is not None and config.dataset.val_limit > 0
+    ) or config.dataset.test_mode:
         logger.info("Running in test mode with reduced parameters")
         config.model.num_queries = 20  # Much smaller
-        config.model.hidden_dim = 64   # Much smaller
-        config.model.dec_layers = 1    # Just 1 decoder layer
+        config.model.hidden_dim = 64  # Much smaller
+        config.model.dec_layers = 1  # Just 1 decoder layer
         config.training.batch_size = 1
         config.training.grad_accum_steps = 1
-        config.model.device = "cpu"    # Force CPU usage to avoid CUDA OOM errors
-        config.other.device = "cpu"    # Also set device to CPU in other config
+        config.model.device = "cpu"  # Force CPU usage to avoid CUDA OOM errors
+        config.other.device = "cpu"  # Also set device to CPU in other config
 
         # Set a shorter run
         if config.dataset.test_mode:
@@ -116,7 +125,9 @@ def main(config_path: str = "configs/default.yaml",
     loggers = []
     if config.training.tensorboard:
         try:
-            tb_logger = TensorBoardLogger(save_dir=config.training.output_dir, name="lightning_logs")
+            tb_logger = TensorBoardLogger(
+                save_dir=config.training.output_dir, name="lightning_logs"
+            )
             loggers.append(tb_logger)
         except ModuleNotFoundError:
             logger.warning("TensorBoard not installed. Skipping TensorBoard logging.")
@@ -143,6 +154,22 @@ def main(config_path: str = "configs/default.yaml",
     callbacks = []
 
     # Model checkpoint callback
+    if isinstance(config, dict):
+        checkpoint_frequency = config.get(
+            "checkpoint_frequency",
+            config.get("val_frequency", config.get("eval_save_frequency", 200)),
+        )
+    else:
+        checkpoint_frequency = getattr(
+            config.training,
+            "checkpoint_frequency",
+            getattr(
+                config.training,
+                "val_frequency",
+                getattr(config.training, "eval_save_frequency", 200),
+            ),
+        )
+
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoints_dir,
         filename="checkpoint_step_{step:06d}-{val_mAP:.4f}",
@@ -150,11 +177,7 @@ def main(config_path: str = "configs/default.yaml",
         mode="max",
         save_top_k=3,
         save_last=True,
-        every_n_train_steps=getattr(
-            config,
-            "eval_save_frequency",
-            getattr(config, "checkpoint_frequency", getattr(config, "val_frequency", 200)),
-        ),
+        every_n_train_steps=checkpoint_frequency,
     )
     callbacks.append(checkpoint_callback)
 
@@ -220,11 +243,24 @@ def main(config_path: str = "configs/default.yaml",
     # Create Trainer
     accelerator = "cpu" if config.model.device == "cpu" else "auto"
 
-    # Set default values if not in test mode
-    if not config.dataset.test_mode:
-        max_steps = 1000
-        val_frequency = 200
-        
+    # Set default values for training parameters
+    # Initialize max_steps and val_frequency with default values
+    max_steps = 1000
+    val_frequency = (
+        config.other.steps_per_validation if config.other.steps_per_validation > 0 else 200
+    )
+    checkpoint_frequency = (
+        config.training.checkpoint_interval
+        if hasattr(config.training, "checkpoint_interval")
+        else 10
+    )
+
+    # Override if in test mode
+    if config.dataset.test_mode:
+        max_steps = 10
+        val_frequency = 5
+        checkpoint_frequency = 5
+
     trainer = pl.Trainer(
         max_steps=max_steps,
         max_epochs=None,  # No epoch limit, only step limit
@@ -288,6 +324,7 @@ def main(config_path: str = "configs/default.yaml",
 
 if __name__ == "__main__":
     import sys
+
     # Initialize logging
     logger.info(f"git:\n  {utils.get_sha()}\n")
     logger.info("Starting training with PyTorch Lightning - Iteration-based approach")
@@ -301,20 +338,20 @@ if __name__ == "__main__":
         for i in range(torch.cuda.device_count()):
             print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
             print(f"Memory: {torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB")
-    
+
     # Simple argument parsing for backwards compatibility
     config_path = "configs/default.yaml"
     output_dir = None
     test_mode = False
-    
+
     # Simple command-line argument parsing
     for i, arg in enumerate(sys.argv[1:]):
-        if arg == "--config" and i+1 < len(sys.argv)-1:
-            config_path = sys.argv[i+2]
-        elif arg == "--output_dir" and i+1 < len(sys.argv)-1:
-            output_dir = sys.argv[i+2]
+        if arg == "--config" and i + 1 < len(sys.argv) - 1:
+            config_path = sys.argv[i + 2]
+        elif arg == "--output_dir" and i + 1 < len(sys.argv) - 1:
+            output_dir = sys.argv[i + 2]
         elif arg == "--test_mode":
             test_mode = True
-    
+
     # Call main with parsed arguments
     main(config_path=config_path, output_dir=output_dir, test_mode=test_mode)

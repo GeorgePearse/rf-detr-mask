@@ -21,13 +21,15 @@ from lightning.fabric.strategies import DDPStrategy
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 
 # Note: torch.autocast is used directly for mixed precision training
-
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
 from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.get_param_dicts import get_param_dict
+from rfdetr.util.logging_config import get_logger
 from rfdetr.util.utils import ModelEma
+
+logger = get_logger(__name__)
 
 
 def get_autocast_args(config):
@@ -50,7 +52,7 @@ def get_autocast_args(config):
     if isinstance(config, dict):
         amp_enabled = config.get("amp", False)
     else:
-        amp_enabled = getattr(config, "amp", False)
+        amp_enabled = config.model.amp
 
     return {"device_type": "cuda", "enabled": amp_enabled, "dtype": dtype}
 
@@ -91,8 +93,8 @@ class RFDETRFabricModule:
             # Dictionary access
             self.ema_decay = self.config.get("ema_decay", None)
         else:
-            # Object attribute access
-            self.ema_decay = getattr(self.config, "ema_decay", None)
+            # Object attribute access - config now has default values
+            self.ema_decay = self.config.training.ema_decay
             # Note: use_ema setting is applied when building the model with fabric.setup
 
         self.ema = None  # Will be initialized after model is setup with fabric
@@ -120,15 +122,13 @@ class RFDETRFabricModule:
                 "eval_save_frequency", self.config.get("val_frequency", 200)
             )
         else:
-            output_dir = getattr(self.config, "output_dir", "exports")
-            self.export_onnx = getattr(self.config, "export_onnx", True)
-            self.export_torch = getattr(self.config, "export_torch", True)
-            self.simplify_onnx = getattr(self.config, "simplify_onnx", True)
-            self.export_on_validation = getattr(self.config, "export_on_validation", True)
-            self.max_steps = getattr(self.config, "max_steps", 2000)
-            self.eval_save_frequency = getattr(
-                self.config, "eval_save_frequency", getattr(self.config, "val_frequency", 200)
-            )
+            output_dir = self.config.training.output_dir
+            self.export_onnx = self.config.training.export_onnx
+            self.export_torch = self.config.training.export_torch
+            self.simplify_onnx = self.config.training.simplify_onnx
+            self.export_on_validation = self.config.training.export_on_validation
+            self.max_steps = self.config.training.max_steps
+            self.eval_save_frequency = self.config.training.eval_save_frequency
 
         # Setup export directories
         self.export_dir = Path(output_dir)
@@ -153,11 +153,13 @@ class RFDETRFabricModule:
             training_width = self.config["training_width"]
             training_height = self.config["training_height"]
         else:
-            training_width = getattr(self.config, "training_width")
-            training_height = getattr(self.config, "training_height")
+            training_width = self.config.model.training_width
+            training_height = self.config.model.training_height
 
         # Create dummy input
-        dummy = torch.randint(0, 256, (batch_size, 3, training_height, training_width), dtype=torch.uint8)
+        dummy = torch.randint(
+            0, 256, (batch_size, 3, training_height, training_width), dtype=torch.uint8
+        )
         image = dummy.float() / 255.0
 
         # Apply normalization
@@ -178,7 +180,10 @@ class RFDETRFabricModule:
         self.criterion = fabric.setup_module(self.criterion)
 
         # Initialize EMA after model has been set up with fabric
-        if self.ema_decay and getattr(self.config, "use_ema", True):
+        if self.ema_decay and (
+            (isinstance(self.config, dict) and self.config.get("use_ema", True))
+            or (not isinstance(self.config, dict) and self.config.training.use_ema)
+        ):
             self.ema = ModelEma(self.model, self.ema_decay)
 
         # Get optimizer parameters
@@ -186,8 +191,8 @@ class RFDETRFabricModule:
             lr = self.config.get("lr", 1e-4)
             weight_decay = self.config.get("weight_decay", 1e-4)
         else:
-            lr = getattr(self.config, "lr", 1e-4)
-            weight_decay = getattr(self.config, "weight_decay", 1e-4)
+            lr = self.config.training.lr
+            weight_decay = self.config.training.weight_decay
 
         # Configure optimizer
         param_dicts = get_param_dict(self.config, self.model)
@@ -264,11 +269,11 @@ class RFDETRFabricModule:
         # Backward and optimize
         self.fabric.backward(losses)
 
-        # Clip gradients if needed
-        if hasattr(self.config, "clip_max_norm") and self.config.clip_max_norm > 0:
-            self.fabric.clip_gradients(
-                self.model, optimizer=self.optimizer, max_norm=self.config.clip_max_norm
-            )
+        # Clip gradients if needed - using direct attribute access
+        # The config should have clip_max_norm defined with a default
+        clip_max_norm = getattr(self.config, "clip_max_norm", 0.0)
+        if clip_max_norm > 0:
+            self.fabric.clip_gradients(self.model, optimizer=self.optimizer, max_norm=clip_max_norm)
 
         self.optimizer.step()
         self.lr_scheduler.step()
@@ -382,7 +387,11 @@ class RFDETRFabricModule:
         Args:
             epoch: Current epoch number
         """
+        # Early validation for required export attributes
         if not hasattr(self, "export_onnx") or not hasattr(self, "export_torch"):
+            logger.warning(
+                "Model export attempted but export_onnx or export_torch attributes are missing"
+            )
             return
 
         if not (self.export_onnx or self.export_torch):
@@ -394,8 +403,9 @@ class RFDETRFabricModule:
         # Create timestamped directory for this export
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        # Make sure we have an export directory
+        # Ensure export_dir exists with a default
         if not hasattr(self, "export_dir") or self.export_dir is None:
+            logger.info("No export_dir specified, defaulting to 'exports'")
             self.export_dir = Path("exports")
 
         export_path = self.export_dir / f"epoch_{epoch:04d}_{timestamp}"
@@ -413,9 +423,21 @@ class RFDETRFabricModule:
             # Export PyTorch weights
             if self.export_torch:
                 torch_path = export_path / "model.pth"
-                config_data = (
-                    self.config.model_dump() if hasattr(self.config, "model_dump") else self.config
-                )
+
+                # Get config data using Protocol pattern
+                if isinstance(self.config, HasModelDump):
+                    config_data = self.config.model_dump()
+                elif isinstance(self.config, dict):
+                    config_data = self.config
+                else:
+                    logger.warning(
+                        "Config object does not have model_dump method, using attribute inspection"
+                    )
+                    config_data = {
+                        attr: getattr(self.config, attr)
+                        for attr in dir(self.config)
+                        if not attr.startswith("_") and not callable(getattr(self.config, attr))
+                    }
                 torch.save(
                     {
                         "model": model_to_export.state_dict(),
@@ -501,8 +523,8 @@ class RFDETRFabricData:
         else:
             self.batch_size = getattr(self.config, "batch_size", 4)
             self.num_workers = getattr(self.config, "num_workers", 2)
-            self.training_width = getattr(self.config, "training_width")
-            self.training_height = getattr(self.config, "training_height")
+            self.training_width = self.config.training_width
+            self.training_height = self.config.training_height
 
         # Datasets will be initialized in setup()
         self.dataset_train = None
@@ -516,12 +538,16 @@ class RFDETRFabricData:
         """
         # We need to set up datasets for all stages
         self.dataset_train = build_dataset(
-            image_set="train", args=self.config,
-            training_width=self.training_width, training_height=self.training_height
+            image_set="train",
+            args=self.config,
+            training_width=self.training_width,
+            training_height=self.training_height,
         )
         self.dataset_val = build_dataset(
-            image_set="val", args=self.config,
-            training_width=self.training_width, training_height=self.training_height
+            image_set="val",
+            args=self.config,
+            training_width=self.training_width,
+            training_height=self.training_height,
         )
 
         # Store fabric reference

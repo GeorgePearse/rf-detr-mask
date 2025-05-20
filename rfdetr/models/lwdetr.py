@@ -23,17 +23,15 @@ LW-DETR model and criterion classes
 import copy
 import math
 from logging import getLogger
-from typing import Callable
 
 import torch
-import torch.nn.functional as transforms_f
 import torch.nn.functional as F
 from torch import nn
 
 from rfdetr.models.backbone import build_backbone
 from rfdetr.models.matcher import build_matcher
 from rfdetr.models.transformer import build_transformer
-
+from rfdetr.protocols import HasExport
 from rfdetr.util import box_ops
 from rfdetr.util.misc import (
     NestedTensor,
@@ -142,12 +140,7 @@ class LWDETR(nn.Module):
         self._forward_origin = self.forward
         self.forward = self.forward_export
         for _name, m in self.named_modules():
-            if (
-                hasattr(m, "export")
-                and isinstance(m.export, Callable)
-                and hasattr(m, "_export")
-                and not m._export
-            ):
+            if isinstance(m, HasExport) and hasattr(m, "_export") and not m._export:
                 m.export()
 
     def forward(self, samples: NestedTensor, targets=None):
@@ -918,7 +911,7 @@ def build_model(args):
     torch.device(args.device)
 
     target_shape = (args.training_height, args.training_width)
-    logger.info(f'Target shape within the model is {target_shape}')
+    logger.info(f"Target shape within the model is {target_shape}")
 
     backbone = build_backbone(
         encoder=args.encoder,
