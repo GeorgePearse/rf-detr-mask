@@ -91,7 +91,7 @@ def main(config_path: str = "configs/default.yaml"):
     random.seed(seed)
 
     # Create Lightning Module and Data Module
-    model = RFDETRLightningModule(
+    lightning_model = RFDETRLightningModule(
         training_config=config.training,
         model_config=config.model,
         num_classes=num_classes,
@@ -139,7 +139,7 @@ def main(config_path: str = "configs/default.yaml"):
         # Learning rate monitor
         LearningRateMonitor(logging_interval="step"),
         # Progress bar
-        TQDMProgressBar(refresh_rate=1),
+        #TQDMProgressBar(refresh_rate=1),
         #EarlyStopping(
         #    monitor="val_mAP",
         #    mode="max",
@@ -167,7 +167,7 @@ def main(config_path: str = "configs/default.yaml"):
         accelerator="cuda",
         devices=torch.cuda.device_count(),
     )
-    trainer.fit(model, datamodule=data_module)
+    trainer.fit(lightning_model, datamodule=data_module)
 
 
 if __name__ == "__main__":
