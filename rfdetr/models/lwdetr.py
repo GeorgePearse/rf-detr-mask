@@ -31,7 +31,6 @@ from torch import nn
 from rfdetr.models.backbone import build_backbone
 from rfdetr.models.matcher import build_matcher
 from rfdetr.models.transformer import build_transformer
-from rfdetr.protocols import HasExport
 from rfdetr.util import box_ops
 from rfdetr.util.misc import (
     NestedTensor,
@@ -116,7 +115,6 @@ class LWDETR(nn.Module):
             [copy.deepcopy(self.class_embed) for _ in range(group_detr)]
         )
 
-        self._export = False
 
     def reinitialize_detection_head(self, num_classes):
         # Create new classification head
@@ -135,13 +133,6 @@ class LWDETR(nn.Module):
             nn.ModuleList([copy.deepcopy(self.class_embed) for _ in range(self.group_detr)]),
         )
 
-    def export(self):
-        self._export = True
-        self._forward_origin = self.forward
-        self.forward = self.forward_export
-        for _name, m in self.named_modules():
-            if isinstance(m, HasExport) and hasattr(m, "_export") and not m._export:
-                m.export()
 
     def forward(self, samples: NestedTensor, targets=None):
         """The forward expects a NestedTensor, which consists of:
@@ -217,31 +208,6 @@ class LWDETR(nn.Module):
         cls_enc = torch.cat(cls_enc, dim=1)
         out["enc_outputs"] = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
         return out
-
-    def forward_export(self, tensors):
-        srcs, _, poss = self.backbone(tensors)
-        # only use one group in inference
-        refpoint_embed_weight = self.refpoint_embed.weight[: self.num_queries]
-        query_feat_weight = self.query_feat.weight[: self.num_queries]
-
-        hs, ref_unsigmoid, hs_enc, ref_enc = self.transformer(
-            srcs, None, poss, refpoint_embed_weight, query_feat_weight
-        )
-
-        if self.bbox_reparam:
-            outputs_coord_delta = self.bbox_embed(hs)
-            outputs_coord_cxcy = (
-                outputs_coord_delta[..., :2] * ref_unsigmoid[..., 2:] + ref_unsigmoid[..., :2]
-            )
-            outputs_coord_wh = outputs_coord_delta[..., 2:].exp() * ref_unsigmoid[..., 2:]
-            outputs_coord = torch.concat([outputs_coord_cxcy, outputs_coord_wh], dim=-1)
-        else:
-            outputs_coord = (self.bbox_embed(hs) + ref_unsigmoid).sigmoid()
-        outputs_class = self.class_embed(hs)
-        outputs_mask = (
-            self.mask_embed(hs).reshape(hs.shape[0], hs.shape[1], hs.shape[2], 28, 28).half()
-        )
-        return outputs_coord, outputs_class, outputs_mask, ref_unsigmoid
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord, outputs_mask=None):
