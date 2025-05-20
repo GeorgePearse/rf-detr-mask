@@ -16,7 +16,6 @@ import torch.amp
 
 import rfdetr.util.misc as utils
 from rfdetr.adapters.config import RFDETRConfig
-from rfdetr.datasets import get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
 from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.logging_config import get_logger
@@ -229,23 +228,14 @@ class RFDETRLightningModule(pl.LightningModule):
             # Return minimal output to keep the validation process from crashing
             return None
 
-    def on_validation_epoch_start(self):
+    def on_validation_epoch_start(self,):
         """Set up validation epoch and export model."""
         # Reset metrics
-        self.val_metrics = []
-
-        # Access trainer.datamodule directly - will raise AttributeError if missing
-        dataset_val = self.trainer.datamodule.dataset_val
-        base_ds = get_coco_api_from_dataset(dataset_val)
-
-        self.coco_evaluator = CocoEvaluator(base_ds, iou_types=("segm", "bbox"))
+        pass
 
     def on_validation_batch_end(self, outputs, batch, batch_idx):
         """Process validation batch results."""
-        if outputs is None:
-            return
-
-        self.coco_evaluator.update(outputs["results"])
+        pass
 
     def on_validation_epoch_end(self):
         """Process validation epoch results."""
