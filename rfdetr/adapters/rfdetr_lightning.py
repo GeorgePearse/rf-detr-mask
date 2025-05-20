@@ -15,7 +15,7 @@ import torch
 import torch.amp
 
 import rfdetr.util.misc as utils
-from rfdetr.config import RFDETRConfig
+from rfdetr.adapters.config import RFDETRConfig
 from rfdetr.datasets import get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
 from rfdetr.models import build_criterion_and_postprocessors, build_model

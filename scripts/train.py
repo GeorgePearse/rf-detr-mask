@@ -25,7 +25,7 @@ from lightning.pytorch.callbacks import (
 from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 
-from rfdetr.config import ModelConfig, load_config
+from rfdetr.adapters.config import ModelConfig, load_config
 from rfdetr.adapters.data_module import RFDETRDataModule
 from rfdetr.adapters.rfdetr_lightning import RFDETRLightningModule
 from rfdetr.adapters.training_config import TrainingConfig
