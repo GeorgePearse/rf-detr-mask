@@ -156,7 +156,7 @@ def main(config_path: str = "configs/default.yaml"):
         #    mode="max",
         #    patience=config.training.early_stopping_patience,
         #    min_delta=config.training.early_stopping_min_delta,
-        ),
+        #),
     ]
 
     # Setup strategy for distributed training
