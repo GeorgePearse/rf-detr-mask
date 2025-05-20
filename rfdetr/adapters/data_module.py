@@ -9,6 +9,7 @@ import rfdetr.util.misc as utils
 from rfdetr.adapters.config import DataConfig
 from rfdetr.adapters.dataset import CocoDetection
 from rfdetr.util.logging_config import get_logger
+import os
 
 logger = get_logger(__name__)
 
