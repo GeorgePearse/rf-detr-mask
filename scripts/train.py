@@ -26,8 +26,9 @@ from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 
 from rfdetr.config import ModelConfig, load_config
-from rfdetr.data_module import RFDETRDataModule
-from rfdetr.rfdetr_lightning import RFDETRLightningModule
+from adapters.data_module import RFDETRDataModule
+from adapters.rfdetr_lightning import RFDETRLightningModule
+from adapters.training_config import TrainingConfig
 from rfdetr.util.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -58,8 +59,8 @@ def get_number_of_classes(config: ModelConfig) -> int:
 
 def main(config_path: str = "configs/default.yaml"):
     """Main training function."""
-    # Load configuration from YAML file
-    config = load_config(config_path)
+    # Load configuration from YAML file using adapter's TrainingConfig
+    config = TrainingConfig.from_yaml(config_path) if config_path.endswith('.yaml') else load_config(config_path)
 
     # Determine the number of classes from annotation file
     num_classes = get_number_of_classes(config)
@@ -112,13 +113,13 @@ def main(config_path: str = "configs/default.yaml"):
     )
     # Get checkpoint_frequency from config or use default value of 10
     checkpoint_frequency = config.training.checkpoint_interval
-    
+
     # Override if in test mode
     if config.dataset.test_mode:
         max_steps = 10
         val_frequency = 5
         checkpoint_frequency = 5
-        
+
     # Setup callbacks
     callbacks = [
         ModelCheckpoint(
