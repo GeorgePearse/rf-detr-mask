@@ -864,7 +864,7 @@ class MLP(nn.Module):
         return x
 
 
-def build_model(args):
+def build_model(model_config: ModelConfig):
     # the `num_classes` naming here is somewhat misleading.
     # it indeed corresponds to `max_obj_id + 1`, where max_obj_id
     # is the maximum id for a class in your dataset. For example,
@@ -873,32 +873,32 @@ def build_model(args):
     # you should pass `num_classes` to be 2 (max_obj_id + 1).
     # For more details on this, check the following discussion
     # https://github.com/facebookresearch/detr/issues/108#issuecomment-650269223
-    num_classes = args.num_classes + 1
-    torch.device(args.device)
+    num_classes = model_config.num_classes + 1
+    torch.device(model_config.device)
 
-    target_shape = (args.training_height, args.training_width)
+    target_shape = (model_config.training_height, model_config.training_width)
     logger.info(f"Target shape within the model is {target_shape}")
 
     backbone = build_backbone(
-        encoder=args.encoder,
-        vit_encoder_num_layers=getattr(args, "vit_encoder_num_layers", None),
-        pretrained_encoder=getattr(args, "pretrained_encoder", None),
-        window_block_indexes=getattr(args, "window_block_indexes", None),
-        drop_path=getattr(args, "drop_path", 0.0),
-        out_channels=args.hidden_dim,
-        out_feature_indexes=args.out_feature_indexes,
-        projector_scale=args.projector_scale,
-        use_cls_token=getattr(args, "use_cls_token", False),
-        hidden_dim=args.hidden_dim,
-        position_embedding=getattr(args, "position_embedding", "sine"),
-        freeze_encoder=getattr(args, "freeze_encoder", False),
-        layer_norm=getattr(args, "layer_norm", True),
+        encoder=model_config.encoder,
+        vit_encoder_num_layers=model_config.vit_encoder_num_layers,
+        pretrained_encoder=model_config.pretrained_encoder,
+        window_block_indexes=model_config.window_block_indexes,
+        drop_path=model_config.drop_path,
+        out_channels=model_config.hidden_dim,
+        out_feature_indexes=model_config.out_feature_indexes,
+        projector_scale=model_config.projector_scale,
+        use_cls_token=model_config.use_cls_token,
+        hidden_dim=model_config.hidden_dim,
+        position_embedding=model_config.position_embedding,
+        freeze_encoder=model_config.freeze_encoder,
+        layer_norm=model_config.layer_norm,
         target_shape=target_shape,
-        rms_norm=getattr(args, "rms_norm", False),
-        backbone_lora=getattr(args, "backbone_lora", False),
-        force_no_pretrain=getattr(args, "force_no_pretrain", False),
-        gradient_checkpointing=getattr(args, "gradient_checkpointing", False),
-        load_dinov2_weights=getattr(args, "pretrain_weights", None) is None,
+        rms_norm=model_config.rms_norm,
+        backbone_lora=model_config.backbone_lora,
+        force_no_pretrain=model_config.force_no_pretrain,
+        gradient_checkpointing=model_config.gradient_checkpointing,
+        load_dinov2_weights=model_config.pretrain_weights is None,
     )
     # Check if encoder_only is defined and True
     if hasattr(args, "encoder_only") and args.encoder_only:
@@ -912,22 +912,20 @@ def build_model(args):
 
     # Create a dictionary of args for the transformer with num_feature_levels
     transformer_args = {
-        "hidden_dim": args.hidden_dim,
-        "sa_nheads": getattr(args, "sa_nheads", 8),
-        "ca_nheads": getattr(args, "ca_nheads", 8),
-        "num_queries": args.num_queries,
-        "dropout": getattr(args, "dropout", 0.0),
-        "dim_feedforward": getattr(args, "dim_feedforward", 2048),
-        "dec_layers": args.dec_layers,
+        "hidden_dim": transformer_config.hidden_dim,
+        "sa_nheads": transformer_config.sa_nheads,
+        "ca_nheads": transformer_config.ca_nheads,
+        "num_queries": transformer_config.num_queries,
+        "dropout": transformer_config.dropout,
+        "dim_feedforward": transformer_config.dim_feedforward,
+        "dec_layers": transformer_config.dec_layers,
         "return_intermediate_dec": True,
-        "group_detr": args.group_detr,
+        "group_detr": transformer_config.group_detr,
         "num_feature_levels": num_feature_levels,
-        "dec_n_points": args.dec_n_points,
-        "lite_refpoint_refine": getattr(args, "lite_refpoint_refine", False),
-        "decoder_norm": getattr(
-            args, "decoder_norm_type", "LN"
-        ),  # Match the parameter name expected in build_transformer
-        "bbox_reparam": getattr(args, "bbox_reparam", False),
+        "dec_n_points": transformer_config.dec_n_points,
+        "lite_refpoint_refine": transformer_config.lite_refpoint_refine,
+        "decoder_norm": transformer_config.decoder_norm,
+        "bbox_reparam": transformer_config.bbox_reparam,
     }
 
     # Build the transformer with the args dictionary

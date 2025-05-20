@@ -24,6 +24,20 @@ DEVICE = (
     "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
 )
 
+class TransformerConfig(BaseModel): 
+    hidden_dim: int = Field(default=256, gt=0)
+    sa_nheads: int = Field(default=8, gt=0)
+    ca_nheads: int = Field(default=8, gt=0)
+    num_queries: int = Field(default=100, gt=0)
+    dropout: float = Field(default=0.0, ge=0.0, le=1.0)
+    dim_feedforward: int = Field(default=2048, gt=0)
+    dec_layers: int = Field(default=3, ge=1)
+    group_detr: int = Field(default=13, ge=0)
+    num_feature_levels: int = Field(default=4, ge=1)
+    dec_n_points: int = Field(default=2, ge=1)
+    lite_refpoint_refine: bool = False
+    decoder_norm: Literal["LN", "BN"] = "LN"
+    bbox_reparam: bool = False
 
 # Basic model configurations
 class ModelConfig(BaseModel):
@@ -31,6 +45,7 @@ class ModelConfig(BaseModel):
     Comprehensive configuration for RF-DETR model construction and training.
     This replaces the use of dictionary arguments or attribute access objects.
     """
+    transformer: TransformerConfig
 
     # Core model parameters
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base", "dinov2_small", "dinov2_base"]
