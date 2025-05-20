@@ -151,11 +151,11 @@ def main(config_path: str = "configs/default.yaml"):
         LearningRateMonitor(logging_interval="step"),
         # Progress bar
         TQDMProgressBar(refresh_rate=1),
-        EarlyStopping(
-            monitor="val_mAP",
-            mode="max",
-            patience=config.training.early_stopping_patience,
-            min_delta=config.training.early_stopping_min_delta,
+        #EarlyStopping(
+        #    monitor="val_mAP",
+        #    mode="max",
+        #    patience=config.training.early_stopping_patience,
+        #    min_delta=config.training.early_stopping_min_delta,
         ),
     ]
 

@@ -81,7 +81,7 @@ data:
   training_annotation_file: "2025-05-15_12:38:23.077836_train_ordered.json"
   validation_annotation_file: "2025-05-15_12:38:38.270134_val_ordered.json"
   annotation_directory: "/home/georgepearse/data/cmr/annotations"
-  test_mode: true
+  test_mode: false
   input_training_width: 560
   input_training_height: 672
 
