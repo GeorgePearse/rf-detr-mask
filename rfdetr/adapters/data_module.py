@@ -4,6 +4,7 @@ import lightning.pytorch as pl
 
 import torch
 import numpy as np
+import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
@@ -17,7 +18,7 @@ import os
 logger = get_logger(__name__)
 
 
-def get_training_transforms(image_width: int, image_height: int, mask_enabled: bool = True) -> A.Compose:
+def get_training_transforms(image_width: int, image_height: int) -> A.Compose:
     """Get training transforms using Albumentations.
     
     These transforms include data augmentation suitable for training.
@@ -31,9 +32,7 @@ def get_training_transforms(image_width: int, image_height: int, mask_enabled: b
         Albumentations composition of transforms
     """
     transform_list = [
-        A.Resize(height=image_height, width=image_width),
-        A.HorizontalFlip(p=0.5),
-        A.VerticalFlip(p=0.5),
+        A.PadIfNeeded(min_height=image_height, min_width=image_width, border_mode=cv2.BORDER_CONSTANT, value=0),
         A.RandomBrightnessContrast(p=0.2),
         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
@@ -44,14 +43,10 @@ def get_training_transforms(image_width: int, image_height: int, mask_enabled: b
         'bbox_params': A.BboxParams(format='pascal_voc', label_fields=['category_ids'])
     }
     
-    # Add mask handling if enabled
-    if mask_enabled:
-        transform_params['mask_params'] = A.MaskParams(format='mask')
-    
     return A.Compose(transform_list, **transform_params)
 
 
-def get_validation_transforms(image_width: int, image_height: int, mask_enabled: bool = True) -> A.Compose:
+def get_validation_transforms(image_width: int, image_height: int) -> A.Compose:
     """Get validation transforms using Albumentations.
     
     These are minimal transforms without augmentation, suitable for validation.
