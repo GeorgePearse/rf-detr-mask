@@ -53,6 +53,7 @@ class RFDETRDataModule(pl.LightningDataModule):
 
         # Data paths
         self.image_directory = config.image_directory
+        self.annotation_directory = config.annotation_directory
         self.training_annotation_file = config.training_annotation_file
         self.validation_annotation_file = config.validation_annotation_file
 
@@ -85,7 +86,7 @@ class RFDETRDataModule(pl.LightningDataModule):
         )
         self.dataset_train = CocoDetection(
             img_folder=self.image_directory,
-            ann_file=self.training_annotation_file,
+            ann_file=os.path.join(self.annotation_directory, self.training_annotation_file),
             transforms=self.training_transforms,
             test_limit=None,
         )
@@ -95,7 +96,7 @@ class RFDETRDataModule(pl.LightningDataModule):
         )
         self.dataset_val = CocoDetection(
             img_folder=self.image_directory,
-            ann_file=self.validation_annotation_file,
+            ann_file=os.path.join(self.annotation_directory, self.validation_annotation_file),
             transforms=self.validation_transforms,
             test_limit=None,
         )
