@@ -3,6 +3,20 @@
 
 # Model Configuration
 model:
+  transformer:
+    hidden_dim: 256
+    sa_nheads: 8
+    ca_nheads: 16
+    num_queries: 100
+    dropout: 0.0
+    dim_feedforward: 2048
+    dec_layers: 2
+    group_detr: 13
+    num_feature_levels: 4
+    dec_n_points: 2
+    lite_refpoint_refine: true
+    decoder_norm: "LN"
+    bbox_reparam: true
   encoder: "dinov2_windowed_small"
   out_feature_indexes: [2, 5, 8, 11]
   dec_layers: 2
