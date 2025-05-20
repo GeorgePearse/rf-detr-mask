@@ -16,18 +16,9 @@ import torch
 from lightning.pytorch.callbacks import Callback
 
 import rfdetr.util.misc as utils
-
-# Try to import ONNX-related modules
-try:
-    import onnx
-    import onnxsim
-
-    from rfdetr.deploy._onnx import OnnxOptimizer
-
-    ONNX_AVAILABLE = True
-except ImportError:
-    ONNX_AVAILABLE = False
-    print("ONNX libraries not fully available - will only export PyTorch weights")
+import onnx
+import onnxsim
+from rfdetr.deploy._onnx import OnnxOptimizer
 
 
 class ONNXCheckpointHook(Callback):
