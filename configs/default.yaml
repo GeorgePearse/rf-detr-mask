@@ -83,6 +83,8 @@ data:
   coco_val: "2025-05-15_12:38:38.270134_val_ordered.json"
   coco_img_path: "/home/georgepearse/data/images"
   test_mode: false
+  training_width: 560
+  training_height: 672
 
 # Mask Configuration
 mask:
