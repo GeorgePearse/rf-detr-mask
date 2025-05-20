@@ -154,7 +154,6 @@ def main(config_path: str = "configs/default.yaml"):
         strategy = DDPStrategy(find_unused_parameters=True, gradient_as_bucket_view=True)
 
     trainer = pl.Trainer(
-        max_steps=max_steps,
         max_epochs=None,  # No epoch limit, only step limit
         callbacks=callbacks,
         logger=loggers,
