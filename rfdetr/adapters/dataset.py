@@ -1,4 +1,5 @@
 import torchvision
+import torch
 
 class ConvertCoco:
     def __call__(self, image, target):
