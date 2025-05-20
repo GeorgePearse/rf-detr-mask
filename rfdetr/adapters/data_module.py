@@ -33,16 +33,22 @@ def get_training_transforms(image_width: int, image_height: int, mask_enabled: b
     transform_list = [
         A.Resize(height=image_height, width=image_width),
         A.HorizontalFlip(p=0.5),
+        A.VerticalFlip(p=0.5),
         A.RandomBrightnessContrast(p=0.2),
         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
     ]
     
-    # Always use the same Compose parameters, we'll handle masks separately in the dataset
-    return A.Compose(
-        transform_list,
-        bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']),
-    )
+    # Create proper transform parameters including mask handling if needed
+    transform_params = {
+        'bbox_params': A.BboxParams(format='pascal_voc', label_fields=['category_ids'])
+    }
+    
+    # Add mask handling if enabled
+    if mask_enabled:
+        transform_params['mask_params'] = A.MaskParams(format='mask')
+    
+    return A.Compose(transform_list, **transform_params)
 
 
 def get_validation_transforms(image_width: int, image_height: int, mask_enabled: bool = True) -> A.Compose:

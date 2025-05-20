@@ -92,13 +92,10 @@ class CocoDetection(torchvision.datasets.CocoDetection):
             
             # Skip transforms and return minimal output for empty or problematic samples
             if len(target["boxes"]) == 0 or torch.any(target["boxes"][:, 0] >= target["boxes"][:, 2]) or torch.any(target["boxes"][:, 1] >= target["boxes"][:, 3]):
-                # Convert image to tensor manually
+                # Convert image to tensor using albumentations
                 img_np = np.array(img)
-                img_tensor = torch.from_numpy(img_np).permute(2, 0, 1).float() / 255.0
-                # Normalize using ImageNet stats
-                mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-                std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-                img_tensor = (img_tensor - mean) / std
+                transformed = self._transforms(image=img_np)
+                img_tensor = transformed["image"]  # Already includes normalization from albumentations
                 
                 # Create empty target
                 h, w = img_np.shape[:2]
@@ -110,7 +107,7 @@ class CocoDetection(torchvision.datasets.CocoDetection):
                     target["area"] = torch.zeros(0, dtype=torch.float32)
                 if "iscrowd" in target:
                     target["iscrowd"] = torch.zeros(0, dtype=torch.uint8)
-                target["size"] = torch.tensor([h, w])
+                target["size"] = torch.tensor([img_tensor.shape[1], img_tensor.shape[2]])
                 target["orig_size"] = torch.tensor([h, w])
                 
                 return img_tensor, target
@@ -120,9 +117,9 @@ class CocoDetection(torchvision.datasets.CocoDetection):
                 # Convert from PIL image to numpy for albumentations
                 img_np = np.array(img)
                 
-                # Just transform the image, we'll handle boxes separately
+                # Let albumentations do the transformation
                 transformed = self._transforms(image=img_np)
-                transformed_img = transformed["image"]  # This is already a tensor from ToTensorV2
+                transformed_img = transformed["image"]  # This is already a tensor with normalization
                 
                 # Resize boxes manually
                 src_w, src_h = img.size
