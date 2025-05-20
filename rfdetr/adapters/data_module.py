@@ -1,8 +1,11 @@
 from typing import Optional
 
 import lightning.pytorch as pl
+
 import torch
-import torchvision.transforms as transforms
+import numpy as np
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 
 import rfdetr.util.misc as utils
@@ -14,21 +17,49 @@ import os
 logger = get_logger(__name__)
 
 
-def get_training_transforms(image_width: int, image_height: int) -> transforms.Compose:
-    return transforms.Compose(
+def get_training_transforms(image_width: int, image_height: int) -> A.Compose:
+    """Get training transforms using Albumentations.
+    
+    These transforms include data augmentation suitable for training.
+    
+    Args:
+        image_width: Target image width
+        image_height: Target image height
+        
+    Returns:
+        Albumentations composition of transforms
+    """
+    return A.Compose(
         [
-            transforms.ToTensor(),
-            transforms.Resize((image_width, image_height)),
-        ]
+            A.Resize(height=image_height, width=image_width),
+            A.HorizontalFlip(p=0.5),
+            A.RandomBrightnessContrast(p=0.2),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ToTensorV2(),
+        ],
+        bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']),
     )
 
 
-def get_validation_transforms(image_width: int, image_height: int) -> transforms.Compose:
-    return transforms.Compose(
+def get_validation_transforms(image_width: int, image_height: int) -> A.Compose:
+    """Get validation transforms using Albumentations.
+    
+    These are minimal transforms without augmentation, suitable for validation.
+    
+    Args:
+        image_width: Target image width
+        image_height: Target image height
+        
+    Returns:
+        Albumentations composition of transforms
+    """
+    return A.Compose(
         [
-            transforms.ToTensor(),
-            transforms.Resize((image_width, image_height)),
-        ]
+            A.Resize(height=image_height, width=image_width),
+            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ToTensorV2(),
+        ],
+        bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']),
     )
 
 
