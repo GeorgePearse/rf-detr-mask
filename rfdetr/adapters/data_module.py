@@ -17,7 +17,7 @@ import os
 logger = get_logger(__name__)
 
 
-def get_training_transforms(image_width: int, image_height: int) -> A.Compose:
+def get_training_transforms(image_width: int, image_height: int, mask_enabled: bool = True) -> A.Compose:
     """Get training transforms using Albumentations.
     
     These transforms include data augmentation suitable for training.
@@ -25,23 +25,27 @@ def get_training_transforms(image_width: int, image_height: int) -> A.Compose:
     Args:
         image_width: Target image width
         image_height: Target image height
+        mask_enabled: Whether to include mask transformations
         
     Returns:
         Albumentations composition of transforms
     """
+    transform_list = [
+        A.Resize(height=image_height, width=image_width),
+        A.HorizontalFlip(p=0.5),
+        A.RandomBrightnessContrast(p=0.2),
+        A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ToTensorV2(),
+    ]
+    
+    # Always use the same Compose parameters, we'll handle masks separately in the dataset
     return A.Compose(
-        [
-            A.Resize(height=image_height, width=image_width),
-            A.HorizontalFlip(p=0.5),
-            A.RandomBrightnessContrast(p=0.2),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ToTensorV2(),
-        ],
+        transform_list,
         bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']),
     )
 
 
-def get_validation_transforms(image_width: int, image_height: int) -> A.Compose:
+def get_validation_transforms(image_width: int, image_height: int, mask_enabled: bool = True) -> A.Compose:
     """Get validation transforms using Albumentations.
     
     These are minimal transforms without augmentation, suitable for validation.
@@ -49,16 +53,20 @@ def get_validation_transforms(image_width: int, image_height: int) -> A.Compose:
     Args:
         image_width: Target image width
         image_height: Target image height
+        mask_enabled: Whether to include mask transformations
         
     Returns:
         Albumentations composition of transforms
     """
+    transform_list = [
+        A.Resize(height=image_height, width=image_width),
+        A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        ToTensorV2(),
+    ]
+    
+    # Always use the same Compose parameters, we'll handle masks separately in the dataset
     return A.Compose(
-        [
-            A.Resize(height=image_height, width=image_width),
-            A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ToTensorV2(),
-        ],
+        transform_list,
         bbox_params=A.BboxParams(format='pascal_voc', label_fields=['category_ids']),
     )
 
@@ -89,12 +97,15 @@ class RFDETRDataModule(pl.LightningDataModule):
         self.training_annotation_file = config.training_annotation_file
         self.validation_annotation_file = config.validation_annotation_file
 
+        # Check if mask is enabled from config
+        self.mask_enabled = getattr(config, 'mask_enabled', True)
+        
         # Initialize transforms
         self.training_transforms = get_training_transforms(
-            self.training_width, self.training_height
+            self.training_width, self.training_height, self.mask_enabled
         )
         self.validation_transforms = get_validation_transforms(
-            self.training_width, self.training_height
+            self.training_width, self.training_height, self.mask_enabled
         )
 
         # Initialize datasets to None

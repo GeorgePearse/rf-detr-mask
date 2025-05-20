@@ -21,14 +21,14 @@ The architecture consists of:
 
 ## Build/Testing Commands
 
-- Install in dev mode: `pip install -e ".[dev]"`
+- Install in dev mode: `uv pip install -e ".[dev]"`
 - Run all tests: `python -m unittest discover tests`
 - Run specific test: `python tests/test_minimal_segmentation.py`
 - Run segmentation-specific test: `python tests/test_segmentation_integration.py`
 - Test mask shape handling: `python tests/test_mask_shape_handling.py`
-- Install ONNX export dependencies: `pip install ".[onnxexport]"`
-- Install metrics dependencies: `pip install ".[metrics]"`
-- Install build dependencies: `pip install ".[build]"`
+- Install ONNX export dependencies: `uv pip install ".[onnxexport]"`
+- Install metrics dependencies: `uv pip install ".[metrics]"`
+- Install build dependencies: `uv pip install ".[build]"`
 - Train with default config: `python scripts/train.py`
 - Train with mask enabled: `python scripts/train.py configs/mask_enabled.yaml`
 - Evaluate a model: `EVAL_ONLY=1 RESUME_CHECKPOINT=path/to/checkpoint python scripts/train.py`
@@ -40,6 +40,7 @@ The architecture consists of:
 - Train with masks: `python scripts/train.py configs/mask_enabled.yaml`
 - Resume training: `RESUME_CHECKPOINT=path/to/checkpoint.pth python scripts/train.py configs/default.yaml`
 - Run quick test training: `python scripts/train.py configs/test_mode.yaml`
+- Add tqdm progress bars to long-running operations for better progress tracking
 
 ## Memory Management
 
@@ -54,6 +55,7 @@ The architecture consists of:
 - Default config is in `configs/default.yaml`
 - Mask-enabled config is in `configs/mask_enabled.yaml`
 - All configuration settings should have proper defaults in the Pydantic models
+- Prefer clearly defined configuration classes over runtime attribute checks
 
 ## Testing Guidelines
 
@@ -64,6 +66,7 @@ The architecture consists of:
 - Always check the number of classes in annotations, as the model architecture must match
 - Write tests for any new functionality you add
 - Verify script execution before suggesting running commands
+- Properly handle rectangular input images (not just square images)
 
 ## Code Style Guidelines
 
@@ -77,6 +80,7 @@ The architecture consists of:
 - **Design patterns**: Follow PyTorch conventions, use builder pattern for complex objects
 - **Inheritance**: Extend appropriate PyTorch classes (nn.Module)
 - **Performance**: Use torch.no_grad() for evaluation code
+- **Absolute imports**: Always use absolute imports within packages, not relative paths
 
 ## Important Coding Patterns
 
@@ -90,6 +94,7 @@ The architecture consists of:
 - Never fix an import error with sys.path.append
 - Write fully typed code for better mypy error checking
 - Always verify script execution before suggesting running commands
+- When using albumentations for transforms, properly configure mask handling when segmentation is enabled
 
 ## External Resources
 
@@ -104,6 +109,7 @@ The architecture consists of:
 - Segmentation is implemented using a mask head with attention mechanism
 - All model variants use a DINOv2 backbone with different configurations
 - Early stopping and model checkpointing are implemented through Lightning callbacks
+- Albumentations is used for data augmentation with proper mask handling
 
 ## Task Strategies
 
@@ -114,6 +120,8 @@ The architecture consists of:
 - Run mypy on modified code to catch type issues early
 - Use correct channel order for images (RGB vs BGR) when doing inference
 - Follow the proper input resolution requirements (must be divisible by 56)
+- Generate progress indicators with tqdm for long-running operations
+- Add and commit code after every significant change to check that it passes pre-commit hooks
 
 ## Anti-Patterns to Avoid
 
@@ -123,5 +131,14 @@ The architecture consists of:
 - Don't use `getattr` with fallback values - the class should define defaults
 - Don't leave TODOs or incomplete implementations
 - Never use relative imports, use absolute imports instead
+- Don't create simulated loss values
+
+## Common Debugging Issues
+
+- Input image sizes must be divisible by 56 - verify dimensions
+- Channel order matters - use RGB consistently (not BGR)
+- Ensure mask annotations are properly loaded in COCO format
+- Check for rectangular image handling when processing inputs
+- When working with PyTorch Lightning, understand the validation step and callback flow
 
 IMPORTANT: Always follow the proper patterns for configuration handling, use Protocol classes instead of hasattr checks, and ensure proper type annotations throughout the codebase.
