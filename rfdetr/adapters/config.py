@@ -228,13 +228,14 @@ class TrainingConfig(BaseModel):
     opset_version: int = 17
 
 
-class DatasetConfig(BaseModel):
+class DataConfig(BaseModel):
     """Configuration for dataset parameters."""
 
-    coco_path: Optional[str] = ""
-    coco_train: Optional[str] = ""
-    coco_val: Optional[str] = ""
-    coco_img_path: Optional[str] = ""
+    image_directory: Optional[str] = ""
+    training_annotation_file: Optional[str] = ""
+    validation_annotation_file: Optional[str] = ""
+    training_transforms: Optional[list] = None
+    validation_transforms: Optional[list] = None
     val_limit: Optional[int] = None
     test_mode: bool = False
     val_limit_test_mode: int = 20
@@ -264,7 +265,7 @@ class RFDETRConfig(BaseModel):
 
     model: ModelConfig
     training: TrainingConfig
-    dataset: DatasetConfig
+    data: DataConfig
     mask: MaskConfig
     other: OtherConfig
 

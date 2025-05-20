@@ -4,13 +4,12 @@ from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, Sequ
 
 import rfdetr.util.misc as utils
 from rfdetr.adapters.dataset import CocoDetection
-from rfdetr.adapters.config import ModelConfig
 
 
 class RFDETRDataModule(pl.LightningDataModule):
     """Lightning data module for RF-DETR-Mask."""
 
-    def __init__(self, config):
+    def __init__(self, config: DatasetConfig):
         """Initialize the RF-DETR data module.
 
         Args:
@@ -26,21 +25,23 @@ class RFDETRDataModule(pl.LightningDataModule):
         self.image_directory = config.training.image_directory
         self.training_annotation_file = config.training.training_annotation_file
         self.validation_annotation_file = config.validation.validation_annotation_file
+        self.training_transforms = config.training.training_transforms
+        self.validation_transforms = config.validation.validation_transforms
 
     def setup(self):
         """Set up datasets for training and validation."""
         # We need to set up datasets for all stages
         self.dataset_train = CocoDetection(
-            image_set="train",
-            args=self.config,
-            training_width=self.training_width,
-            training_height=self.training_height,
+            img_folder=self.image_directory,
+            ann_file=self.training_annotation_file,
+            transforms=self.training_transforms,
+            test_limit=None,
         )
-        self.dataset_val = build_dataset(
-            image_set="val",
-            args=self.config,
-            training_width=self.training_width,
-            training_height=self.training_height,
+        self.dataset_val = CocoDetection(
+            img_folder=self.image_directory,
+            ann_file=self.validation_annotation_file,
+            transforms=self.validation_transforms,
+            test_limit=None,
         )
 
     def train_dataloader(self):
