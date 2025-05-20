@@ -99,16 +99,11 @@ def main(config_path: str = "configs/default.yaml"):
     data_module = RFDETRDataModule(args_dict)
 
     # Setup logging
-    loggers = []
-    if config.training.tensorboard:
-        try:
-            tb_logger = TensorBoardLogger(
-                save_dir=config.training.output_dir, name="lightning_logs"
-            )
-            loggers.append(tb_logger)
-        except ModuleNotFoundError:
-            logger.warning("TensorBoard not installed. Skipping TensorBoard logging.")
-            config.training.tensorboard = False
+    loggers = [
+        TensorBoardLogger(
+            save_dir=config.training.output_dir, name="lightning_logs"
+        )
+    ]
 
     # Always add CSV logger
     csv_logger = CSVLogger(save_dir=config.training.output_dir, name="csv_logs")
