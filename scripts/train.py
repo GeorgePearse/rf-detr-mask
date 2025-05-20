@@ -31,6 +31,7 @@ from rfdetr.config import ModelConfig
 
 logger = get_logger(__name__)
 
+
 def get_number_of_classes(config: ModelConfig) -> int:
     coco_path = Path(config.dataset.coco_path)
     annotation_file = (

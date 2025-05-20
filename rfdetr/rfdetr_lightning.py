@@ -35,7 +35,7 @@ class RFDETRLightningModule(pl.LightningModule):
     """Lightning module for RF-DETR training using iteration-based approach."""
 
     def __init__(self, 
-        config: RFDETRConfig
+        config: RFDETRConfig,
     ):
         """Initialize the RF-DETR Lightning Module.
 
