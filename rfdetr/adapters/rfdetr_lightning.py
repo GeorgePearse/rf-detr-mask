@@ -76,7 +76,7 @@ class RFDETRLightningModule(pl.LightningModule):
         # Use full precision (float32) by default - avoid cdist_cuda issues
         self.autocast_args = {
             "device_type": "cuda" if torch.cuda.is_available() else "cpu",
-            "enabled": self.config.model.amp,
+            "enabled": True,
             "dtype": torch.float32,
         }
 
