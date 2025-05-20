@@ -11,22 +11,16 @@ PyTorch Lightning modules for RF-DETR-Mask training.
 from pathlib import Path
 
 import lightning.pytorch as pl
-import numpy as np
 import torch
 import torch.amp
-from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
-from torch.optim.lr_scheduler import LambdaLR
 
 import rfdetr.util.misc as utils
-from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
+from rfdetr.config import RFDETRConfig
+from rfdetr.datasets import get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
-from rfdetr.config import ModelConfig
 from rfdetr.models import build_criterion_and_postprocessors, build_model
-from rfdetr.util.get_param_dicts import get_param_dict
 from rfdetr.util.logging_config import get_logger
 from rfdetr.util.utils import ModelEma
-from rfdetr.config import RFDETRConfig
-
 
 logger = get_logger(__name__)
 
@@ -34,7 +28,8 @@ logger = get_logger(__name__)
 class RFDETRLightningModule(pl.LightningModule):
     """Lightning module for RF-DETR training using iteration-based approach."""
 
-    def __init__(self, 
+    def __init__(
+        self,
         config: RFDETRConfig,
     ):
         """Initialize the RF-DETR Lightning Module.
@@ -48,7 +43,7 @@ class RFDETRLightningModule(pl.LightningModule):
         self.ema_decay = self.config.training.ema_decay
         self.use_ema = self.config.training.use_ema
         # Build model, criterion, and postprocessors
-        self.model = build_model(self.config)
+        self.model = build_model(self.config.model)
         self.criterion, self.postprocessors = build_criterion_and_postprocessors(self.config)
         self.ema = ModelEma(self.model, self.ema_decay) if self.ema_decay and use_ema else None
 
@@ -82,9 +77,8 @@ class RFDETRLightningModule(pl.LightningModule):
         self.autocast_args = {
             "device_type": "cuda" if torch.cuda.is_available() else "cpu",
             "enabled": self.config.amp,
-            "dtype": torch.float32
+            "dtype": torch.float32,
         }
-
 
     def forward(self, samples, targets=None):
         """Forward pass through the model."""
@@ -235,7 +229,6 @@ class RFDETRLightningModule(pl.LightningModule):
             # Return minimal output to keep the validation process from crashing
             return None
 
-        
     def on_validation_epoch_start(self):
         """Set up validation epoch and export model."""
         # Reset metrics
@@ -247,14 +240,12 @@ class RFDETRLightningModule(pl.LightningModule):
 
         self.coco_evaluator = CocoEvaluator(base_ds, iou_types=("segm", "bbox"))
 
-
     def on_validation_batch_end(self, outputs, batch, batch_idx):
         """Process validation batch results."""
         if outputs is None:
             return
 
         self.coco_evaluator.update(outputs["results"])
-
 
     def on_validation_epoch_end(self):
         """Process validation epoch results."""
@@ -265,14 +256,12 @@ class RFDETRLightningModule(pl.LightningModule):
         """Configure optimizers and learning rate scheduler for iteration-based training."""
         # Get parameters from config for optimizer
         lr = self.config.training.lr
-        
+
         return {
             "optimizer": torch.optim.AdamW(lr=lr, weight_decay=0.0001),
             "lr_scheduler": {
-                "scheduler": torch.optim.lr_scheduler.LambdaLR(),   
-                "interval": "step",  
+                "scheduler": torch.optim.lr_scheduler.LambdaLR(),
+                "interval": "step",
                 "frequency": 1,
             },
         }
-
-

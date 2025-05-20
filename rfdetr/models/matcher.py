@@ -149,10 +149,26 @@ def build_matcher(config):
         focal_alpha = config.get("focal_alpha", 0.25)
     else:
         # Model configuration has these fields with default values
-        cost_class = config.set_cost_class
-        cost_bbox = config.set_cost_bbox
-        cost_giou = config.set_cost_giou
-        focal_alpha = config.focal_alpha
+        cost_class = (
+            getattr(config.model, "set_cost_class", 2.0)
+            if hasattr(config, "model")
+            else getattr(config, "set_cost_class", 2.0)
+        )
+        cost_bbox = (
+            getattr(config.model, "set_cost_bbox", 5.0)
+            if hasattr(config, "model")
+            else getattr(config, "set_cost_bbox", 5.0)
+        )
+        cost_giou = (
+            getattr(config.model, "set_cost_giou", 2.0)
+            if hasattr(config, "model")
+            else getattr(config, "set_cost_giou", 2.0)
+        )
+        focal_alpha = (
+            getattr(config.model, "focal_alpha", 0.25)
+            if hasattr(config, "model")
+            else getattr(config, "focal_alpha", 0.25)
+        )
     return HungarianMatcher(
         cost_class=cost_class,
         cost_bbox=cost_bbox,

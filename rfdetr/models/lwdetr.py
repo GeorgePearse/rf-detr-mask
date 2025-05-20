@@ -116,7 +116,6 @@ class LWDETR(nn.Module):
             [copy.deepcopy(self.class_embed) for _ in range(group_detr)]
         )
 
-
     def reinitialize_detection_head(self, num_classes):
         # Create new classification head
         del self.class_embed
@@ -133,7 +132,6 @@ class LWDETR(nn.Module):
             "enc_out_class_embed",
             nn.ModuleList([copy.deepcopy(self.class_embed) for _ in range(self.group_detr)]),
         )
-
 
     def forward(self, samples: NestedTensor, targets=None):
         """The forward expects a NestedTensor, which consists of:
@@ -902,31 +900,36 @@ def build_model(model_config: ModelConfig):
         load_dinov2_weights=model_config.pretrain_weights is None,
     )
     # Check if encoder_only is defined and True
-    if hasattr(args, "encoder_only") and args.encoder_only:
+    if hasattr(model_config, "encoder_only") and model_config.encoder_only:
         return backbone[0].encoder, None, None
     # Check if backbone_only is defined and True
-    if hasattr(args, "backbone_only") and args.backbone_only:
+    if hasattr(model_config, "backbone_only") and model_config.backbone_only:
         return backbone, None, None
 
-    # Use variable instead of modifying args directly
-    num_feature_levels = len(args.projector_scale)
+    # Use variable instead of modifying model_config directly
+    num_feature_levels = len(model_config.projector_scale)
 
     # Create a dictionary of args for the transformer with num_feature_levels
     transformer_args = {
-        "hidden_dim": transformer_config.hidden_dim,
-        "sa_nheads": transformer_config.sa_nheads,
-        "ca_nheads": transformer_config.ca_nheads,
-        "num_queries": transformer_config.num_queries,
-        "dropout": transformer_config.dropout,
-        "dim_feedforward": transformer_config.dim_feedforward,
-        "dec_layers": transformer_config.dec_layers,
+        "hidden_dim": model_config.hidden_dim,
+        "sa_nheads": model_config.sa_nheads,
+        "ca_nheads": model_config.ca_nheads,
+        "num_queries": model_config.num_queries,
+        "dropout": model_config.dropout,
+        "dim_feedforward": model_config.dim_feedforward,
+        "dec_layers": model_config.dec_layers,
         "return_intermediate_dec": True,
-        "group_detr": transformer_config.group_detr,
+        "group_detr": model_config.group_detr,
         "num_feature_levels": num_feature_levels,
-        "dec_n_points": transformer_config.dec_n_points,
-        "lite_refpoint_refine": transformer_config.lite_refpoint_refine,
-        "decoder_norm": transformer_config.decoder_norm,
-        "bbox_reparam": transformer_config.bbox_reparam,
+        "dec_n_points": model_config.dec_n_points,
+        "lite_refpoint_refine": model_config.lite_refpoint_refine
+        if hasattr(model_config, "lite_refpoint_refine")
+        else False,
+        "decoder_norm": model_config.transformer.decoder_norm
+        if hasattr(model_config, "transformer")
+        and hasattr(model_config.transformer, "decoder_norm")
+        else "LN",
+        "bbox_reparam": model_config.bbox_reparam,
     }
 
     # Build the transformer with the args dictionary
@@ -937,11 +940,15 @@ def build_model(model_config: ModelConfig):
         "backbone": backbone,
         "transformer": transformer,
         "num_classes": num_classes,
-        "num_queries": args.num_queries,
-        "aux_loss": getattr(args, "aux_loss", False),
-        "group_detr": args.group_detr,
-        "lite_refpoint_refine": getattr(args, "lite_refpoint_refine", False),
-        "bbox_reparam": getattr(args, "bbox_reparam", False),
+        "num_queries": model_config.num_queries,
+        "aux_loss": model_config.aux_loss if hasattr(model_config, "aux_loss") else False,
+        "group_detr": model_config.group_detr,
+        "lite_refpoint_refine": model_config.lite_refpoint_refine
+        if hasattr(model_config, "lite_refpoint_refine")
+        else False,
+        "bbox_reparam": model_config.bbox_reparam
+        if hasattr(model_config, "bbox_reparam")
+        else False,
     }
 
     model = LWDETR(**model_args)

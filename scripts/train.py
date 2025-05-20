@@ -6,8 +6,9 @@
 """
 Updated training script for RF-DETR using iteration-based training with pydantic config.
 """
-import json
+
 import datetime
+import json
 import random
 from pathlib import Path
 
@@ -15,19 +16,18 @@ import lightning.pytorch as pl
 import numpy as np
 import torch
 from lightning.pytorch.callbacks import (
+    EarlyStopping,
     LearningRateMonitor,
     ModelCheckpoint,
     TQDMProgressBar,
-    EarlyStopping
 )
 from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 
-from rfdetr.config import load_config
-from rfdetr.rfdetr_lightning import RFDETRLightningModule
+from rfdetr.config import ModelConfig, load_config
 from rfdetr.data_module import RFDETRDataModule
+from rfdetr.rfdetr_lightning import RFDETRLightningModule
 from rfdetr.util.logging_config import get_logger
-from rfdetr.config import ModelConfig
 
 logger = get_logger(__name__)
 
@@ -63,8 +63,8 @@ def main(config_path: str = "configs/default.yaml"):
     # Determine the number of classes from annotation file
     num_classes = get_number_of_classes(config)
 
-    # Set the num_classes in config
-    config.training.num_classes = num_classes
+    # Set the num_classes in config using the proper method
+    config.set_num_classes(num_classes)
 
     # Create output directory
     output_dir = Path(config.training.output_dir)
@@ -97,11 +97,7 @@ def main(config_path: str = "configs/default.yaml"):
     data_module = RFDETRDataModule(config)
 
     # Setup logging
-    loggers = [
-        TensorBoardLogger(
-            save_dir=config.training.output_dir, name="lightning_logs"
-        )
-    ]
+    loggers = [TensorBoardLogger(save_dir=config.training.output_dir, name="lightning_logs")]
 
     # Always add CSV logger
     csv_logger = CSVLogger(save_dir=config.training.output_dir, name="csv_logs")
@@ -136,7 +132,7 @@ def main(config_path: str = "configs/default.yaml"):
             mode="max",
             patience=config.training.early_stopping_patience,
             min_delta=config.training.early_stopping_min_delta,
-        )
+        ),
     ]
 
     # Setup strategy for distributed training
