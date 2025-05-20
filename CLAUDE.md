@@ -2,28 +2,64 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Never use the python typing module, we'll be using a new enough version of python that ever type annotation
-we need is already avaiable.
+## Project Overview
 
-Never fix an import error with sys.path.append
+RF-DETR-MASK is an instance segmentation extension of the RF-DETR architecture, adding pixel-precise object delineation capabilities to the original object detection model. It extends the base RF-DETR with a mask prediction head for detailed instance segmentation while maintaining real-time performance characteristics.
 
-Make sure to run `bash kill.sh` between consecutive runs of training to make sure that the GPU memory is completely flushed
-When testing the train.py script make sure that you do use the GPU
+The architecture consists of:
+- A DINOv2 backbone (various sizes)
+- A DETR-like transformer for object detection
+- A mask prediction head for instance segmentation
 
-Always default to a pydantic class, and a YAML config file, instead of using argparse.
+## Core Concepts
 
-Whenever you suggest that I run a script in a certain way, can you make sure that you've already tried to run that script.
-
-Use "hasattr" very sparingly. It is often over-used by LLMs
+- The project follows a modular architecture with clear separation between model components, training logic, and data handling
+- Configuration is managed through YAML files and Pydantic models
+- PyTorch Lightning is used for training orchestration
+- Mask prediction adds instance segmentation capabilities to the base detection model
+- Models are trained on COCO-format datasets with support for segmentation masks
 
 ## Build/Testing Commands
 
 - Install in dev mode: `pip install -e ".[dev]"`
 - Run all tests: `python -m unittest discover tests`
 - Run specific test: `python tests/test_minimal_segmentation.py`
+- Run segmentation-specific test: `python tests/test_segmentation_integration.py`
+- Test mask shape handling: `python tests/test_mask_shape_handling.py`
 - Install ONNX export dependencies: `pip install ".[onnxexport]"`
 - Install metrics dependencies: `pip install ".[metrics]"`
 - Install build dependencies: `pip install ".[build]"`
+- Train with default config: `python scripts/train.py`
+- Train with mask enabled: `python scripts/train.py configs/mask_enabled.yaml`
+- Evaluate a model: `EVAL_ONLY=1 RESUME_CHECKPOINT=path/to/checkpoint python scripts/train.py`
+
+## Training Commands
+
+- Basic training: `python scripts/train.py configs/default.yaml`
+- Train with masks: `python scripts/train.py configs/mask_enabled.yaml`
+- Resume training: `RESUME_CHECKPOINT=path/to/checkpoint.pth python scripts/train.py configs/default.yaml`
+- Run quick test training: `python scripts/train.py configs/test_mode.yaml`
+
+## Memory Management
+
+- Run `bash kill.sh` between consecutive runs of training to ensure GPU memory is completely flushed
+- When testing the train.py script, use the GPU (as specified in training configs)
+- To manually clean GPU memory: `torch.cuda.empty_cache()`
+
+## Configuration Guidelines
+
+- Always default to a pydantic class and YAML config file instead of using argparse
+- Config files are located in the `configs/` directory
+- Default config is in `configs/default.yaml`
+- Mask-enabled config is in `configs/mask_enabled.yaml`
+
+## Testing Guidelines
+
+- When testing instance segmentation, use the specified annotation files:
+  - `/home/georgepearse/data/cmr/annotations/2025-05-15_12:38:23.077836_train_ordered.json`
+  - `/home/georgepearse/data/cmr/annotations/2025-05-15_12:38:38.270134_val_ordered.json`
+- Images are available at `/home/georgepearse/data/images`
+- Always check the number of classes in annotations, as the model architecture must match
 
 ## Code Style Guidelines
 
@@ -38,9 +74,26 @@ Use "hasattr" very sparingly. It is often over-used by LLMs
 - **Inheritance**: Extend appropriate PyTorch classes (nn.Module)
 - **Performance**: Use torch.no_grad() for evaluation code
 
+## Important Coding Patterns
 
-## Important 
-- Use Context7 when used to implement something with a specific package, it helps you retrieve the latest docs.
-- Amp is a command line tool for writing code made by sourcegraph.
-- Within this repo, hasattr is almost always an anti-pattern, try not to use it 
-- getattr is an anti-pattern, the underlying class should be the one that has the default value.
+- Use fully typed Python code to leverage mypy for faster feedback
+- Within this repo, `hasattr` is almost always an anti-pattern, try not to use it
+- `getattr` is an anti-pattern, the underlying class should have the default value
+- Never use the python typing module, Python is new enough that all required type annotations are available
+- Never fix an import error with sys.path.append
+- Write fully typed code for better mypy error checking
+- Always verify script execution before suggesting running commands
+
+## External Resources
+
+- Use Context7 when implementing something with a specific package to retrieve the latest docs
+- Amp is a command line tool for writing code made by sourcegraph
+
+## Common Workflow Patterns
+
+- Model and training configuration is managed through Pydantic classes and YAML files
+- Training is handled through PyTorch Lightning, with a custom LightningModule
+- Dataset loading follows the PyTorch Lightning DataModule pattern
+- Segmentation is implemented using a mask head with attention mechanism
+- All model variants use a DINOv2 backbone with different configurations
+- Early stopping and model checkpointing are implemented through Lightning callbacks
