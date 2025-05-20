@@ -1,46 +1,88 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# CLAUDE.md - Improved Version
 
 ## Project Overview
 
 RF-DETR-MASK is an instance segmentation extension of the RF-DETR architecture, adding pixel-precise object delineation capabilities to the original object detection model. It extends the base RF-DETR with a mask prediction head for detailed instance segmentation while maintaining real-time performance characteristics.
 
-The architecture consists of:
-- A DINOv2 backbone (various sizes)
-- A DETR-like transformer for object detection
-- A mask prediction head for instance segmentation
+### Architecture Diagram
 
-## Core Concepts
+```mermaid
+flowchart TD
+    input["Input Image"] --> backbone["DINOv2 Backbone"];
+    backbone --> transformer["DETR Transformer"];
+    transformer --> det_head["Detection Head"];
+    transformer --> attention["Multi-head Attention"];
+    backbone --> fpn["Feature Pyramid Network"];
+    fpn --> mask_head["Mask Head"];
+    attention --> mask_head;
+    det_head --> outputs1["Bounding Boxes"];
+    det_head --> outputs2["Class Predictions"];
+    mask_head --> outputs3["Instance Masks"];
+```
 
-- The project follows a modular architecture with clear separation between model components, training logic, and data handling
-- Configuration is managed through YAML files and Pydantic models
-- PyTorch Lightning is used for training orchestration
-- Mask prediction adds instance segmentation capabilities to the base detection model
-- Models are trained on COCO-format datasets with support for segmentation masks
+### Key Components
+- **DINOv2 Backbone**: Extracts multi-scale features from input images
+- **DETR Transformer**: Processes feature maps and generates object queries
+- **Detection Head**: Produces class predictions and bounding boxes
+- **Mask Head**: Creates instance segmentation masks using attention mechanisms
+- **Configuration System**: Pydantic-based configuration with YAML files
+
+## Reference Implementations
+- [Facebook DETR](https://github.com/facebookresearch/detr), specifically [segmentation.py](https://github.com/facebookresearch/detr/blob/main/models/segmentation.py) for mask head implementation
+- [RF-DETR](https://github.com/roboflow/rf-detr) for the core architecture of the object detection model
+
+## Key Files and Directory Structure
+
+```
+/configs/           # YAML configuration files
+  default.yaml      # Base configuration with mask support
+/rfdetr/
+  /adapters/        # Configuration, dataset and Lightning adapters
+  /models/
+    segmentation.py  # Core mask head implementation
+    lwdetr.py        # Main detection model implementation
+  /util/             # Utility functions and helpers
+/scripts/
+  train.py          # Main training script
+  evaluate.py        # Evaluation script
+```
+
+## Mask Head Implementation
+
+The mask prediction is implemented in `rfdetr/models/segmentation.py` through two main classes:
+
+1. `MaskHeadSmallConv`: A convolutional head that predicts masks from transformer output
+   - Uses multiple convolutional layers to process feature maps
+   - Applies attention mechanism to focus on relevant regions
+   - Outputs per-object binary mask predictions
+
+2. `RFDETRSegmentation`: Wrapper that combines the base detector with mask capabilities
+   - Manages the flow between the detector and mask head
+   - Handles feature extraction and transformation
+   - Processes attention maps for mask prediction
+
+## Configuration System
+
+The configuration is fully typed with Pydantic and includes specific mask-related parameters:
+
+```yaml
+# Mask Configuration
+mask:
+  enabled: true        # Enable/disable mask prediction
+  loss_mask_coef: 1.0  # Weight for binary mask loss
+  loss_dice_coef: 1.0  # Weight for dice coefficient loss
+```
 
 ## Build/Testing Commands
 
 - Install in dev mode: `uv pip install -e ".[dev]"`
 - Run all tests: `python -m unittest discover tests`
-- Run specific test: `python tests/test_minimal_segmentation.py`
 - Run segmentation-specific test: `python tests/test_segmentation_integration.py`
 - Test mask shape handling: `python tests/test_mask_shape_handling.py`
-- Install ONNX export dependencies: `uv pip install ".[onnxexport]"`
-- Install metrics dependencies: `uv pip install ".[metrics]"`
-- Install build dependencies: `uv pip install ".[build]"`
 - Train with default config: `python scripts/train.py`
 - Train with mask enabled: `python scripts/train.py configs/mask_enabled.yaml`
 - Evaluate a model: `EVAL_ONLY=1 RESUME_CHECKPOINT=path/to/checkpoint python scripts/train.py`
 - Run quality checks: `ruff check .` and `mypy .`
-
-## Training Commands
-
-- Basic training: `python scripts/train.py configs/default.yaml`
-- Train with masks: `python scripts/train.py configs/mask_enabled.yaml`
-- Resume training: `RESUME_CHECKPOINT=path/to/checkpoint.pth python scripts/train.py configs/default.yaml`
-- Run quick test training: `python scripts/train.py configs/test_mode.yaml`
-- Add tqdm progress bars to long-running operations for better progress tracking
 
 ## Memory Management
 
@@ -48,25 +90,14 @@ The architecture consists of:
 - When testing the train.py script, use the GPU (as specified in training configs)
 - To manually clean GPU memory: `torch.cuda.empty_cache()`
 
-## Configuration Guidelines
+## Training Data Requirements
 
-- Always default to a pydantic class and YAML config file instead of using argparse
-- Config files are located in the `configs/` directory
-- Default config is in `configs/default.yaml`
-- Mask-enabled config is in `configs/mask_enabled.yaml`
-- All configuration settings should have proper defaults in the Pydantic models
-- Prefer clearly defined configuration classes over runtime attribute checks
-
-## Testing Guidelines
-
-- When testing instance segmentation, use the specified annotation files:
+- Input image sizes must be divisible by 56 (e.g., 560×672)
+- Annotation files must be in COCO format with segmentation data
+- Use specified test annotation files:
   - `/home/georgepearse/data/cmr/annotations/2025-05-15_12:38:23.077836_train_ordered.json`
   - `/home/georgepearse/data/cmr/annotations/2025-05-15_12:38:38.270134_val_ordered.json`
-- Images are available at `/home/georgepearse/data/images`
-- Always check the number of classes in annotations, as the model architecture must match
-- Write tests for any new functionality you add
-- Verify script execution before suggesting running commands
-- Properly handle rectangular input images (not just square images)
+- Images available at `/home/georgepearse/data/images`
 
 ## Code Style Guidelines
 
@@ -75,70 +106,60 @@ The architecture consists of:
 - **Naming**: snake_case for variables/functions, CamelCase for classes, ALL_CAPS for constants
 - **Types**: Use type hints for function signatures and complex data structures
 - **Indentation**: 4 spaces
-- **Error handling**: Use specific exceptions with descriptive messages
-- **File headers**: Include copyright/license information
+- **File headers**: Include copyright/license information 
 - **Design patterns**: Follow PyTorch conventions, use builder pattern for complex objects
 - **Inheritance**: Extend appropriate PyTorch classes (nn.Module)
-- **Performance**: Use torch.no_grad() for evaluation code
 - **Absolute imports**: Always use absolute imports within packages, not relative paths
-
-## Important Coding Patterns
-
-- Use fully typed Python code to leverage mypy for faster feedback
-- NEVER use `hasattr` as it is considered an anti-pattern in this repo
-  - Replace with Protocol classes and isinstance checks
-  - Use proper default values in Pydantic configs
-  - Use try/except for runtime attribute checks where appropriate
-- `getattr` is an anti-pattern, the underlying class should have the default value
-- Never use the python typing module, Python is new enough that all required type annotations are available
-- Never fix an import error with sys.path.append
-- Write fully typed code for better mypy error checking
-- Always verify script execution before suggesting running commands
-- When using albumentations for transforms, properly configure mask handling when segmentation is enabled
-
-## External Resources
-
-- Use Context7 when implementing something with a specific package to retrieve the latest docs
-- Amp is a command line tool for writing code made by sourcegraph
-
-## Common Workflow Patterns
-
-- Model and training configuration is managed through Pydantic classes and YAML files
-- Training is handled through PyTorch Lightning, with a custom LightningModule
-- Dataset loading follows the PyTorch Lightning DataModule pattern
-- Segmentation is implemented using a mask head with attention mechanism
-- All model variants use a DINOv2 backbone with different configurations
-- Early stopping and model checkpointing are implemented through Lightning callbacks
-- Albumentations is used for data augmentation with proper mask handling
-
-## Task Strategies
-
-- When working with the codebase, first understand the architecture and data flow
-- For fixing bugs, identify the relevant module before making changes
-- Use pre-commit hooks to ensure code quality before committing
-- Always add tests for new functionality
-- Run mypy on modified code to catch type issues early
-- Use correct channel order for images (RGB vs BGR) when doing inference
-- Follow the proper input resolution requirements (must be divisible by 56)
-- Generate progress indicators with tqdm for long-running operations
-- Add and commit code after every significant change to check that it passes pre-commit hooks
 
 ## Anti-Patterns to Avoid
 
-- NEVER use `hasattr` - see the hasattr_replacement documents in docs/
-- Don't add arbitrary checks for config attributes - use Pydantic defaults
-- Don't manipulate Python's system path - fix the underlying imports
-- Don't use `getattr` with fallback values - the class should define defaults
-- Don't leave TODOs or incomplete implementations
-- Never use relative imports, use absolute imports instead
-- Don't create simulated loss values
+- **NEVER use `hasattr`**: This is considered an anti-pattern in this repo
+  - Replace with Protocol classes and isinstance checks
+  - Use proper default values in Pydantic configs
+  - Use try/except for runtime attribute checks where appropriate
+- **NEVER use `getattr` with defaults**: The underlying class should define default values
+- **NEVER use `sys.path.append`**: Fix underlying import structure instead
+- **NEVER modify Python's system path**: Fix the imports properly
+- **AVOID conditional logic based on config**: Use proper class hierarchy instead
 
-## Common Debugging Issues
+## Performance Optimization
 
-- Input image sizes must be divisible by 56 - verify dimensions
-- Channel order matters - use RGB consistently (not BGR)
-- Ensure mask annotations are properly loaded in COCO format
-- Check for rectangular image handling when processing inputs
-- When working with PyTorch Lightning, understand the validation step and callback flow
+- Always use `torch.no_grad()` for evaluation code
+- Use gradient checkpointing for training large models
+- Properly handle different model precision modes (fp16/fp32)
+- Set appropriate batch sizes based on available GPU memory
+- Use PyTorch Lightning's automatic mixed precision where possible
+- Utilize EMA (Exponential Moving Average) for better convergence
 
-IMPORTANT: Always follow the proper patterns for configuration handling, use Protocol classes instead of hasattr checks, and ensure proper type annotations throughout the codebase.
+## Debugging Tips
+
+- Verify image dimensions are divisible by 56
+- Check channel ordering (RGB vs BGR) in preprocessing
+- Validate mask annotations in COCO format
+- Test with rectangular images to ensure proper handling
+- Add logging with proper context for each operation
+- Use tqdm progress bars for long-running operations
+
+## Implementation Examples
+
+### Mask Loss Implementation
+
+```python
+# Calculating mask and dice losses
+mask_loss = F.binary_cross_entropy_with_logits(pred_masks, target_masks)
+dice_loss = 1 - (2 * intersection + epsilon) / (pred_areas + target_areas + epsilon)
+
+# Combining with detection losses
+loss_dict["loss_mask"] = mask_loss * self.mask_loss_coef
+loss_dict["loss_dice"] = dice_loss * self.dice_loss_coef
+```
+
+### Attention Mechanism for Masks
+
+```python
+# Computing attention between queries and features
+attention_out, attention_weights = self.bbox_attention(query_embed, src_flat, src_flat)
+
+# Using attention to focus mask prediction
+mask_logits = self.mask_head(src, query_embed, attention_weights)
+```
