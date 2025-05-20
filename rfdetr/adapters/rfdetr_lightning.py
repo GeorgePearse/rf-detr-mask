@@ -39,8 +39,8 @@ class RFDETRLightningModule(pl.LightningModule):
             config: Configuration as a Pydantic model or compatible dict/object
         """
         super().__init__()
-        self.training_config = training_config
-        self.model_config = model_config
+        self.training_config: TrainingConfig = training_config
+        self.model_config: ModelConfig = model_config
 
         self.save_hyperparameters()
         self.ema_decay = training_config.ema_decay

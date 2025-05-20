@@ -234,6 +234,28 @@ class DataConfig(BaseModel):
     image_directory: Optional[str] = ""
     training_annotation_file: Optional[str] = ""
     validation_annotation_file: Optional[str] = ""
+    
+    @field_validator('image_directory')
+    @classmethod
+    def validate_image_directory(cls, v: Optional[str]) -> Optional[str]:
+        if v and v.strip():
+            path = Path(v)
+            if not path.exists():
+                raise ValueError(f"Image directory does not exist: {v}")
+            if not path.is_dir():
+                raise ValueError(f"Image directory path is not a directory: {v}")
+        return v
+        
+    @field_validator('training_annotation_file', 'validation_annotation_file')
+    @classmethod
+    def validate_annotation_files(cls, v: Optional[str]) -> Optional[str]:
+        if v and v.strip():
+            path = Path(v)
+            if not path.exists():
+                raise ValueError(f"Annotation file does not exist: {v}")
+            if not path.is_file():
+                raise ValueError(f"Annotation file path is not a file: {v}")
+        return v
     training_transforms: Optional[list] = None
     validation_transforms: Optional[list] = None
     val_limit: Optional[int] = None
