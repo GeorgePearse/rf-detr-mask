@@ -32,6 +32,7 @@ The architecture consists of:
 - Train with default config: `python scripts/train.py`
 - Train with mask enabled: `python scripts/train.py configs/mask_enabled.yaml`
 - Evaluate a model: `EVAL_ONLY=1 RESUME_CHECKPOINT=path/to/checkpoint python scripts/train.py`
+- Run quality checks: `ruff check .` and `mypy .`
 
 ## Training Commands
 
@@ -52,6 +53,7 @@ The architecture consists of:
 - Config files are located in the `configs/` directory
 - Default config is in `configs/default.yaml`
 - Mask-enabled config is in `configs/mask_enabled.yaml`
+- All configuration settings should have proper defaults in the Pydantic models
 
 ## Testing Guidelines
 
@@ -60,6 +62,8 @@ The architecture consists of:
   - `/home/georgepearse/data/cmr/annotations/2025-05-15_12:38:38.270134_val_ordered.json`
 - Images are available at `/home/georgepearse/data/images`
 - Always check the number of classes in annotations, as the model architecture must match
+- Write tests for any new functionality you add
+- Verify script execution before suggesting running commands
 
 ## Code Style Guidelines
 
@@ -77,7 +81,10 @@ The architecture consists of:
 ## Important Coding Patterns
 
 - Use fully typed Python code to leverage mypy for faster feedback
-- Within this repo, `hasattr` is almost always an anti-pattern, try not to use it
+- NEVER use `hasattr` as it is considered an anti-pattern in this repo
+  - Replace with Protocol classes and isinstance checks
+  - Use proper default values in Pydantic configs
+  - Use try/except for runtime attribute checks where appropriate
 - `getattr` is an anti-pattern, the underlying class should have the default value
 - Never use the python typing module, Python is new enough that all required type annotations are available
 - Never fix an import error with sys.path.append
@@ -98,4 +105,23 @@ The architecture consists of:
 - All model variants use a DINOv2 backbone with different configurations
 - Early stopping and model checkpointing are implemented through Lightning callbacks
 
-STOP USING HASATTR ALL THE FUCKING TIME !!!!
+## Task Strategies
+
+- When working with the codebase, first understand the architecture and data flow
+- For fixing bugs, identify the relevant module before making changes
+- Use pre-commit hooks to ensure code quality before committing
+- Always add tests for new functionality
+- Run mypy on modified code to catch type issues early
+- Use correct channel order for images (RGB vs BGR) when doing inference
+- Follow the proper input resolution requirements (must be divisible by 56)
+
+## Anti-Patterns to Avoid
+
+- NEVER use `hasattr` - see the hasattr_replacement documents in docs/
+- Don't add arbitrary checks for config attributes - use Pydantic defaults
+- Don't manipulate Python's system path - fix the underlying imports
+- Don't use `getattr` with fallback values - the class should define defaults
+- Don't leave TODOs or incomplete implementations
+- Never use relative imports, use absolute imports instead
+
+IMPORTANT: Always follow the proper patterns for configuration handling, use Protocol classes instead of hasattr checks, and ensure proper type annotations throughout the codebase.

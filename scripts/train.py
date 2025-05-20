@@ -34,15 +34,10 @@ logger = get_logger(__name__)
 
 
 def get_number_of_classes(config) -> int:
-    # Handle both ModelConfig and TrainingConfig
-    if hasattr(config, 'dataset') and hasattr(config.dataset, 'coco_path'):
-        # ModelConfig format
-        coco_path = Path(config.dataset.coco_path)
-        coco_train = config.dataset.coco_train
-    else:
-        # TrainingConfig format
-        coco_path = Path(config.coco_path) if config.coco_path else Path("/home/georgepearse/data/cmr/annotations")
-        coco_train = config.coco_train
+    """Get the number of classes from the annotation file."""
+    # Extract paths from RFDETRConfig structure
+    coco_path = Path(config.data.coco_path)
+    coco_train = config.data.coco_train
     
     annotation_file = (
         coco_path / coco_train
@@ -73,16 +68,11 @@ def main(config_path: str = "configs/default.yaml"):
     # Determine the number of classes from annotation file
     num_classes = get_number_of_classes(config)
 
-    # Set the num_classes in config using the proper method
-    if hasattr(config, 'set_num_classes'):
-        # ModelConfig method
-        config.set_num_classes(num_classes)
-    else:
-        # TrainingConfig attribute
-        config.num_classes = num_classes
+    # Set the number of classes in the config
+    config.set_num_classes(num_classes)
 
     # Create output directory
-    output_dir = Path(config.output_dir if hasattr(config, 'output_dir') else config.training.output_dir)
+    output_dir = Path(config.training.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save configuration for reference
@@ -91,12 +81,7 @@ def main(config_path: str = "configs/default.yaml"):
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
     config_file = checkpoints_dir / "config.yaml"
-    if hasattr(config, 'to_yaml'):
-        config.to_yaml(config_file)
-    else:
-        # For TrainingConfig
-        with open(config_file, 'w') as f:
-            yaml.dump(config.dict(), f, sort_keys=False, indent=2)
+    config.to_yaml(config_file)
     logger.info(f"Configuration saved to {config_file}")
 
     # Fix the seed for reproducibility
@@ -106,7 +91,7 @@ def main(config_path: str = "configs/default.yaml"):
     random.seed(seed)
 
     # Set a shorter run
-    if config.dataset.test_mode:
+    if config.data.test_mode:
         # Setting these as variables to use in the Trainer, not in config
         max_steps = 10
         val_frequency = 5
@@ -133,7 +118,7 @@ def main(config_path: str = "configs/default.yaml"):
     checkpoint_frequency = config.training.checkpoint_interval
 
     # Override if in test mode
-    if config.dataset.test_mode:
+    if config.data.test_mode:
         max_steps = 10
         val_frequency = 5
         checkpoint_frequency = 5

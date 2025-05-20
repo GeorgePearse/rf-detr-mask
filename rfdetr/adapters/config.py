@@ -239,6 +239,11 @@ class DataConfig(BaseModel):
     val_limit: Optional[int] = None
     test_mode: bool = False
     val_limit_test_mode: int = 20
+    # Add backward compatibility fields for coco dataset paths
+    coco_path: str = "/home/georgepearse/data/cmr/annotations"
+    coco_train: str = "2025-05-15_12:38:23.077836_train_ordered.json"
+    coco_val: str = "2025-05-15_12:38:38.270134_val_ordered.json"
+    coco_img_path: str = "/home/georgepearse/data/images"
 
 
 class MaskConfig(BaseModel):
