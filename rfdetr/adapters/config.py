@@ -13,7 +13,7 @@ from typing import Any, Literal, Optional, Union
 
 import torch
 import yaml
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, validator, field_validator, model_validator
 
 from rfdetr.util.error_handling import ConfigurationError
 from rfdetr.util.logging_config import get_logger
@@ -250,6 +250,16 @@ class DataConfig(BaseModel):
 
     validation_batch_size: int = Field(default=4, gt=0)
     validation_num_workers: int = Field(default=2, ge=0)
+
+    training_width: int = Field(gt=0, description="Width during training, must be divisible by 56")
+    training_height: int = Field(gt=0, description="Height during training, must be divisible by 56")
+
+    @field_validator('training_width', 'training_height')
+    @classmethod
+    def validate_dimensions_divisible_by_56(cls, v: int, info) -> int:
+        if v % 56 != 0:
+            raise ValueError(f"{info.field_name} must be divisible by 56, got {v}")
+        return v
 
 
 class MaskConfig(BaseModel):
