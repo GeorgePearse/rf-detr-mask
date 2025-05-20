@@ -26,20 +26,29 @@ from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 
 from rfdetr.config import ModelConfig, load_config
-from adapters.data_module import RFDETRDataModule
-from adapters.rfdetr_lightning import RFDETRLightningModule
-from adapters.training_config import TrainingConfig
+from rfdetr.adapters.data_module import RFDETRDataModule
+from rfdetr.adapters.rfdetr_lightning import RFDETRLightningModule
+from rfdetr.adapters.training_config import TrainingConfig
 from rfdetr.util.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
-def get_number_of_classes(config: ModelConfig) -> int:
-    coco_path = Path(config.dataset.coco_path)
+def get_number_of_classes(config) -> int:
+    # Handle both ModelConfig and TrainingConfig
+    if hasattr(config, 'dataset') and hasattr(config.dataset, 'coco_path'):
+        # ModelConfig format
+        coco_path = Path(config.dataset.coco_path)
+        coco_train = config.dataset.coco_train
+    else:
+        # TrainingConfig format
+        coco_path = Path(config.coco_path) if config.coco_path else Path("/home/georgepearse/data/cmr/annotations")
+        coco_train = config.coco_train
+    
     annotation_file = (
-        coco_path / config.dataset.coco_train
-        if not Path(config.dataset.coco_train).is_absolute()
-        else Path(config.dataset.coco_train)
+        coco_path / coco_train
+        if not Path(coco_train).is_absolute()
+        else Path(coco_train)
     )
 
     # Get number of classes from annotation file - fail if can't determine
@@ -66,10 +75,15 @@ def main(config_path: str = "configs/default.yaml"):
     num_classes = get_number_of_classes(config)
 
     # Set the num_classes in config using the proper method
-    config.set_num_classes(num_classes)
+    if hasattr(config, 'set_num_classes'):
+        # ModelConfig method
+        config.set_num_classes(num_classes)
+    else:
+        # TrainingConfig attribute
+        config.num_classes = num_classes
 
     # Create output directory
-    output_dir = Path(config.training.output_dir)
+    output_dir = Path(config.output_dir if hasattr(config, 'output_dir') else config.training.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Save configuration for reference
@@ -78,7 +92,12 @@ def main(config_path: str = "configs/default.yaml"):
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
     config_file = checkpoints_dir / "config.yaml"
-    config.to_yaml(config_file)
+    if hasattr(config, 'to_yaml'):
+        config.to_yaml(config_file)
+    else:
+        # For TrainingConfig
+        with open(config_file, 'w') as f:
+            yaml.dump(config.dict(), f, sort_keys=False, indent=2)
     logger.info(f"Configuration saved to {config_file}")
 
     # Fix the seed for reproducibility

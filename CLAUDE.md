@@ -97,3 +97,5 @@ The architecture consists of:
 - Segmentation is implemented using a mask head with attention mechanism
 - All model variants use a DINOv2 backbone with different configurations
 - Early stopping and model checkpointing are implemented through Lightning callbacks
+
+STOP USING HASATTR ALL THE FUCKING TIME !!!!
