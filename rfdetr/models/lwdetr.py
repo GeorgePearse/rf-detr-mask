@@ -899,12 +899,6 @@ def build_model(model_config: ModelConfig):
         gradient_checkpointing=model_config.gradient_checkpointing,
         load_dinov2_weights=model_config.pretrain_weights is None,
     )
-    # Check if encoder_only is defined and True
-    if hasattr(model_config, "encoder_only") and model_config.encoder_only:
-        return backbone[0].encoder, None, None
-    # Check if backbone_only is defined and True
-    if hasattr(model_config, "backbone_only") and model_config.backbone_only:
-        return backbone, None, None
 
     # Use variable instead of modifying model_config directly
     num_feature_levels = len(model_config.projector_scale)
