@@ -88,8 +88,6 @@ class ModelConfig(BaseModel):
 
     # Dataset and preprocessing
     num_classes: int = Field(default=90, gt=0)
-    training_width: int = Field(default=560, gt=0, description="Width during training, must be divisible by 56")
-    training_height: int = Field(default=560, gt=0, description="Height during training, must be divisible by 56")
     shape: Optional[tuple[int, int]] = None
 
     # Initialization and weights

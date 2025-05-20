@@ -8,6 +8,9 @@ import torchvision.transforms as transforms
 import rfdetr.util.misc as utils
 from rfdetr.adapters.dataset import CocoDetection
 from rfdetr.adapters.config import DataConfig, ModelConfig
+from rfdetr.util.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 def get_training_transforms(image_width: int, image_height: int) -> transforms.Compose:
     return transforms.Compose([
@@ -53,6 +56,11 @@ class RFDETRDataModule(pl.LightningDataModule):
         # Initialize datasets to None
         self.dataset_train: Optional[CocoDetection] = None
         self.dataset_val: Optional[CocoDetection] = None
+        
+        # Log paths for debugging
+        logger.info(f"Image directory: {self.image_directory}")
+        logger.info(f"Training annotation file: {self.training_annotation_file}")
+        logger.info(f"Validation annotation file: {self.validation_annotation_file}")
 
     def setup(self, stage: Optional[str] = None) -> None:
         """Set up datasets for training and validation.
@@ -61,18 +69,22 @@ class RFDETRDataModule(pl.LightningDataModule):
             stage: Optional stage parameter required by Lightning, but not used here
         """
         # We need to set up datasets for all stages
+        logger.info(f"Setting up training dataset with annotation file: {self.training_annotation_file}")
         self.dataset_train = CocoDetection(
             img_folder=self.image_directory,
             ann_file=self.training_annotation_file,
             transforms=self.training_transforms,
             test_limit=None,
         )
+        logger.info(f"Training dataset has {len(self.dataset_train)} samples")
+        logger.info(f"Setting up validation dataset with annotation file: {self.validation_annotation_file}")
         self.dataset_val = CocoDetection(
             img_folder=self.image_directory,
             ann_file=self.validation_annotation_file,
             transforms=self.validation_transforms,
             test_limit=None,
         )
+        logger.info(f"Validation dataset has {len(self.dataset_val)} samples")
 
     def train_dataloader(self) -> DataLoader:
         """Create training data loader.
