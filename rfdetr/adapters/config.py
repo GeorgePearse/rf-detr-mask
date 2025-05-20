@@ -256,8 +256,7 @@ class DataConfig(BaseModel):
             if not path.is_file():
                 raise ValueError(f"Annotation file path is not a file: {v}")
         return v
-    training_transforms: Optional[list] = None
-    validation_transforms: Optional[list] = None
+   
     val_limit: Optional[int] = None
     test_mode: bool = False
     val_limit_test_mode: int = 20
