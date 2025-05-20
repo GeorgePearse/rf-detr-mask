@@ -15,24 +15,16 @@ from pathlib import Path
 import lightning.pytorch as pl
 import numpy as np
 import torch
+import torch.amp
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
-
-# Import ONNX export functionality
-try:
-    # Import validation only - not directly used
-    from rfdetr.deploy.export import export_onnx as _export_onnx  # noqa: F401
-
-    ONNX_AVAILABLE = True
-except (ImportError, ModuleNotFoundError):
-    ONNX_AVAILABLE = False
-    print("ONNX libraries not fully available - will only export PyTorch weights")
 from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.get_param_dicts import get_param_dict
 from rfdetr.util.utils import ModelEma
+from rfdetr.model_config import ModelConfig
 
 
 class RFDETRLightningModule(pl.LightningModule):
@@ -46,43 +38,12 @@ class RFDETRLightningModule(pl.LightningModule):
         """
         super().__init__()
         self.save_hyperparameters()
-
-        # Import here to avoid circular imports
-        from rfdetr.model_config import ModelConfig
-
-        # Handle different types of input for backward compatibility
-        if isinstance(config, dict):
-            # For dict input, try to convert to ModelConfig
-            try:
-                self.config = ModelConfig(**config)
-            except Exception:
-                # If conversion fails, keep original dict
-                self.config = config
-        elif hasattr(config, "model_dump") and callable(config.model_dump):
-            # It's already a Pydantic model
-            self.config = config
-        else:
-            # Other object with attributes, keep as is
-            self.config = config
-
+        self.config = ModelConfig(**config)
         # Build model, criterion, and postprocessors
         self.model = build_model(self.config)
         self.criterion, self.postprocessors = build_criterion_and_postprocessors(self.config)
-
-        # Setup EMA if enabled
-        if isinstance(self.config, ModelConfig):
-            # Direct attribute access for ModelConfig
-            self.ema_decay = self.config.ema_decay if hasattr(self.config, "ema_decay") else None
-            use_ema = self.config.use_ema if hasattr(self.config, "use_ema") else True
-        elif isinstance(self.config, dict):
-            # Dictionary access
-            self.ema_decay = self.config.get("ema_decay", None)
-            use_ema = self.config.get("use_ema", True)
-        else:
-            # Object attribute access
-            self.ema_decay = getattr(self.config, "ema_decay", None)
-            use_ema = getattr(self.config, "use_ema", True)
-
+        self.ema_decay = self.config.ema_decay if hasattr(self.config, "ema_decay") else None
+        use_ema = self.config.use_ema if hasattr(self.config, "use_ema") else True
         self.ema = ModelEma(self.model, self.ema_decay) if self.ema_decay and use_ema else None
 
         # Track metrics
@@ -91,7 +52,15 @@ class RFDETRLightningModule(pl.LightningModule):
         self.test_metrics = []
 
         # Setup autocast args for mixed precision training
-        self._setup_autocast_args()
+        self._dtype = torch.float32
+        self.amp_backend = "torch"
+        self.amp_enabled = self.config.amp
+            
+        self.autocast_args = {
+            "device_type": "cuda" if torch.cuda.is_available() else "cpu",
+            "enabled": amp_enabled,
+            "dtype": self._dtype,
+        }
 
         # Track best metrics
         self.best_map = 0.0
@@ -99,66 +68,19 @@ class RFDETRLightningModule(pl.LightningModule):
         # Use automatic optimization to work with gradient clipping
         self.automatic_optimization = True
 
-        # Get configuration values based on type
-        if isinstance(self.config, dict):
-            output_dir = self.config.get("output_dir", "exports")
-            self.export_onnx = self.config.get("export_onnx", True)
-            self.export_torch = self.config.get("export_torch", True)
-            self.simplify_onnx = self.config.get("simplify_onnx", True)
-            self.export_on_validation = self.config.get("export_on_validation", True)
-            self.max_steps = self.config.get("max_steps", 2000)
-            self.val_frequency = self.config.get(
-                "eval_save_frequency", self.config.get("val_frequency", 200)
-            )
-        else:
-            output_dir = getattr(self.config, "output_dir", "exports")
-            self.export_onnx = getattr(self.config, "export_onnx", True)
-            self.export_torch = getattr(self.config, "export_torch", True)
-            self.simplify_onnx = getattr(self.config, "simplify_onnx", True)
-            self.export_on_validation = getattr(self.config, "export_on_validation", True)
-            self.max_steps = getattr(self.config, "max_steps", 2000)
-            self.val_frequency = getattr(
-                self.config, "eval_save_frequency", getattr(self.config, "val_frequency", 200)
-            )
+        output_dir = getattr(self.config, "output_dir", "exports")
+        self.export_onnx = getattr(self.config, "export_onnx", True)
+        self.export_torch = getattr(self.config, "export_torch", True)
+        self.simplify_onnx = getattr(self.config, "simplify_onnx", True)
+        self.export_on_validation = getattr(self.config, "export_on_validation", True)
+        self.max_steps = getattr(self.config, "max_steps", 2000)
+        self.val_frequency = getattr(
+            self.config, "eval_save_frequency", getattr(self.config, "val_frequency", 200)
+        )
 
         # Setup export directories
         self.export_dir = Path(output_dir)
         self.export_dir.mkdir(parents=True, exist_ok=True)
-
-    def _setup_autocast_args(self):
-        """Set up arguments for autocast (mixed precision training)."""
-        # Use full precision (float32) by default
-        import torch
-
-        # Always use float32 for main training to avoid cdist_cuda issues
-        self._dtype = torch.float32
-
-        try:
-            # Check if torch.amp is available
-            import torch.amp
-
-            self.amp_backend = "torch"
-        except ImportError:
-            # Fall back to cuda.amp if needed
-            self.amp_backend = "cuda"
-
-        # Get amp setting from config
-        if isinstance(self.config, dict):
-            amp_enabled = self.config.get("amp", False)
-        else:
-            amp_enabled = getattr(self.config, "amp", False)
-
-        if self.amp_backend == "torch":
-            self.autocast_args = {
-                "device_type": "cuda" if torch.cuda.is_available() else "cpu",
-                "enabled": amp_enabled,
-                "dtype": self._dtype,
-            }
-        else:
-            self.autocast_args = {
-                "enabled": amp_enabled,
-                "dtype": self._dtype,
-            }
 
     def forward(self, samples, targets=None):
         """Forward pass through the model."""
@@ -257,19 +179,6 @@ class RFDETRLightningModule(pl.LightningModule):
             # Forward pass
             with torch.autocast(**self.autocast_args):
                 outputs = model_to_eval(samples)
-
-            # Convert back to float if using fp16 eval
-            if fp16_eval:
-                for key in outputs:
-                    if key == "enc_outputs":
-                        for sub_key in outputs[key]:
-                            outputs[key][sub_key] = outputs[key][sub_key].float()
-                    elif key == "aux_outputs":
-                        for idx in range(len(outputs[key])):
-                            for sub_key in outputs[key][idx]:
-                                outputs[key][idx][sub_key] = outputs[key][idx][sub_key].float()
-                    else:
-                        outputs[key] = outputs[key].float()
 
             # Compute loss
             loss_dict = self.criterion(outputs, targets)
