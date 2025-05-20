@@ -1,3 +1,8 @@
+## Meaningful Changes 
+- Training on rectangles
+- Added mask head
+- Added PyTorch Lightning integration
+
 # RF-DETR-MASK: Instance Segmentation Extension
 
 [![version](https://badge.fury.io/py/rfdetr.svg)](https://badge.fury.io/py/rfdetr)
