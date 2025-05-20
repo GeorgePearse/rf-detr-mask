@@ -236,14 +236,5 @@ class RFDETRLightningModule(pl.LightningModule):
         pass
 
     def configure_optimizers(self):
-        """Configure optimizers and learning rate scheduler for iteration-based training."""
-        # Get parameters from config for optimizer
-
-        return {
-            "optimizer": torch.optim.AdamW(lr=self.model_config.lr, weight_decay=0.0001, params=self.model.parameters()),
-            "lr_scheduler": {
-                "scheduler": torch.optim.lr_scheduler.LambdaLR(),
-                "interval": "step",
-                "frequency": 1,
-            },
-        }
+        optimizer = torch.optim.AdamW(self.parameters(), lr=1e-4, weight_decay=0.0001)
+        return optimizer
