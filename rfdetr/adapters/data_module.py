@@ -4,7 +4,19 @@ from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, Sequ
 
 import rfdetr.util.misc as utils
 from rfdetr.adapters.dataset import CocoDetection
+import torchvision.transforms as transforms
 
+def get_training_transforms(image_width: int, image_height: int):
+    return transforms.Compose([
+        transforms.ToTensor(),  
+        transforms.Resize((image_width, image_height)),
+    ])
+
+def get_validation_transforms(image_width: int, image_height: int):
+    return transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Resize((image_width, image_height)),
+    ])
 
 class RFDETRDataModule(pl.LightningDataModule):
     """Lightning data module for RF-DETR-Mask."""
@@ -16,17 +28,17 @@ class RFDETRDataModule(pl.LightningDataModule):
             config: Configuration as a Pydantic model or compatible dict/object
         """
         super().__init__()
-        self.num_workers = config.training.num_workers
-        self.training_batch_size = config.training.batch_size
-        self.training_num_workers = config.training.num_workers
+        self.num_workers = config.num_workers
+        self.training_batch_size = config.batch_size
+        self.training_num_workers = config .num_workers
         self.training_width = config.training.training_width
         self.training_height = config.training.training_height
     
         self.image_directory = config.training.image_directory
         self.training_annotation_file = config.training.training_annotation_file
         self.validation_annotation_file = config.validation.validation_annotation_file
-        self.training_transforms = config.training.training_transforms
-        self.validation_transforms = config.validation.validation_transforms
+        self.training_transforms = get_training_transforms(config.training.training_width, config.training.training_height)
+        self.validation_transforms = get_validation_transforms(config.validation.validation_width, config.validation.validation_height)
 
     def setup(self):
         """Set up datasets for training and validation."""
