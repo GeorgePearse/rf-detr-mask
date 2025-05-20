@@ -30,7 +30,7 @@ model:
   layer_norm: true
   amp: true
   # num_classes is now determined automatically from annotation file
-  pretrain_weights: null
+  pretrain_weights: "rf-detr-base.pth"
   device: "cuda"
   model_training_width: 560  # Divisible by 56
   model_training_height: 672  # Divisible by 56
