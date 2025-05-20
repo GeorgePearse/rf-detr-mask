@@ -43,7 +43,6 @@ def get_args_parser():
     )
 
     # Dataset parameters
-    parser.add_argument("--dataset_file", default="coco", type=str, help="Dataset format")
     parser.add_argument("--coco_path", type=str, help="Path to the annotations directory")
     parser.add_argument("--coco_val", type=str, help="Validation annotation file name")
     parser.add_argument("--coco_img_path", type=str, help="Path to the images directory")
@@ -392,7 +391,7 @@ def main(args):
         # Create dummy checkpoint for testing
         checkpoint = {
             "model": {},
-            "args": argparse.Namespace(num_classes=3, resolution=560, dataset_file="coco"),
+            "args": argparse.Namespace(num_classes=3, resolution=560),
         }
     else:
         logger.info(f"Loading checkpoint from {checkpoint_path}")

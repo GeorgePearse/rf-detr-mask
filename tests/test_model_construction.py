@@ -25,7 +25,19 @@ class TestModelConstruction(unittest.TestCase):
         self.args = argparse.Namespace(
             device="cpu",
             num_classes=self.config.model.num_classes,
-            resolution=self.config.model.resolution,
+            # Use training_width and training_height from the config
+            # For backward compatibility, also set resolution to the same value
+            resolution=448,  # Default resolution
+            training_width=self.config.model.training_width,
+            training_height=self.config.model.training_height,
+            encoder=self.config.model.encoder,
+            out_feature_indexes=self.config.model.out_feature_indexes,
+            hidden_dim=self.config.model.hidden_dim,
+            projector_scale=self.config.model.projector_scale,
+            dec_layers=self.config.model.dec_layers,
+            dec_n_points=self.config.model.dec_n_points,
+            group_detr=self.config.model.group_detr,
+            num_queries=self.config.model.num_queries,
         )
 
         # Adjust some parameters for simple test

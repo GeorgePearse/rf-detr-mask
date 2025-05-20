@@ -35,7 +35,8 @@ The evaluate script supports the following arguments:
 ### Model Parameters
 
 - `--num_classes`: Number of classes in the model
-- `--resolution`: Input resolution for the model (default: 560)
+- `--training_width`: Input width for the model (default: 560)
+- `--training_height`: Input height for the model (default: 560)
 
 ### Evaluation Parameters
 

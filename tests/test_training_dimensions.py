@@ -37,6 +37,11 @@ class TestTrainingDimensions(unittest.TestCase):
             resolution=config.model.resolution,
             training_width=training_width,
             training_height=training_height,
+            lr_encoder=5e-6,  # Add lr_encoder for backbone learning rate
+            encoder=config.model.encoder,
+            out_feature_indexes=config.model.out_feature_indexes,
+            hidden_dim=config.model.hidden_dim,
+            projector_scale=config.model.projector_scale,
         )
 
         # Build dataset with custom training dimensions

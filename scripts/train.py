@@ -61,6 +61,27 @@ def main():
     # Apply command line overrides
     if args.output_dir:
         config.output_dir = args.output_dir
+        
+    # Determine the number of classes from annotation file
+    coco_path = Path(config.coco_path)
+    annotation_file = coco_path / config.coco_train if not Path(config.coco_train).is_absolute() else Path(config.coco_train)
+    
+    # Get number of classes from annotation file - fail if can't determine
+    import json
+    if not annotation_file.exists():
+        raise FileNotFoundError(f"Annotation file not found: {annotation_file}")
+        
+    with open(annotation_file) as f:
+        annotations = json.load(f)
+        categories = annotations.get("categories", [])
+        if not categories:
+            raise ValueError(f"No categories found in annotation file: {annotation_file}")
+        
+        num_classes = len(categories)
+        logger.info(f"Detected {num_classes} classes from annotation file")
+    
+    # Set the num_classes in config
+    config.num_classes = num_classes
 
     # Create output directory
     output_dir = Path(config.output_dir)
@@ -136,8 +157,8 @@ def main():
     # Model checkpoint callback
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoints_dir,
-        filename="checkpoint_step_{step:06d}-{val/mAP:.4f}",
-        monitor="val/mAP",
+        filename="checkpoint_step_{step:06d}-{val_mAP:.4f}",
+        monitor="val_mAP",  # Changed from val/mAP to val_mAP
         mode="max",
         save_top_k=3,
         save_last=True,
@@ -153,7 +174,7 @@ def main():
     best_checkpoint_callback = ModelCheckpoint(
         dirpath=output_dir,
         filename="checkpoint_best",
-        monitor="val/mAP",
+        monitor="val_mAP",  # Changed from val/mAP to val_mAP
         mode="max",
         save_top_k=1,
         save_last=False,

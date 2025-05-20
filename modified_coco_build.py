@@ -5,7 +5,7 @@ from rfdetr.datasets.coco import CocoDetection
 from rfdetr.datasets.transforms import make_coco_transforms, make_coco_transforms_square_div_64
 
 
-def build_custom_coco(image_set, args, resolution):
+def build_custom_coco(image_set, args):
     """
     Modified build function that supports custom COCO annotation files
     through coco_train and coco_val parameters.
@@ -63,7 +63,7 @@ def build_custom_coco(image_set, args, resolution):
             img_folder,
             ann_file,
             transforms=make_coco_transforms_square_div_64(
-                image_set, resolution, multi_scale=multi_scale, expanded_scales=expanded_scales
+                image_set, args, multi_scale=multi_scale, expanded_scales=expanded_scales
             ),
         )
     else:
@@ -71,7 +71,7 @@ def build_custom_coco(image_set, args, resolution):
             img_folder,
             ann_file,
             transforms=make_coco_transforms(
-                image_set, resolution, multi_scale=multi_scale, expanded_scales=expanded_scales
+                image_set, args, multi_scale=multi_scale, expanded_scales=expanded_scales
             ),
         )
     return dataset

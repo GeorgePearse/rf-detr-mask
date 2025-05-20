@@ -2,7 +2,7 @@
 
 ## Issue
 
-The windowed attention mechanism in `WindowedDinov2WithRegistersEmbeddings` was causing shape errors when processing rectangular (non-square) images, particularly with the 504x560 resolution mentioned in [Issue #148](https://github.com/roboflow/rf-detr/issues/148).
+The windowed attention mechanism in `WindowedDinov2WithRegistersEmbeddings` was causing shape errors when processing rectangular (non-square) images, particularly with the 504x560 training dimensions mentioned in [Issue #148](https://github.com/roboflow/rf-detr/issues/148).
 
 ## Root Cause
 
@@ -45,4 +45,4 @@ The fix was validated with a test case in `tests/test_windowed_attn_rectangular.
 1. The fixed view operation correctly reshapes tensors for rectangular inputs
 2. The patch positions in the reshaped tensor maintain spatial relationships
 
-This fix enables RF-DETR to properly process rectangular images, including the 504x560 resolution that was previously problematic.
+This fix enables RF-DETR to properly process rectangular images, including the 504x560 dimensions that were previously problematic.

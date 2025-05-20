@@ -76,13 +76,28 @@ class TestFixedSize(unittest.TestCase):
         cls.args = argparse.Namespace(
             device="cpu",
             num_classes=cls.config.model.num_classes,
-            resolution=cls.config.model.resolution,
+            # Use training_width and training_height from the config
+            # For backward compatibility, also set resolution to the same value
+            resolution=448,  # Default resolution
+            training_width=cls.config.model.training_width,
+            training_height=cls.config.model.training_height,
+            encoder=cls.config.model.encoder,
+            out_feature_indexes=cls.config.model.out_feature_indexes,
+            hidden_dim=cls.config.model.hidden_dim,
+            projector_scale=cls.config.model.projector_scale,
+            dec_layers=cls.config.model.dec_layers,
+            dec_n_points=cls.config.model.dec_n_points,
+            group_detr=cls.config.model.group_detr,
+            num_queries=cls.config.model.num_queries,
         )
 
         # Adjust some parameters for the test
         cls.args.batch_size = 1
         cls.args.amp = False
         cls.args.epochs = 1
+        cls.args.lr = 5e-5
+        cls.args.lr_encoder = 5e-6  # Add lr_encoder for backbone learning rate
+        cls.args.weight_decay = 1e-4
 
         # Set device
         cls.device = torch.device(cls.args.device)

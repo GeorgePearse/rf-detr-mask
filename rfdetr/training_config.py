@@ -58,7 +58,6 @@ class TrainingConfig(BaseModel):
     cutoff_epoch: int = Field(0, description="Cutoff epoch for dropout")
 
     # Data parameters
-    dataset_file: Literal["coco", "o365", "roboflow"] = Field("coco", description="Dataset format")
     coco_path: str = Field("", description="Path to COCO annotations directory")
     coco_train: str = Field(
         "2025-05-15_12:38:23.077836_train_ordered.json", description="Training annotation file name"
@@ -76,7 +75,8 @@ class TrainingConfig(BaseModel):
     test_limit: Optional[int] = Field(None, description="Limit dataset size for testing")
 
     # Model parameters
-    num_classes: int = Field(2, description="Number of classes")
+    # num_classes is now determined automatically from the annotation file
+    num_classes: Optional[int] = Field(None, description="Number of classes (auto-determined from annotation file)")
     encoder: str = Field("dinov2_windowed_small", description="Encoder type")
     pretrain_weights: Optional[str] = Field(None, description="Path to pretrained weights")
     freeze_encoder: bool = Field(False, description="Freeze encoder weights")
@@ -203,4 +203,10 @@ class TrainingConfig(BaseModel):
 
     def to_args_dict(self) -> dict[str, Any]:
         """Convert to a dictionary compatible with the legacy argparse approach."""
-        return self.dict()
+        args_dict = self.dict()
+        
+        # Ensure num_classes is set - it should have been determined from annotation file
+        if args_dict.get('num_classes') is None:
+            raise ValueError("num_classes must be set before converting to args dict")
+            
+        return args_dict

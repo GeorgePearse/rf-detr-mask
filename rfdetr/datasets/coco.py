@@ -147,7 +147,7 @@ class ConvertCoco:
         return image, target
 
 
-def make_coco_transforms(image_set, resolution, multi_scale=False, expanded_scales=False):
+def make_coco_transforms(image_set, args, multi_scale=False, expanded_scales=False):
     normalize = transforms_module.Compose(
         [
             transforms_module.ToTensor(),
@@ -155,10 +155,19 @@ def make_coco_transforms(image_set, resolution, multi_scale=False, expanded_scal
         ]
     )
 
-    scales = [resolution]
+    # Get training dimensions from args
+    if hasattr(args, "training_width") and hasattr(args, "training_height"):
+        training_width = args.training_width
+        training_height = args.training_height
+    else:
+        training_width = getattr(args, "training_width", 560)
+        training_height = getattr(args, "training_height", 560)
+    
+    max_dimension = max(training_width, training_height)
+    scales = [max_dimension]
     if multi_scale:
         # scales = [448, 512, 576, 640, 704, 768, 832, 896]
-        scales = compute_multi_scale_scales(resolution, expanded_scales)
+        scales = compute_multi_scale_scales(max_dimension, expanded_scales)
         print(scales)
 
     if image_set == "train":
@@ -182,14 +191,14 @@ def make_coco_transforms(image_set, resolution, multi_scale=False, expanded_scal
     if image_set == "val":
         return transforms_module.Compose(
             [
-                transforms_module.RandomResize([resolution], max_size=1333),
+                transforms_module.RandomResize([max_dimension], max_size=1333),
                 normalize,
             ]
         )
     if image_set == "val_speed":
         return transforms_module.Compose(
             [
-                transforms_module.SquareResize([resolution]),
+                transforms_module.SquareResize([max_dimension]),
                 normalize,
             ]
         )
@@ -198,7 +207,7 @@ def make_coco_transforms(image_set, resolution, multi_scale=False, expanded_scal
 
 
 def make_coco_transforms_square_div_64(
-    image_set, resolution, multi_scale=False, expanded_scales=False
+    image_set, args, multi_scale=False, expanded_scales=False
 ):
     """ """
 
@@ -209,10 +218,19 @@ def make_coco_transforms_square_div_64(
         ]
     )
 
-    scales = [resolution]
+    # Get training dimensions from args
+    if hasattr(args, "training_width") and hasattr(args, "training_height"):
+        training_width = args.training_width
+        training_height = args.training_height
+    else:
+        training_width = getattr(args, "training_width", 560)
+        training_height = getattr(args, "training_height", 560)
+    
+    max_dimension = max(training_width, training_height)
+    scales = [max_dimension]
     if multi_scale:
         # scales = [448, 512, 576, 640, 704, 768, 832, 896]
-        scales = compute_multi_scale_scales(resolution, expanded_scales)
+        scales = compute_multi_scale_scales(max_dimension, expanded_scales)
         print(scales)
 
     if image_set == "train":
@@ -236,14 +254,14 @@ def make_coco_transforms_square_div_64(
     if image_set == "val":
         return transforms_module.Compose(
             [
-                transforms_module.SquareResize([resolution]),
+                transforms_module.SquareResize([max_dimension]),
                 normalize,
             ]
         )
     if image_set == "val_speed":
         return transforms_module.Compose(
             [
-                transforms_module.SquareResize([resolution]),
+                transforms_module.SquareResize([max_dimension]),
                 normalize,
             ]
         )
@@ -251,7 +269,7 @@ def make_coco_transforms_square_div_64(
     raise ValueError(f"unknown {image_set}")
 
 
-def build(image_set, args, resolution):
+def build(image_set, args):
     root = Path(args.coco_path)
     assert root.exists(), f"provided COCO path {root} does not exist"
     mode = "instances"
@@ -297,7 +315,7 @@ def build(image_set, args, resolution):
             ann_file,
             transforms=make_coco_transforms_square_div_64(
                 image_set,
-                resolution,
+                args,
                 multi_scale=args.multi_scale,
                 expanded_scales=args.expanded_scales,
             ),
@@ -309,7 +327,7 @@ def build(image_set, args, resolution):
             ann_file,
             transforms=make_coco_transforms(
                 image_set,
-                resolution,
+                args,
                 multi_scale=args.multi_scale,
                 expanded_scales=args.expanded_scales,
             ),
@@ -318,7 +336,7 @@ def build(image_set, args, resolution):
     return dataset
 
 
-def build_roboflow(image_set, args, resolution):
+def build_roboflow(image_set, args):
     root = Path(args.dataset_dir)
     assert root.exists(), f"provided Roboflow path {root} does not exist"
     paths = {
@@ -339,7 +357,7 @@ def build_roboflow(image_set, args, resolution):
             img_folder,
             ann_file,
             transforms=make_coco_transforms_square_div_64(
-                image_set, resolution, multi_scale=args.multi_scale
+                image_set, args, multi_scale=args.multi_scale
             ),
             test_limit=test_limit,
         )
@@ -347,7 +365,7 @@ def build_roboflow(image_set, args, resolution):
         dataset = CocoDetection(
             img_folder,
             ann_file,
-            transforms=make_coco_transforms(image_set, resolution, multi_scale=args.multi_scale),
+            transforms=make_coco_transforms(image_set, args, multi_scale=args.multi_scale),
             test_limit=test_limit,
         )
     return dataset

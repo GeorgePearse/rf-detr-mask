@@ -64,11 +64,19 @@ class TestQuickTraining(unittest.TestCase):
         config_args = argparse.Namespace(
             device="cpu",
             num_classes=config.model.num_classes,
-            resolution=config.model.resolution,
+            # Use training_width and training_height from the config
+            # For backward compatibility, also set resolution to the same value
+            resolution=448,  # Default resolution
+            training_width=config.model.training_width,
+            training_height=config.model.training_height,
             encoder=config.model.encoder,
             out_feature_indexes=config.model.out_feature_indexes,
             hidden_dim=config.model.hidden_dim,
             projector_scale=config.model.projector_scale,
+            dec_layers=config.model.dec_layers,
+            dec_n_points=config.model.dec_n_points,
+            group_detr=config.model.group_detr,
+            num_queries=config.model.num_queries,
         )
 
         # Override with test-specific settings
@@ -76,6 +84,9 @@ class TestQuickTraining(unittest.TestCase):
         config_args.num_workers = 0  # No workers for testing
         config_args.amp = False  # Disable AMP for stability
         config_args.square_resize_div_64 = True  # Enable square resize
+        config_args.lr = 5e-5
+        config_args.lr_encoder = 5e-6  # Add lr_encoder for backbone learning rate
+        config_args.weight_decay = 1e-4
 
         # Set device
         device = torch.device(config_args.device)

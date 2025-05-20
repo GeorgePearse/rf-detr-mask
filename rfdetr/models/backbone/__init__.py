@@ -8,7 +8,7 @@
 # ------------------------------------------------------------------------
 
 from typing import Callable
-from collections.abc import Dict, List
+from typing import Dict, List
 
 import torch
 from torch import nn

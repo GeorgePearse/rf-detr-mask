@@ -37,3 +37,8 @@ Use "hasattr" very sparingly. It is often over-used by LLMs
 - **Design patterns**: Follow PyTorch conventions, use builder pattern for complex objects
 - **Inheritance**: Extend appropriate PyTorch classes (nn.Module)
 - **Performance**: Use torch.no_grad() for evaluation code
+
+
+## Important 
+- Use Context7 when used to implement something with a specific package, it helps you retrieve the latest docs.
+- Amp is a command line tool for writing code made by sourcegraph.

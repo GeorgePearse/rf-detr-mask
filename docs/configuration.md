@@ -48,7 +48,7 @@ The configuration system uses Pydantic for validation, ensuring that:
 - All required parameters are present
 - Parameters are of the correct type
 - Numerical parameters are within valid ranges
-- Resolution is divisible by 14 for DINOv2
+- Training dimensions (width and height) are divisible by 14 for DINOv2
 - Configuration sections are consistent with each other
 
 ## Example Configuration
@@ -72,7 +72,8 @@ model:
   num_classes: 69  # CMR has 69 classes
   pretrain_weights: "rf-detr-base.pth"
   device: "cuda"
-  resolution: 560
+  training_width: 560
+  training_height: 560
   group_detr: 13
   gradient_checkpointing: false
   num_queries: 300

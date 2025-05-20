@@ -22,7 +22,6 @@ def main():
         def __init__(self):
             # Dataset parameters
             self.dataset = "coco"
-            self.dataset_file = "coco"
             self.coco_path = "/home/georgepearse/data/cmr/annotations"
             self.coco_train = "2025-05-15_12:38:23.077836_train_ordered.json"
             self.coco_val = "2025-05-15_12:38:38.270134_val_ordered.json"

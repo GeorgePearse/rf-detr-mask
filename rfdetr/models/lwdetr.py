@@ -26,6 +26,7 @@ from typing import Callable
 
 import torch
 import torch.nn.functional as transforms_f
+import torch.nn.functional as F
 from torch import nn
 
 from rfdetr.models.backbone import build_backbone
@@ -916,24 +917,18 @@ def build_model(args):
     print(f"DEBUG: args has shape? {hasattr(args, 'shape')}")
     if hasattr(args, "shape"):
         print(f"DEBUG: args.shape = {args.shape}, type: {type(args.shape)}")
-    print(f"DEBUG: args has resolution? {hasattr(args, 'resolution')}")
-    if hasattr(args, "resolution"):
-        print(f"DEBUG: args.resolution = {args.resolution}")
 
     # Calculate target_shape
     if hasattr(args, "shape") and args.shape is not None:
         target_shape = tuple(args.shape) if isinstance(args.shape, list) else args.shape
     elif hasattr(args, "training_width") and hasattr(args, "training_height"):
-        # Ensure training dimensions override resolution
         training_width = args.training_width
         training_height = args.training_height
         print(f"Using training dimensions: {training_height}x{training_width}")
         # DinoV2 expects (height, width)
         target_shape = (training_height, training_width)
-    elif hasattr(args, "resolution"):
-        target_shape = (args.resolution, args.resolution)
     else:
-        target_shape = (640, 640)
+        target_shape = (560, 560)
 
     print(f"DEBUG: target_shape = {target_shape}")
 

@@ -18,7 +18,6 @@ class TestCustomAnnotations(unittest.TestCase):
 
         # Create mock args object
         args = argparse.Namespace()
-        args.dataset_file = "coco"
         args.coco_path = "/home/georgepearse/data/cmr/annotations"
         args.coco_train = "2025-05-15_12:38:23.077836_train_ordered.json"
         args.coco_val = "2025-05-15_12:38:38.270134_val_ordered.json"
@@ -90,7 +89,6 @@ class TestCustomAnnotations(unittest.TestCase):
         # Test without custom annotations (should use default)
         print("\nTesting without custom annotations (should fail with default paths)...")
         args_default = argparse.Namespace()
-        args_default.dataset_file = "coco"
         args_default.coco_path = "/home/georgepearse/data/cmr/annotations"
         args_default.multi_scale = False
         args_default.expanded_scales = False

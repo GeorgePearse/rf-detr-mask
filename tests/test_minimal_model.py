@@ -72,7 +72,6 @@ class Config:
     coco_train = "2025-05-15_12:38:23.077836_train_ordered.json"
     coco_img_path = "/home/georgepearse/data/images"
     dataset = "coco"
-    dataset_file = "coco"
     square_resize = True
     square_resize_div_64 = False
     multi_scale = False
@@ -158,7 +157,7 @@ class TestMinimalModel(unittest.TestCase):
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast('cuda', enabled=False):
             outputs = self.model(samples, targets)
             print(f"Model output keys: {outputs.keys()}")
 

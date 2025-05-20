@@ -33,14 +33,8 @@ from rfdetr.util.misc import NestedTensor
 
 logger = get_logger(__name__)
 
-try:
-    from torch.amp import GradScaler, autocast
-
-    DEPRECATED_AMP = False
-except ImportError:
-    from torch.cuda.amp import GradScaler, autocast
-
-    DEPRECATED_AMP = True
+# Import AMP utilities
+from torch.amp import GradScaler, autocast
 
 
 def do_evaluation_during_training(
@@ -50,6 +44,13 @@ def do_evaluation_during_training(
     logger.info(f"Running evaluation at step {step_counter}")
     model.eval()
     with torch.no_grad():
+        # If in test_mode, set val_limit_test_mode for quicker validation
+        original_test_mode = getattr(args, "test_mode", False)
+        original_val_limit = getattr(args, "val_limit", None)
+        
+        if hasattr(args, "test_mode") and args.test_mode:
+            logger.info(f"Using test mode with validation limit of {args.val_limit_test_mode}")
+        
         eval_stats, coco_evaluator = evaluate(
             model,
             criterion,
@@ -59,6 +60,7 @@ def do_evaluation_during_training(
             device,
             args=args,
         )
+        
         logger.info(
             f"Step {step_counter} evaluation: mAP={eval_stats['coco_eval_bbox'][0]:.4f}"
         )
@@ -74,10 +76,7 @@ def get_autocast_args(args):
         else torch.float16
     )
 
-    if DEPRECATED_AMP:
-        return {"enabled": args.amp, "dtype": dtype}
-    else:
-        return {"device_type": "cuda", "enabled": args.amp, "dtype": dtype}
+    return {"device_type": "cuda", "enabled": args.amp, "dtype": dtype}
 
 
 def train_one_epoch(
@@ -116,10 +115,7 @@ def train_one_epoch(
     logger.info(f"Total batch size: {batch_size * utils.get_world_size()}")
 
     # Add gradient scaler for AMP
-    if DEPRECATED_AMP:
-        scaler = GradScaler(enabled=args.amp)
-    else:
-        scaler = GradScaler("cuda", enabled=args.amp)
+    scaler = GradScaler(device_type="cuda", enabled=args.amp)
 
     optimizer.zero_grad()
     assert batch_size % args.grad_accum_steps == 0
@@ -246,6 +242,10 @@ def train_one_epoch(
 
 
 def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, args=None):
+    """Evaluate model on validation dataset.
+    
+    If args.test_mode is True, the validation will be limited to args.val_limit_test_mode samples.
+    """
     model.eval()
     if args.fp16_eval:
         model.half()
@@ -257,8 +257,23 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, arg
 
     iou_types = tuple(k for k in ("segm", "bbox") if k in postprocessors)
     coco_evaluator = CocoEvaluator(base_ds, iou_types)
+    
+    # If test_mode is enabled, limit evaluation to specified number of samples
+    max_samples = None
+    if hasattr(args, "test_mode") and args.test_mode and hasattr(args, "val_limit_test_mode"):
+        max_samples = args.val_limit_test_mode
+        logger.info(f"Test mode enabled: limiting validation to {max_samples} samples")
+    
+    sample_count = 0
 
     for samples, targets in metric_logger.log_every(data_loader, 1, header):
+        # If we're in test mode and have processed enough samples, break
+        if max_samples is not None and sample_count >= max_samples:
+            logger.info(f"Evaluation stopped at {sample_count} samples due to test_mode")
+            break
+        
+        # Increment the sample counter
+        sample_count += len(targets)
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 

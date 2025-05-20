@@ -24,13 +24,14 @@ from pycocotools.coco import COCO
 # Add the parent directory to the path so we can import the module
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import rfdetr.datasets.transforms as T
-from rfdetr.datasets.coco import CocoDetection, ConvertCoco
+from rfdetr.datasets.coco import CocoDetection
 
 
 def parse_args():
     parser = argparse.ArgumentParser("Check COCO Mask Loading")
     parser.add_argument("--coco_path", type=str, required=True, help="Path to COCO dataset")
+    parser.add_argument("--training_width", type=int, required=True, help="Width for training")
+    parser.add_argument("--training_height", type=int, required=True, help="Height for training")
     parser.add_argument(
         "--output_dir",
         type=str,
@@ -177,47 +178,13 @@ def convert_coco_check(args):
     # Load COCO API for examining original annotations
     coco_api = COCO(ann_file)
 
-    # Create transforms
-    transforms = T.Compose(
-        [
-            T.RandomResize([640], max_size=1333),
-            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-        ]
-    )
+    # No transforms
+    transforms = None
 
     # Create dataset
     dataset = CocoDetection(img_folder, ann_file, transforms)
 
-    # Create a patched version of ConvertCoco to diagnose issues
-    original_call = ConvertCoco.__call__
-
-    def patched_call(self, image, target):
-        # Print target info before conversion
-        print(f"Original target keys: {list(target.keys())}")
-        if "annotations" in target:
-            print(f"Number of annotations: {len(target['annotations'])}")
-            for i, ann in enumerate(target["annotations"]):
-                print(f"Annotation {i} keys: {list(ann.keys())}")
-                if "segmentation" in ann:
-                    print(f"  Segmentation type: {type(ann['segmentation'])}")
-                    if isinstance(ann["segmentation"], list):
-                        print(f"  Number of polygons: {len(ann['segmentation'])}")
-
-        # Call original method
-        image, converted_target = original_call(self, image, target)
-
-        # Print target info after conversion
-        print(f"Converted target keys: {list(converted_target.keys())}")
-        if "masks" in converted_target:
-            print(f"Masks shape: {converted_target['masks'].shape}")
-            print(f"Masks type: {converted_target['masks'].dtype}")
-        else:
-            print("No masks found in converted target")
-
-        return image, converted_target
-
-    # Use our patched method for diagnosis
-    ConvertCoco.__call__ = patched_call
+    # We will work directly with the dataset objects
 
     # Check a few images
     for i in range(min(args.num_images, len(dataset))):
@@ -261,92 +228,12 @@ def convert_coco_check(args):
         except Exception as e:
             print(f"Error processing image {i}: {e}")
 
-    # Restore original method
-    ConvertCoco.__call__ = original_call
+    # No need to restore any method
 
 
-def suggest_coco_fix():
-    """Suggest a fix for ConvertCoco to handle masks properly."""
-    print("\n--- Suggested Fix for ConvertCoco ---")
-
-    suggested_code = """
-    def __call__(self, image, target):
-        w, h = image.size
-
-        image_id = target["image_id"]
-        image_id = torch.tensor([image_id])
-
-        anno = target["annotations"]
-
-        anno = [obj for obj in anno if 'iscrowd' not in obj or obj['iscrowd'] == 0]
-
-        boxes = [obj["bbox"] for obj in anno]
-        # guard against no boxes via resizing
-        boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
-        boxes[:, 2:] += boxes[:, :2]
-        boxes[:, 0::2].clamp_(min=0, max=w)
-        boxes[:, 1::2].clamp_(min=0, max=h)
-
-        classes = [obj["category_id"] for obj in anno]
-        classes = torch.tensor(classes, dtype=torch.int64)
-
-        # Handle segmentation masks if available
-        if anno and "segmentation" in anno[0]:
-            masks = []
-            for obj in anno:
-                if 'segmentation' in obj:
-                    if isinstance(obj['segmentation'], list):
-                        # Polygon format
-                        rles = mask_util.frPyObjects(obj['segmentation'], h, w)
-                        rle = mask_util.merge(rles)
-                    else:
-                        # RLE format
-                        rle = obj['segmentation']
-                    mask = mask_util.decode(rle)
-                    masks.append(mask)
-                else:
-                    # Create an empty mask if segmentation is missing
-                    masks.append(np.zeros((h, w), dtype=np.uint8))
-
-            masks = torch.as_tensor(np.stack(masks), dtype=torch.bool)
-        else:
-            masks = None
-
-        keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
-        boxes = boxes[keep]
-        classes = classes[keep]
-        if masks is not None:
-            masks = masks[keep]
-
-        target = {}
-        target["boxes"] = boxes
-        target["labels"] = classes
-        target["image_id"] = image_id
-
-        # for conversion to coco api
-        area = torch.tensor([obj["area"] for obj in anno])
-        iscrowd = torch.tensor([obj["iscrowd"] if "iscrowd" in obj else 0 for obj in anno])
-        target["area"] = area[keep]
-        target["iscrowd"] = iscrowd[keep]
-
-        # Add masks to target if available
-        if masks is not None:
-            target["masks"] = masks
-
-        target["orig_size"] = torch.as_tensor([int(h), int(w)])
-        target["size"] = torch.as_tensor([int(h), int(w)])
-
-        return image, target
-    """
-
-    print(suggested_code)
-    print("\nTo implement this fix:")
-    print("1. Import pycocotools.mask in coco.py: 'import pycocotools.mask as mask_util'")
-    print("2. Replace the current __call__ method in ConvertCoco with the above implementation")
-    print("3. This will properly handle both polygon and RLE segmentation formats")
+# We don't need to suggest fixes for ConvertCoco anymore
 
 
 if __name__ == "__main__":
     args = parse_args()
     convert_coco_check(args)
-    suggest_coco_fix()

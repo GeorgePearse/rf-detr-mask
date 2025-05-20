@@ -21,13 +21,7 @@ from lightning.fabric.strategies import DDPStrategy
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 
 # Import autocast for mixed precision training
-try:
-    from torch.amp import autocast  # GradScaler is not directly used
-
-    DEPRECATED_AMP = False
-except ImportError:
-    from torch.cuda.amp import autocast  # Fallback to older API
-    DEPRECATED_AMP = True
+from torch.amp import autocast  # GradScaler is not directly used
 
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
@@ -59,10 +53,7 @@ def get_autocast_args(config):
     else:
         amp_enabled = getattr(config, "amp", False)
 
-    if DEPRECATED_AMP:
-        return {"enabled": amp_enabled, "dtype": dtype}
-    else:
-        return {"device_type": "cuda", "enabled": amp_enabled, "dtype": dtype}
+    return {"device_type": "cuda", "enabled": amp_enabled, "dtype": dtype}
 
 
 class RFDETRFabricModule:
@@ -159,14 +150,16 @@ class RFDETRFabricModule:
         Returns:
             A dummy input tensor with the correct shape for ONNX export
         """
-        # Get resolution from config
+        # Get dimensions from config
         if isinstance(self.config, dict):
-            resolution = self.config.get("resolution", 640)
+            training_width = self.config.get("training_width", 560)
+            training_height = self.config.get("training_height", 560)
         else:
-            resolution = getattr(self.config, "resolution", 640)
+            training_width = getattr(self.config, "training_width", 560)
+            training_height = getattr(self.config, "training_height", 560)
 
         # Create dummy input
-        dummy = torch.randint(0, 256, (batch_size, 3, resolution, resolution), dtype=torch.uint8)
+        dummy = torch.randint(0, 256, (batch_size, 3, training_height, training_width), dtype=torch.uint8)
         image = dummy.float() / 255.0
 
         # Apply normalization
@@ -505,11 +498,13 @@ class RFDETRFabricData:
         if isinstance(self.config, dict):
             self.batch_size = self.config.get("batch_size", 4)
             self.num_workers = self.config.get("num_workers", 2)
-            self.resolution = self.config.get("resolution", 560)
+            self.training_width = self.config.get("training_width", 560)
+            self.training_height = self.config.get("training_height", 560)
         else:
             self.batch_size = getattr(self.config, "batch_size", 4)
             self.num_workers = getattr(self.config, "num_workers", 2)
-            self.resolution = getattr(self.config, "resolution", 560)
+            self.training_width = getattr(self.config, "training_width", 560)
+            self.training_height = getattr(self.config, "training_height", 560)
 
         # Datasets will be initialized in setup()
         self.dataset_train = None
@@ -523,10 +518,12 @@ class RFDETRFabricData:
         """
         # We need to set up datasets for all stages
         self.dataset_train = build_dataset(
-            image_set="train", args=self.config, resolution=self.resolution
+            image_set="train", args=self.config,
+            training_width=self.training_width, training_height=self.training_height
         )
         self.dataset_val = build_dataset(
-            image_set="val", args=self.config, resolution=self.resolution
+            image_set="val", args=self.config,
+            training_width=self.training_width, training_height=self.training_height
         )
 
         # Store fabric reference

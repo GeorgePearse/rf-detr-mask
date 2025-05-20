@@ -8,7 +8,7 @@
 Comprehensive Pydantic model configuration for RF-DETR models.
 """
 
-from typing import Any, Literal, Optional
+from typing import Any, List, Literal, Optional
 # Use modern type annotation style
 from typing_extensions import ClassVar
 
@@ -67,9 +67,9 @@ class ModelConfig(BaseModel):
 
     # Dataset and preprocessing
     num_classes: int = Field(default=90, gt=0)
-    resolution: int = Field(default=560, gt=0)
+    training_width: int = Field(default=560, gt=0, description="Width during training, must be divisible by 56")
+    training_height: int = Field(default=560, gt=0, description="Height during training, must be divisible by 56")
     shape: Optional[tuple[int, int]] = None
-    dataset_file: Literal["coco", "o365", "roboflow"] = "coco"
     coco_path: str = ""
     coco_train: str = ""
     coco_val: str = ""
@@ -79,6 +79,8 @@ class ModelConfig(BaseModel):
     square_resize: bool = True
     square_resize_div_64: bool = False
     test_limit: Optional[int] = None
+    test_mode: bool = False
+    val_limit_test_mode: int = 20
 
     # Initialization and weights
     pretrain_weights: Optional[str] = None
@@ -117,11 +119,12 @@ class ModelConfig(BaseModel):
     set_cost_bbox: float = Field(default=5.0, ge=0.0)
     set_cost_giou: float = Field(default=2.0, ge=0.0)
 
-    @field_validator("resolution")
-    def validate_resolution(self, v):
-        """Validate that resolution is divisible by 14 for DINOv2."""
-        if v % 14 != 0:
-            raise ValueError(f"Resolution {v} must be divisible by 14 for DINOv2")
+    @field_validator("training_width", "training_height")
+    @classmethod
+    def validate_training_dimensions(cls, v):
+        """Validate that training dimensions are divisible by 56."""
+        if v % 56 != 0:
+            raise ValueError(f"Training dimension {v} must be divisible by 56")
         return v
 
     def dict_for_model_build(self) -> dict[str, Any]:

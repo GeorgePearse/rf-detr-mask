@@ -39,27 +39,18 @@ class ModelConfig(BaseModel):
     num_classes: int = Field(default=90, gt=0)
     pretrain_weights: Optional[str] = None
     device: Literal["cpu", "cuda", "mps"] = DEVICE
-    resolution: int = Field(default=560, gt=0)
     training_width: int = Field(
-        ..., gt=0, description="Width during training, must be divisible by 56"
-    )  # Required field, no default value
+        default=560, gt=0, description="Width during training, must be divisible by 56"
+    )
     training_height: int = Field(
-        ..., gt=0, description="Height during training, must be divisible by 56"
-    )  # Required field, no default value
+        default=560, gt=0, description="Height during training, must be divisible by 56"
+    )
     group_detr: int = Field(default=13, gt=0)
     gradient_checkpointing: bool = False
     num_queries: int = Field(default=300, gt=0)
     num_select: int = Field(default=300, gt=0)
 
-    @field_validator("resolution")
-    @classmethod
-    def validate_resolution(cls, v: int) -> int:
-        """Validate that resolution is divisible by 14 for DINOv2."""
-        if v % 14 != 0:
-            error_msg = f"Resolution {v} must be divisible by 14 for DINOv2"
-            logger.error(error_msg)
-            raise ConfigurationError(error_msg)
-        return v
+
 
     @field_validator("training_width", "training_height")
     @classmethod
@@ -95,7 +86,6 @@ class TrainingConfig(BaseModel):
     bbox_loss_coef: float = Field(default=5.0, ge=0)
     giou_loss_coef: float = Field(default=2.0, ge=0)
     num_select: int = Field(default=300, gt=0)
-    dataset_file: Literal["coco", "o365", "roboflow"] = "coco"
     square_resize_div_64: bool = True
     output_dir: str = "output"
     multi_scale: bool = True
@@ -121,6 +111,8 @@ class DatasetConfig(BaseModel):
     coco_val: Optional[str] = ""
     coco_img_path: Optional[str] = ""
     val_limit: Optional[int] = None
+    test_mode: bool = False
+    val_limit_test_mode: int = 20
 
 
 class MaskConfig(BaseModel):
@@ -189,7 +181,6 @@ class RFDETRConfig(BaseModel):
             "num_classes": self.model.num_classes,
             "pretrain_weights": self.model.pretrain_weights,
             "device": self.model.device,
-            "resolution": self.model.resolution,
             "training_width": self.model.training_width,
             "training_height": self.model.training_height,
             "group_detr": self.model.group_detr,
@@ -214,7 +205,6 @@ class RFDETRConfig(BaseModel):
             "cls_loss_coef": self.training.cls_loss_coef,
             "bbox_loss_coef": self.training.bbox_loss_coef,
             "giou_loss_coef": self.training.giou_loss_coef,
-            "dataset_file": self.training.dataset_file,
             "square_resize_div_64": self.training.square_resize_div_64,
             "output_dir": self.training.output_dir,
             "multi_scale": self.training.multi_scale,

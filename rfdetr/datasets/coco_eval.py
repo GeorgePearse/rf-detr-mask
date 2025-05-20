@@ -62,9 +62,22 @@ class CocoEvaluator:
 
             coco_eval.cocoDt = coco_dt
             coco_eval.params.imgIds = list(img_ids)
-            img_ids, eval_imgs = evaluate(coco_eval)
-
-            self.eval_imgs[iou_type].append(eval_imgs)
+            
+            try:
+                # Call evaluate directly
+                coco_eval.evaluate()
+                # Get evaluation images
+                eval_imgs = coco_eval.evalImgs
+                # Store the evaluation images
+                self.eval_imgs[iou_type].append(eval_imgs)
+            except Exception as e:
+                print(f"Error during evaluation: {e}")
+                # Fall back to older method
+                try:
+                    img_ids, eval_imgs = evaluate(coco_eval)
+                    self.eval_imgs[iou_type].append(eval_imgs)
+                except Exception as e2:
+                    print(f"Error using fallback evaluation: {e2}")
 
     def synchronize_between_processes(self):
         for iou_type in self.iou_types:

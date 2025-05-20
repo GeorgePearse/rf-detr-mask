@@ -331,14 +331,16 @@ class RFDETRLightningModule(pl.LightningModule):
         Returns:
             A dummy input tensor with the correct shape for ONNX export
         """
-        # Get resolution from config
+        # Get dimensions from config
         if isinstance(self.config, dict):
-            resolution = self.config.get("resolution", 640)
+            training_width = self.config.get("training_width", 560)
+            training_height = self.config.get("training_height", 560)
         else:
-            resolution = getattr(self.config, "resolution", 640)
+            training_width = getattr(self.config, "training_width", 560)
+            training_height = getattr(self.config, "training_height", 560)
 
         # Create dummy input
-        dummy = np.random.randint(0, 256, (resolution, resolution, 3), dtype=np.uint8)
+        dummy = np.random.randint(0, 256, (training_height, training_width, 3), dtype=np.uint8)
         image = torch.from_numpy(dummy).permute(2, 0, 1).float() / 255.0
 
         # Apply normalization
@@ -350,7 +352,7 @@ class RFDETRLightningModule(pl.LightningModule):
         images = torch.stack([image for _ in range(batch_size)])
 
         # Create nested tensor
-        mask = torch.zeros((batch_size, resolution, resolution), dtype=torch.bool)
+        mask = torch.zeros((batch_size, training_height, training_width), dtype=torch.bool)
         nested_tensor = utils.NestedTensor(images, mask)
 
         return nested_tensor
@@ -489,19 +491,31 @@ class RFDETRLightningModule(pl.LightningModule):
         map_value = 0.0
         mask_map_value = 0.0
 
+        # Ensure we log a default value for the mAP metric even if evaluation fails
+        # Use both slash and underscore formats for better compatibility
+        self.log("val/mAP", 0.0, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val/best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+        
+        # Log with underscore format for ModelCheckpoint compatibility
+        self.log("val_mAP", 0.0, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val_best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+
         # Try to use COCO evaluator if available
         if self.coco_evaluator is not None:
             try:
                 # Check if we have enough data to evaluate
-                if (
-                    hasattr(self.coco_evaluator, "eval_imgs")
-                    and self.coco_evaluator.eval_imgs
-                    and any(
-                        len(imgs) > 0
-                        for imgs in self.coco_evaluator.eval_imgs.values()
-                        if isinstance(imgs, list)
-                    )
-                ):
+                eval_imgs_valid = False
+                
+                if hasattr(self.coco_evaluator, "eval_imgs") and self.coco_evaluator.eval_imgs:
+                    for iou_type, imgs in self.coco_evaluator.eval_imgs.items():
+                        if isinstance(imgs, list) and len(imgs) > 0:
+                            eval_imgs_valid = True
+                            break
+                        elif isinstance(imgs, np.ndarray) and imgs.size > 0:
+                            eval_imgs_valid = True
+                            break
+                
+                if eval_imgs_valid:
                     # Synchronize if distributed
                     if self.trainer.world_size > 1:
                         self.coco_evaluator.synchronize_between_processes()
@@ -511,9 +525,7 @@ class RFDETRLightningModule(pl.LightningModule):
                         self.coco_evaluator.accumulate()
                         self.coco_evaluator.summarize()
                     except Exception as e:
-                        print(
-                            f"Error in COCO accumulate/summarize: {e}. Continuing with validation."
-                        )
+                        print(f"Error in COCO accumulate/summarize: {e}. Continuing with validation.")
 
                     # Extract stats for bounding boxes
                     bbox_valid = (
@@ -532,6 +544,14 @@ class RFDETRLightningModule(pl.LightningModule):
                             # Track best model
                             if map_value > self.best_map:
                                 self.best_map = map_value
+                                
+                            # Update the logged value with the computed one
+                            self.log("val/mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
+                            self.log("val/best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
+                            
+                            # Log with underscore format for ModelCheckpoint compatibility
+                            self.log("val_mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
+                            self.log("val_best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
 
                     # Extract stats for segmentation masks
                     segm_valid = (
@@ -546,19 +566,23 @@ class RFDETRLightningModule(pl.LightningModule):
                         if hasattr(stats, "tolist"):
                             # Log mask mAP
                             mask_map_value = float(stats[0]) if stats[0] is not None else 0.0
+                            if "segm" in self.postprocessors:
+                                self.log("val/mask_mAP", mask_map_value, on_step=False, on_epoch=True, sync_dist=True)
+                                # Also log with underscore format
+                                self.log("val_mask_mAP", mask_map_value, on_step=False, on_epoch=True, sync_dist=True)
                 else:
                     print("Skipping COCO evaluation - not enough evaluation images")
             except Exception as e:
-                print(
-                    f"Error during COCO evaluation: {e}. This can happen with small validation sets."
-                )
-
-        # Always log the metrics at epoch end
-        self.log("val/mAP", map_value, on_step=False, on_epoch=True, sync_dist=True)
-        self.log("val/best_mAP", self.best_map, on_step=False, on_epoch=True, sync_dist=True)
-
-        if "segm" in self.postprocessors:
-            self.log("val/mask_mAP", mask_map_value, on_step=False, on_epoch=True, sync_dist=True)
+                print(f"Error during COCO evaluation: {e}. This can happen with small validation sets.")
+        else:
+            print("No COCO evaluator available. Using default metrics.")
+            
+        # Log any additional metrics that might be useful
+        if len(self.val_metrics) > 0:
+            # Calculate average of validation metrics
+            avg_loss = sum(m.get('loss', 0.0) for m in self.val_metrics) / max(len(self.val_metrics), 1)
+            self.log("val/avg_loss", avg_loss, on_step=False, on_epoch=True, sync_dist=True)
+            self.log("val_avg_loss", avg_loss, on_step=False, on_epoch=True, sync_dist=True)
 
     def configure_optimizers(self):
         """Configure optimizers and learning rate scheduler for iteration-based training."""
@@ -682,20 +706,24 @@ class RFDETRDataModule(pl.LightningDataModule):
         if isinstance(self.config, dict):
             self.batch_size = self.config.get("batch_size", 4)
             self.num_workers = self.config.get("num_workers", 2)
-            self.resolution = self.config.get("resolution", 560)
+            self.training_width = self.config.get("training_width", 560)
+            self.training_height = self.config.get("training_height", 560)
         else:
             self.batch_size = getattr(self.config, "batch_size", 4)
             self.num_workers = getattr(self.config, "num_workers", 2)
-            self.resolution = getattr(self.config, "resolution", 560)
+            self.training_width = getattr(self.config, "training_width", 560)
+            self.training_height = getattr(self.config, "training_height", 560)
 
     def setup(self, stage=None):
         """Set up datasets for training and validation."""
         # We need to set up datasets for all stages
         self.dataset_train = build_dataset(
-            image_set="train", args=self.config, resolution=self.resolution
+            image_set="train", args=self.config,
+            training_width=self.training_width, training_height=self.training_height
         )
         self.dataset_val = build_dataset(
-            image_set="val", args=self.config, resolution=self.resolution
+            image_set="val", args=self.config,
+            training_width=self.training_width, training_height=self.training_height
         )
 
     def train_dataloader(self):
@@ -720,6 +748,9 @@ class RFDETRDataModule(pl.LightningDataModule):
 
     def val_dataloader(self):
         """Create validation data loader."""
+        # WARNING: Keep validation sequential to ensure consistent evaluation results
+        # Shuffling validation data would make metrics less stable between runs
+        # DO NOT change this to RandomSampler unless specifically testing data randomization effects
         if self.trainer.world_size > 1:
             sampler_val = DistributedSampler(self.dataset_val, shuffle=False)
         else:

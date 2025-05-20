@@ -36,8 +36,8 @@ args.coco_val = '2025-05-15_12:38:38.270134_val_ordered.json'
 args.coco_img_path = '/home/georgepearse/data/images'
 
 # Build datasets
-train_dataset = build_dataset(image_set='train', args=args, resolution=640)
-val_dataset = build_dataset(image_set='val', args=args, resolution=640)
+train_dataset = build_dataset(image_set='train', args=args, training_width=640, training_height=640)
+val_dataset = build_dataset(image_set='val', args=args, training_width=640, training_height=640)
 ```
 
 ## How It Works

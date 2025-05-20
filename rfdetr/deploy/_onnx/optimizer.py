@@ -402,54 +402,57 @@ class OnnxOptimizer:
                 and node.o().o(0).o().o().o().o().o().o().op == "Add"
                 and len(node.o().o(0).o().o().o().o().o().inputs[1].values.shape) == 1
             ):
-                inputTensor = (
+                input_tensor = (
                     node.inputs[0] if node.i().op == "Add" else node.i().inputs[0]
                 )  # CLIP or UNet and VAE
 
-                gammaNode = node.o().o().o().o().o().o().o()
-                index = [isinstance(i, gs.ir.tensor.Constant) for i in gammaNode.inputs].index(True)
+                gamma_node = node.o().o().o().o().o().o().o()
+                index = [isinstance(i, gs.ir.tensor.Constant) for i in gamma_node.inputs].index(True)
                 gamma = np.array(
-                    deepcopy(gammaNode.inputs[index].values.tolist()), dtype=np.float32
+                    deepcopy(gamma_node.inputs[index].values.tolist()), dtype=np.float32
                 )
-                constantGamma = gs.Constant(
-                    "LayerNormGamma-" + str(nLayerNormPlugin),
+                constant_gamma = gs.Constant(
+                    "LayerNormGamma-" + str(n_layer_norm_plugin),
                     np.ascontiguousarray(gamma.reshape(-1)),
                 )  # MUST use np.ascontiguousarray, or TRT will regard the shape of this Constant as (0) !!!
 
-                betaNode = gammaNode.o()
-                index = [isinstance(i, gs.ir.tensor.Constant) for i in betaNode.inputs].index(True)
-                beta = np.array(deepcopy(betaNode.inputs[index].values.tolist()), dtype=np.float32)
-                constantBeta = gs.Constant(
-                    "LayerNormBeta-" + str(nLayerNormPlugin), np.ascontiguousarray(beta.reshape(-1))
+                beta_node = gamma_node.o()
+                index = [isinstance(i, gs.ir.tensor.Constant) for i in beta_node.inputs].index(True)
+                beta = np.array(deepcopy(beta_node.inputs[index].values.tolist()), dtype=np.float32)
+                constant_beta = gs.Constant(
+                    "LayerNormBeta-" + str(n_layer_norm_plugin), np.ascontiguousarray(beta.reshape(-1))
                 )
 
-                inputList = [inputTensor, constantGamma, constantBeta]
-                layerNormV = gs.Variable(
-                    "LayerNormV-" + str(nLayerNormPlugin), np.dtype(np.float32), inputTensor.shape
+                input_list = [input_tensor, constant_gamma, constant_beta]
+                layer_norm_v = gs.Variable(
+                    "LayerNormV-" + str(n_layer_norm_plugin), np.dtype(np.float32), input_tensor.shape
                 )
-                layerNormN = gs.Node(
+                layer_norm_n = gs.Node(
                     "LayerNorm",
-                    "LayerNormN-" + str(nLayerNormPlugin),
-                    inputs=inputList,
+                    "LayerNormN-" + str(n_layer_norm_plugin),
+                    inputs=input_list,
                     attrs=OrderedDict([("epsilon", 1.0e-5)]),
-                    outputs=[layerNormV],
+                    outputs=[layer_norm_v],
                 )
-                self.graph.nodes.append(layerNormN)
-                nLayerNormPlugin += 1
+                self.graph.nodes.append(layer_norm_n)
+                n_layer_norm_plugin += 1
 
-                if betaNode.outputs[0] in self.graph.outputs:
-                    index = self.graph.outputs.index(betaNode.outputs[0])
-                    self.graph.outputs[index] = layerNormV
+                if beta_node.outputs[0] in self.graph.outputs:
+                    index = self.graph.outputs.index(beta_node.outputs[0])
+                    self.graph.outputs[index] = layer_norm_v
                 else:
-                    lastNode = betaNode.o() if betaNode.o().op == "Cast" else betaNode
-                    for subNode in self.graph.nodes:
-                        if lastNode.outputs[0] in subNode.inputs:
-                            index = subNode.inputs.index(lastNode.outputs[0])
-                            subNode.inputs[index] = layerNormV
-                    lastNode.outputs = []
+                    last_node = beta_node.o() if beta_node.o().op == "Cast" else beta_node
+                    for sub_node in self.graph.nodes:
+                        if last_node.outputs[0] in sub_node.inputs:
+                            index = sub_node.inputs.index(last_node.outputs[0])
+                            sub_node.inputs[index] = layer_norm_v
+                    last_node.outputs = []
+        
+        self.cleanup()
+        return n_layer_norm_plugin
 
         self.cleanup()
-        return nLayerNormPlugin
+        return n_layer_norm_plugin
 
     def fuse_kv(self, node_k, node_v, fused_kv_idx, heads, num_dynamic=0):
         # Get weights of K

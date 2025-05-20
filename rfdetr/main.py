@@ -83,7 +83,8 @@ class Model:
 
     def _initialize_model_structure(self, args):
         """Initialize the base model structure."""
-        self.resolution = args.resolution
+        self.training_width = args.training_width
+        self.training_height = args.training_height
         self.model = build_model(args)
         self.device = torch.device(args.device)
         _, self.postprocessors = build_criterion_and_postprocessors(args)
@@ -316,7 +317,7 @@ class Model:
     def _create_lr_lambda(self, args):
         """Create a learning rate lambda function for the scheduler."""
         # These calculations are needed for the lr_lambda function
-        dataset_train = build_dataset(image_set="train", args=args, resolution=args.resolution)
+        dataset_train = build_dataset(image_set="train", args=args)
         total_batch_size_for_lr = args.batch_size * utils.get_world_size() * args.grad_accum_steps
         num_training_steps_per_epoch_lr = (
             len(dataset_train) + total_batch_size_for_lr - 1
@@ -348,8 +349,8 @@ class Model:
 
     def _setup_datasets_and_loaders(self, args, model_without_ddp, kwargs):
         """Setup datasets and data loaders."""
-        dataset_train = build_dataset(image_set="train", args=args, resolution=args.resolution)
-        dataset_val = build_dataset(image_set="val", args=args, resolution=args.resolution)
+        dataset_train = build_dataset(image_set="train", args=args)
+        dataset_val = build_dataset(image_set="val", args=args)
 
         # Setup samplers
         if args.distributed:
@@ -944,7 +945,7 @@ class Model:
         os.makedirs(output_dir, exist_ok=True)
         output_dir = Path(output_dir)
         if shape is None:
-            shape = (self.resolution, self.resolution)
+            shape = (self.training_height, self.training_width)
         else:
             if shape[0] % 14 != 0 or shape[1] % 14 != 0:
                 raise ValueError("Shape must be divisible by 14")
@@ -1266,7 +1267,6 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ia_bce_loss", action="store_true")
 
     # dataset parameters
-    parser.add_argument("--dataset_file", default="coco")
     parser.add_argument("--coco_path", type=str)
     parser.add_argument("--dataset_dir", type=str)
     parser.add_argument("--square_resize_div_64", action="store_true")
@@ -1313,7 +1313,8 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--backbone_only", action="store_true", help="Export and benchmark backbone only"
     )
-    parser.add_argument("--resolution", type=int, default=640, help="input resolution")
+    parser.add_argument("--training_width", type=int, default=560, help="input width for training")
+    parser.add_argument("--training_height", type=int, default=560, help="input height for training")
     parser.add_argument("--use_cls_token", action="store_true", help="use cls token")
     parser.add_argument("--multi_scale", action="store_true", help="use multi scale")
     parser.add_argument("--expanded_scales", action="store_true", help="use expanded scales")
@@ -1472,7 +1473,6 @@ def populate_args(**kwargs) -> argparse.Namespace:
     ia_bce_loss = kwargs.get("ia_bce_loss", False)
 
     # Dataset parameters
-    dataset_file = kwargs.get("dataset_file", "coco")
     coco_path = kwargs.get("coco_path")
     dataset_dir = kwargs.get("dataset_dir")
     square_resize_div_64 = kwargs.get("square_resize_div_64", False)
@@ -1502,7 +1502,8 @@ def populate_args(**kwargs) -> argparse.Namespace:
     # Custom args
     encoder_only = kwargs.get("encoder_only", False)
     backbone_only = kwargs.get("backbone_only", False)
-    resolution = kwargs.get("resolution", 640)
+    training_width = kwargs.get("training_width", 560)
+    training_height = kwargs.get("training_height", 560)
     use_cls_token = kwargs.get("use_cls_token", False)
     multi_scale = kwargs.get("multi_scale", False)
     expanded_scales = kwargs.get("expanded_scales", False)
@@ -1587,7 +1588,6 @@ def populate_args(**kwargs) -> argparse.Namespace:
         use_varifocal_loss=use_varifocal_loss,
         use_position_supervised_loss=use_position_supervised_loss,
         ia_bce_loss=ia_bce_loss,
-        dataset_file=dataset_file,
         coco_path=coco_path,
         dataset_dir=dataset_dir,
         square_resize_div_64=square_resize_div_64,
@@ -1609,7 +1609,8 @@ def populate_args(**kwargs) -> argparse.Namespace:
         fp16_eval=fp16_eval,
         encoder_only=encoder_only,
         backbone_only=backbone_only,
-        resolution=resolution,
+        training_width=training_width,
+        training_height=training_height,
         use_cls_token=use_cls_token,
         multi_scale=multi_scale,
         expanded_scales=expanded_scales,

@@ -52,7 +52,6 @@ class TestCocoSegmentation(unittest.TestCase):
         """Test that segmentation masks are correctly loaded in the dataset."""
         args = populate_args(
             coco_path=self.coco_path,
-            dataset_file="coco",
             num_classes=80,  # COCO has 80 classes
             batch_size=2,
             resolution=640,
@@ -109,7 +108,6 @@ class TestCocoSegmentation(unittest.TestCase):
         """Test that the model can output masks during forward pass."""
         args = populate_args(
             coco_path=self.coco_path,
-            dataset_file="coco",
             num_classes=80,  # COCO has 80 classes
             batch_size=2,
             resolution=640,
@@ -143,7 +141,6 @@ class TestCocoSegmentation(unittest.TestCase):
         """Test a full training loop on COCO segmentation data."""
         args = populate_args(
             coco_path=self.coco_path,
-            dataset_file="coco",
             num_classes=80,  # COCO has 80 classes
             batch_size=2,
             epochs=1,  # Just one epoch for testing

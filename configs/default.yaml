@@ -15,7 +15,7 @@ model:
   lite_refpoint_refine: true
   layer_norm: true
   amp: true
-  num_classes: 69  # CMR has 69 classes
+  # num_classes is now determined automatically from annotation file
   pretrain_weights: null
   device: "cuda"
   resolution: 448
@@ -47,7 +47,6 @@ training:
   bbox_loss_coef: 5.0
   giou_loss_coef: 2.0
   num_select: 100  # Must match model.num_select
-  dataset_file: "coco"
   square_resize_div_64: true
   output_dir: "output_default"
   # Important fix: expanded_scales should be a boolean, not a list

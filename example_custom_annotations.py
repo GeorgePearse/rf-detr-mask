@@ -14,7 +14,6 @@ def create_custom_args():
 
     # Standard arguments
     parser.add_argument("--dataset", default="coco", type=str)
-    parser.add_argument("--dataset_file", default="coco", type=str)
 
     # Key arguments for custom annotations
     parser.add_argument(
