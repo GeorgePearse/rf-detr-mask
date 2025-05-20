@@ -4,7 +4,6 @@ import lightning.pytorch as pl
 
 import torch
 import numpy as np
-import cv2
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
@@ -18,7 +17,7 @@ import os
 logger = get_logger(__name__)
 
 
-def get_training_transforms(image_width: int, image_height: int) -> A.Compose:
+def get_training_transforms(image_width: int, image_height: int, mask_enabled: bool = True) -> A.Compose:
     """Get training transforms using Albumentations.
     
     These transforms include data augmentation suitable for training.
@@ -32,7 +31,6 @@ def get_training_transforms(image_width: int, image_height: int) -> A.Compose:
         Albumentations composition of transforms
     """
     transform_list = [
-        A.PadIfNeeded(min_height=image_height, min_width=image_width, border_mode=cv2.BORDER_CONSTANT, value=0),
         A.RandomBrightnessContrast(p=0.2),
         A.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ToTensorV2(),
@@ -46,7 +44,7 @@ def get_training_transforms(image_width: int, image_height: int) -> A.Compose:
     return A.Compose(transform_list, **transform_params)
 
 
-def get_validation_transforms(image_width: int, image_height: int) -> A.Compose:
+def get_validation_transforms(image_width: int, image_height: int, mask_enabled: bool = True) -> A.Compose:
     """Get validation transforms using Albumentations.
     
     These are minimal transforms without augmentation, suitable for validation.
@@ -118,13 +116,12 @@ class RFDETRDataModule(pl.LightningDataModule):
         logger.info(f"Training annotation file: {self.training_annotation_file}")
         logger.info(f"Validation annotation file: {self.validation_annotation_file}")
 
-    def setup(self, stage: Optional[str] = None) -> None:
-        """Set up datasets for training and validation.
+    def train_dataloader(self) -> DataLoader:
+        """Create training data loader.
 
-        Args:
-            stage: Optional stage parameter required by Lightning, but not used here
+        Returns:
+            DataLoader: The training data loader
         """
-        # We need to set up datasets for all stages
         logger.info(
             f"Setting up training dataset with annotation file: {self.training_annotation_file}"
         )
@@ -137,25 +134,7 @@ class RFDETRDataModule(pl.LightningDataModule):
             test_limit=None,
         )
         logger.info(f"Training dataset has {len(self.dataset_train)} samples")
-        logger.info(
-            f"Setting up validation dataset with annotation file: {self.validation_annotation_file}"
-        )
-        annotation_file = os.path.join(self.annotation_directory, self.validation_annotation_file)
-        assert os.path.exists(annotation_file), f"Annotation file does not exist: {annotation_file}"
-        self.dataset_val = CocoDetection(
-            img_folder=self.image_directory,
-            ann_file=annotation_file,
-            transforms=self.validation_transforms,
-            test_limit=None,
-        )
-        logger.info(f"Validation dataset has {len(self.dataset_val)} samples")
 
-    def train_dataloader(self) -> DataLoader:
-        """Create training data loader.
-
-        Returns:
-            DataLoader: The training data loader
-        """
         if self.trainer is not None and self.trainer.world_size > 1:
             sampler_train: torch.utils.data.Sampler = DistributedSampler(self.dataset_train)
         else:
@@ -180,6 +159,19 @@ class RFDETRDataModule(pl.LightningDataModule):
         Returns:
             DataLoader: The validation data loader
         """
+        logger.info(
+            f"Setting up validation dataset with annotation file: {self.validation_annotation_file}"
+        )
+        annotation_file = os.path.join(self.annotation_directory, self.validation_annotation_file)
+        assert os.path.exists(annotation_file), f"Annotation file does not exist: {annotation_file}"
+        self.dataset_val = CocoDetection(
+            img_folder=self.image_directory,
+            ann_file=annotation_file,
+            transforms=self.validation_transforms,
+            test_limit=None,
+        )
+        logger.info(f"Validation dataset has {len(self.dataset_val)} samples")
+
         # WARNING: Keep validation sequential to ensure consistent evaluation results
         # Shuffling validation data would make metrics less stable between runs
         # DO NOT change this to RandomSampler unless specifically testing data randomization effects
