@@ -1,9 +1,0 @@
-if hasattr(self.coco_evaluator, "eval_imgs") and self.coco_evaluator.eval_imgs:
-    for _iou_type, imgs in self.coco_evaluator.eval_imgs.items():
-        if isinstance(imgs, list) and len(imgs) > 0:
-            eval_imgs_valid = True
-            break
-        elif isinstance(imgs, np.ndarray) and imgs.size > 0:
-            eval_imgs_valid = True
-            break
-

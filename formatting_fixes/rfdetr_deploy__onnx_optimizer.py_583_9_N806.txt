@@ -1,7 +1,0 @@
-# Input number of channels to Q, K and V
-        c = weights_k.shape[0]
-        # Number of heads
-        h = heads
-        # Hidden dimension per head
-        d = weights_k.shape[1] // h
-

@@ -1,9 +1,0 @@
-```python
-from typing import Callable, Dict, List
-
-import torch
-from torch import nn
-
-from rfdetr.models.backbone.backbone import *
-```
-
