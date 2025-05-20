@@ -27,6 +27,7 @@ from rfdetr.config_utils import load_config
 from rfdetr.rfdetr_lightning import RFDETRLightningModule
 from rfdetr.data_module import RFDETRDataModule
 from rfdetr.util.logging_config import get_logger
+from rfdetr.model_config import ModelConfig
 
 logger = get_logger(__name__)
 
