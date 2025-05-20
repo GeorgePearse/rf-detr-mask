@@ -33,7 +33,9 @@ logger = get_logger(__name__)
 class RFDETRLightningModule(pl.LightningModule):
     """Lightning module for RF-DETR training using iteration-based approach."""
 
-    def __init__(self, config):
+    def __init__(self, 
+        config: RFDETRConfig
+    ):
         """Initialize the RF-DETR Lightning Module.
 
         Args:
@@ -41,12 +43,12 @@ class RFDETRLightningModule(pl.LightningModule):
         """
         super().__init__()
         self.save_hyperparameters()
-        self.config = ModelConfig(**config)
+        self.config = config
+        self.ema_decay = self.config.training.ema_decay
+        self.use_ema = self.config.training.use_ema
         # Build model, criterion, and postprocessors
         self.model = build_model(self.config)
         self.criterion, self.postprocessors = build_criterion_and_postprocessors(self.config)
-        self.ema_decay = self.config.training.ema_decay
-        use_ema = self.config.training.use_ema
         self.ema = ModelEma(self.model, self.ema_decay) if self.ema_decay and use_ema else None
 
         # Track metrics
@@ -54,24 +56,17 @@ class RFDETRLightningModule(pl.LightningModule):
         self.val_metrics = []
         self.test_metrics = []
 
-        # Initialize autocast variables that will be set in _setup_autocast_args
-        self._dtype = torch.float32
-        self.amp_backend = "torch"
-        self.autocast_args = {}
-
         # Track best metrics
         self.best_map = 0.0
 
         # Use automatic optimization to work with gradient clipping
         self.automatic_optimization = True
 
-        self.output_dir = self.config.output_dir
-        self.export_onnx = self.config.export_onnx
-        self.export_torch = self.config.export_torch
-        self.simplify_onnx = self.config.simplify_onnx
-        self.export_on_validation = self.config.export_on_validation
-        self.max_steps = self.config.max_steps
-        self.val_frequency = self.config.val_frequency
+        self.output_dir = self.config.training.output_dir
+        self.export_onnx = self.config.training.export_onnx
+        self.export_torch = self.config.training.export_torch
+        self.max_steps = self.config.training.max_steps
+        self.val_frequency = self.config.training.val_frequency
 
         # Setup export directories
         self.export_dir = Path(self.config.training.output_dir)

@@ -84,9 +84,6 @@ def main(config_path: str = "configs/default.yaml"):
     np.random.seed(seed)
     random.seed(seed)
 
-    # Convert config to args dict for compatibility with existing code
-    args_dict = config.to_args_dict()
-
     # Set a shorter run
     if config.dataset.test_mode:
         # Setting these as variables to use in the Trainer, not in config
@@ -95,8 +92,8 @@ def main(config_path: str = "configs/default.yaml"):
         checkpoint_frequency = 5
 
     # Create Lightning Module and Data Module
-    model = RFDETRLightningModule(args_dict)
-    data_module = RFDETRDataModule(args_dict)
+    model = RFDETRLightningModule(config)
+    data_module = RFDETRDataModule(config)
 
     # Setup logging
     loggers = [
