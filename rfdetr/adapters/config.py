@@ -127,16 +127,6 @@ class ModelConfig(BaseModel):
     set_cost_bbox: float = Field(default=5.0, ge=0.0)
     set_cost_giou: float = Field(default=2.0, ge=0.0)
 
-    @field_validator("training_width", "training_height")
-    @classmethod
-    def validate_training_dimensions(cls, v, info):
-        """Validate that training dimensions are divisible by 56."""
-        if v % 56 != 0:
-            field_name = info.field_name
-            error_msg = f"{field_name} {v} must be divisible by 56"
-            logger.error(error_msg)
-            raise ConfigurationError(error_msg)
-        return v
 
     def dict_for_model_build(self) -> dict[str, Any]:
         """
