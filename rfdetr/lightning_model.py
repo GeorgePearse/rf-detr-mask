@@ -8,8 +8,6 @@
 PyTorch Lightning modules for RF-DETR-Mask training.
 """
 
-import datetime
-import math
 from pathlib import Path
 
 import lightning.pytorch as pl
