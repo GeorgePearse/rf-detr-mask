@@ -13,7 +13,7 @@ import argparse
 import unittest
 from pathlib import Path
 
-from rfdetr.config_utils import load_config
+from rfdetr.config import load_config
 from rfdetr.datasets import build_dataset
 
 
@@ -86,7 +86,7 @@ class TestTrainingDimensions(unittest.TestCase):
         # Test that config validation raises an exception for missing required fields
         from pydantic import ValidationError
 
-        from rfdetr.config_utils import RFDETRConfig
+        from rfdetr.config import RFDETRConfig
 
         with self.assertRaises(ValidationError) as context:
             RFDETRConfig.model_validate(config_dict)

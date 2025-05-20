@@ -13,7 +13,7 @@ import argparse
 import unittest
 from pathlib import Path
 
-from rfdetr.config_utils import load_config
+from rfdetr.config import load_config
 from rfdetr.datasets import build_dataset
 
 

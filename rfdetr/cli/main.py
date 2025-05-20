@@ -15,7 +15,7 @@ import torch
 from rf100vl import get_rf100vl_projects
 
 from rfdetr import RFDETRBase
-from rfdetr.config_utils import load_config
+from rfdetr.config import load_config
 
 
 def download_dataset(rf_project: roboflow.Project, dataset_version: int):

@@ -14,7 +14,7 @@ import unittest
 import torch
 from torch.utils.data import Subset
 
-from rfdetr.config_utils import load_config
+from rfdetr.config import load_config
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.engine import evaluate
 from rfdetr.models import build_criterion_and_postprocessors, build_model

@@ -18,7 +18,7 @@ import torch
 from torch.utils.data import DataLoader, SequentialSampler
 
 import rfdetr.util.misc as utils
-from rfdetr.config_utils import load_config, RFDETRConfig
+from rfdetr.config import load_config, RFDETRConfig
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
 from rfdetr.models import build_criterion_and_postprocessors, build_model

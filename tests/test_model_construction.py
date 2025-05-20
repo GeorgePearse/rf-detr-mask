@@ -7,7 +7,7 @@ import unittest
 
 import torch
 
-from rfdetr.config_utils import load_config
+from rfdetr.config import load_config
 from rfdetr.models import build_model
 from rfdetr.util.misc import NestedTensor
 

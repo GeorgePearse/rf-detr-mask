@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from rfdetr.config_utils import (
+from rfdetr.config import (
     DatasetConfig,
     MaskConfig,
     ModelConfig,

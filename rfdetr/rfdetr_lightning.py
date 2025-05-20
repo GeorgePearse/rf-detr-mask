@@ -20,7 +20,7 @@ from torch.optim.lr_scheduler import LambdaLR
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
 from rfdetr.datasets.coco_eval import CocoEvaluator
-from rfdetr.model_config import ModelConfig
+from rfdetr.config import ModelConfig
 from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.get_param_dicts import get_param_dict
 from rfdetr.util.logging_config import get_logger

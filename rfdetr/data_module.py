@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, Sequ
 
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset
-from rfdetr.model_config import ModelConfig
+from rfdetr.config import ModelConfig
 
 class RFDETRDataModule(pl.LightningDataModule):
     """Lightning data module for RF-DETR-Mask."""

@@ -8,7 +8,7 @@
 import os
 
 # Import model classes
-from rfdetr.model_config import ModelConfig
+from rfdetr.config import ModelConfig
 
 
 # Configure MPS fallback if needed

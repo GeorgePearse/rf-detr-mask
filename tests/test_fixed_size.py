@@ -9,7 +9,7 @@ import unittest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
-from rfdetr.config_utils import load_config
+from rfdetr.config import load_config
 from rfdetr.models import build_criterion_and_postprocessors, build_model
 from rfdetr.util.get_param_dicts import get_param_dict
 from rfdetr.util.logging_config import get_logger
