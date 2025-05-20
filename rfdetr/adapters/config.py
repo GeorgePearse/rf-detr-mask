@@ -230,9 +230,10 @@ class TrainingConfig(BaseModel):
 class DataConfig(BaseModel):
     """Configuration for dataset parameters."""
 
-    image_directory: Optional[str] = ""
-    training_annotation_file: Optional[str] = ""
-    validation_annotation_file: Optional[str] = ""
+    image_directory: str
+    training_annotation_file: str
+    validation_annotation_file: str
+    annotation_directory: str
 
     @field_validator("image_directory")
     @classmethod
@@ -259,11 +260,6 @@ class DataConfig(BaseModel):
     val_limit: Optional[int] = None
     test_mode: bool = False
     val_limit_test_mode: int = 20
-    # Add backward compatibility fields for coco dataset paths
-    coco_path: str = "/home/georgepearse/data/cmr/annotations"
-    coco_train: str = "2025-05-15_12:38:23.077836_train_ordered.json"
-    coco_val: str = "2025-05-15_12:38:38.270134_val_ordered.json"
-    coco_img_path: str = "/home/georgepearse/data/images"
 
     training_batch_size: int = Field(default=4, gt=0)
     training_num_workers: int = Field(default=2, ge=0)
