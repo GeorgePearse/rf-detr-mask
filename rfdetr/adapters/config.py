@@ -245,6 +245,12 @@ class DataConfig(BaseModel):
     coco_val: str = "2025-05-15_12:38:38.270134_val_ordered.json"
     coco_img_path: str = "/home/georgepearse/data/images"
 
+    training_batch_size: int = Field(default=4, gt=0)
+    training_num_workers: int = Field(default=2, ge=0)
+
+    validation_batch_size: int = Field(default=4, gt=0)
+    validation_num_workers: int = Field(default=2, ge=0)
+
 
 class MaskConfig(BaseModel):
     """Configuration for mask parameters."""
