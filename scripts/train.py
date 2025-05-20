@@ -228,4 +228,4 @@ def main(config_path: str = "configs/default.yaml"):
 
 
 if __name__ == "__main__":
-    main(config_path=config_path)
+    main()
