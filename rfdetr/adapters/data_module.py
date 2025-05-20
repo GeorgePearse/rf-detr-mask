@@ -96,15 +96,12 @@ class RFDETRDataModule(pl.LightningDataModule):
         self.training_annotation_file = config.training_annotation_file
         self.validation_annotation_file = config.validation_annotation_file
 
-        # Check if mask is enabled from config
-        self.mask_enabled = getattr(config, 'mask_enabled', True)
-        
         # Initialize transforms
         self.training_transforms = get_training_transforms(
-            self.training_width, self.training_height, self.mask_enabled
+            self.training_width, self.training_height
         )
         self.validation_transforms = get_validation_transforms(
-            self.training_width, self.training_height, self.mask_enabled
+            self.training_width, self.training_height
         )
 
         # Initialize datasets to None
