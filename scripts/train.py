@@ -25,7 +25,7 @@ from lightning.pytorch.callbacks import (
 from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 
-from rfdetr.adapters.config import ModelConfig, TrainingConfig, RFDETRConfig, load_config
+from rfdetr.adapters.config import RFDETRConfig
 from rfdetr.adapters.data_module import RFDETRDataModule
 from rfdetr.adapters.rfdetr_lightning import RFDETRLightningModule
 from rfdetr.util.logging_config import get_logger
@@ -68,7 +68,7 @@ def get_number_of_classes(config) -> int:
 def main(config_path: str = "configs/default.yaml"):
     """Main training function."""
     # Load configuration from YAML file using adapter's TrainingConfig
-    config = TrainingConfig.from_yaml(config_path) if config_path.endswith('.yaml') else load_config(config_path)
+    config = RFDETRConfig.from_yaml(config_path)
 
     # Determine the number of classes from annotation file
     num_classes = get_number_of_classes(config)
