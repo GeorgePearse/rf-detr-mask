@@ -6,12 +6,10 @@
 """
 Updated training script for RF-DETR using iteration-based training with pydantic config.
 """
-
+import json
 import datetime
-import os
 import random
 from pathlib import Path
-from typing import Optional
 
 import lightning.pytorch as pl
 import numpy as np
@@ -20,36 +18,19 @@ from lightning.pytorch.callbacks import (
     LearningRateMonitor,
     ModelCheckpoint,
     TQDMProgressBar,
+    EarlyStopping
 )
-from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger, WandbLogger
+from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 from lightning.pytorch.strategies import DDPStrategy
 
 import rfdetr.util.misc as utils
 from rfdetr.config_utils import load_config
-# ONNX export functionality removed
 from rfdetr.lightning_module import RFDETRDataModule, RFDETRLightningModule
 from rfdetr.util.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-
-def main(
-    config_path: str = "configs/default.yaml",
-    output_dir: Optional[str] = None,
-    test_mode: bool = False,
-):
-    """Main training function."""
-    # Load configuration from YAML file
-    config = load_config(config_path)
-
-    # Apply overrides if provided
-    if output_dir:
-        config.training.output_dir = output_dir
-
-    if test_mode:
-        config.dataset.test_mode = True
-
-    # Determine the number of classes from annotation file
+def get_number_of_classes(config: ModelConfig) -> int:
     coco_path = Path(config.dataset.coco_path)
     annotation_file = (
         coco_path / config.dataset.coco_train
@@ -58,8 +39,6 @@ def main(
     )
 
     # Get number of classes from annotation file - fail if can't determine
-    import json
-
     if not annotation_file.exists():
         raise FileNotFoundError(f"Annotation file not found: {annotation_file}")
 
@@ -71,6 +50,16 @@ def main(
 
         num_classes = len(categories)
         logger.info(f"Detected {num_classes} classes from annotation file")
+    return num_classes
+
+
+def main(config_path: str = "configs/default.yaml"):
+    """Main training function."""
+    # Load configuration from YAML file
+    config = load_config(config_path)
+
+    # Determine the number of classes from annotation file
+    num_classes = get_number_of_classes(config)
 
     # Set the num_classes in config
     config.set_num_classes(num_classes)
@@ -97,25 +86,12 @@ def main(
     # Convert config to args dict for compatibility with existing code
     args_dict = config.to_args_dict()
 
-    # For test_limit or test_mode, adjust parameters for faster evaluation
-    if (
-        config.dataset.val_limit is not None and config.dataset.val_limit > 0
-    ) or config.dataset.test_mode:
-        logger.info("Running in test mode with reduced parameters")
-        config.model.num_queries = 20  # Much smaller
-        config.model.hidden_dim = 64  # Much smaller
-        config.model.dec_layers = 1  # Just 1 decoder layer
-        config.training.batch_size = 1
-        config.training.grad_accum_steps = 1
-        config.model.device = "cpu"  # Force CPU usage to avoid CUDA OOM errors
-        config.other.device = "cpu"  # Also set device to CPU in other config
-
-        # Set a shorter run
-        if config.dataset.test_mode:
-            # Setting these as variables to use in the Trainer, not in config
-            max_steps = 10
-            val_frequency = 5
-            checkpoint_frequency = 5
+    # Set a shorter run
+    if config.dataset.test_mode:
+        # Setting these as variables to use in the Trainer, not in config
+        max_steps = 10
+        val_frequency = 5
+        checkpoint_frequency = 5
 
     # Create Lightning Module and Data Module
     model = RFDETRLightningModule(args_dict)
@@ -133,94 +109,46 @@ def main(
             logger.warning("TensorBoard not installed. Skipping TensorBoard logging.")
             config.training.tensorboard = False
 
-    if config.training.wandb:
-        try:
-            wandb_logger = WandbLogger(
-                project=config.training.project or "rfdetr-mask",
-                name=config.training.run,
-                save_dir=config.training.output_dir,
-                log_model="all",
-            )
-            loggers.append(wandb_logger)
-        except ModuleNotFoundError:
-            logger.warning("Weights & Biases not installed. Skipping W&B logging.")
-            config.training.wandb = False
-
     # Always add CSV logger
     csv_logger = CSVLogger(save_dir=config.training.output_dir, name="csv_logs")
     loggers.append(csv_logger)
 
     # Setup callbacks
-    callbacks = []
-
-    # Model checkpoint callback
-    if isinstance(config, dict):
-        checkpoint_frequency = config.get(
-            "checkpoint_frequency",
-            config.get("val_frequency", config.get("eval_save_frequency", 200)),
-        )
-    else:
-        checkpoint_frequency = getattr(
-            config.training,
-            "checkpoint_frequency",
-            getattr(
-                config.training,
-                "val_frequency",
-                getattr(config.training, "eval_save_frequency", 200),
-            ),
-        )
-
-    checkpoint_callback = ModelCheckpoint(
-        dirpath=checkpoints_dir,
-        filename="checkpoint_step_{step:06d}-{val_mAP:.4f}",
-        monitor="val_mAP",  # Changed from val/mAP to val_mAP
-        mode="max",
-        save_top_k=3,
-        save_last=True,
-        every_n_train_steps=checkpoint_frequency,
-    )
-    callbacks.append(checkpoint_callback)
-
-    # Also save best model checkpoint
-    best_checkpoint_callback = ModelCheckpoint(
-        dirpath=output_dir,
-        filename="checkpoint_best",
-        monitor="val_mAP",  # Changed from val/mAP to val_mAP
-        mode="max",
-        save_top_k=1,
-        save_last=False,
-    )
-    callbacks.append(best_checkpoint_callback)
-
-    # Export functionality removed
-
-    # Learning rate monitor
-    lr_monitor = LearningRateMonitor(logging_interval="step")
-    callbacks.append(lr_monitor)
-
-    # Progress bar
-    progress_bar = TQDMProgressBar(refresh_rate=1)
-    callbacks.append(progress_bar)
-
-    # Early stopping if enabled
-    if config.training.early_stopping:
-        from lightning.pytorch.callbacks import EarlyStopping
-
-        early_stopping_cb = EarlyStopping(
-            monitor="val/mAP",
+    callbacks = [
+        ModelCheckpoint(
+            dirpath=checkpoints_dir,
+            filename="checkpoint_step_{step:06d}-{val_mAP:.4f}",
+            monitor="val_mAP",  # Changed from val/mAP to val_mAP
+            mode="max",
+            save_top_k=3,
+            save_last=True,
+            every_n_train_steps=checkpoint_frequency,
+        ),
+        # Also save best model checkpoint
+        ModelCheckpoint(
+            dirpath=output_dir,
+            filename="checkpoint_best",
+            monitor="val_mAP",  # Changed from val/mAP to val_mAP
+            mode="max",
+            save_top_k=1,
+            save_last=False,
+        ),
+        # Learning rate monitor
+        LearningRateMonitor(logging_interval="step"),
+        # Progress bar
+        TQDMProgressBar(refresh_rate=1),
+        EarlyStopping(
+            monitor="val_mAP",
             mode="max",
             patience=config.training.early_stopping_patience,
             min_delta=config.training.early_stopping_min_delta,
         )
-        callbacks.append(early_stopping_cb)
+    ]
 
     # Setup strategy for distributed training
     strategy = "auto"  # Default to auto strategy
     if torch.cuda.device_count() > 1:
         strategy = DDPStrategy(find_unused_parameters=True, gradient_as_bucket_view=True)
-
-    # Create Trainer
-    accelerator = "cpu" if config.model.device == "cpu" else "auto"
 
     # Set default values for training parameters
     # Initialize max_steps and val_frequency with default values
@@ -249,8 +177,8 @@ def main(
         log_every_n_steps=1,
         default_root_dir=config.training.output_dir,
         val_check_interval=val_frequency,
-        accelerator=accelerator,
-        devices=1,
+        accelerator="cuda",
+        devices=torch.cuda.device_count(),
     )
 
     # Resume from checkpoint if specified
@@ -299,35 +227,4 @@ def main(
 
 
 if __name__ == "__main__":
-    import sys
-
-    # Initialize logging
-    logger.info(f"git:\n  {utils.get_sha()}\n")
-    logger.info("Starting training with PyTorch Lightning - Iteration-based approach")
-
-    # Make sure GPU memory is properly cleaned up before starting
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        # Set memory allocation strategy to avoid fragmentation
-        os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-        # Log GPU memory info
-        for i in range(torch.cuda.device_count()):
-            print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-            print(f"Memory: {torch.cuda.get_device_properties(i).total_memory / 1024**3:.2f} GB")
-
-    # Simple argument parsing for backwards compatibility
-    config_path = "configs/default.yaml"
-    output_dir = None
-    test_mode = False
-
-    # Simple command-line argument parsing
-    for i, arg in enumerate(sys.argv[1:]):
-        if arg == "--config" and i + 1 < len(sys.argv) - 1:
-            config_path = sys.argv[i + 2]
-        elif arg == "--output_dir" and i + 1 < len(sys.argv) - 1:
-            output_dir = sys.argv[i + 2]
-        elif arg == "--test_mode":
-            test_mode = True
-
-    # Call main with parsed arguments
-    main(config_path=config_path, output_dir=output_dir, test_mode=test_mode)
+    main(config_path=config_path)
