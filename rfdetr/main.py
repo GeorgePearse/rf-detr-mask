@@ -490,11 +490,15 @@ class Model:
 
         os.makedirs(output_dir, exist_ok=True)
         output_dir = Path(output_dir)
-        if shape is None:
-            shape = (self.resolution, self.resolution)
-        else:
-            if shape[0] % 14 != 0 or shape[1] % 14 != 0:
-                raise ValueError("Shape must be divisible by 14")
+        #if shape is None:
+            #shape = (self.resolution, self.resolution)
+        #else:
+
+        # GEORGE: edit here --> turned out this was just for exporting
+        shape = (560, 616)
+        
+        if shape[0] % 14 != 0 or shape[1] % 14 != 0:
+            raise ValueError("Shape must be divisible by 14")
 
         input_tensors = make_infer_image(infer_dir, shape, batch_size, device).to(device)
         input_names = ['input']
@@ -809,7 +813,9 @@ def get_args_parser():
                                help="build tensorrt engine")
     parser_export.add_argument('--dry-run', '--test', '-t', action='store_true', help="just print command")
     parser_export.add_argument('--profile', action='store_true', help='Run nsys profiling during TensorRT export')
-    parser_export.add_argument('--shape', type=int, nargs=2, default=(640, 640), help="input shape (width, height)")
+
+    # Testing a size change here to see if it works
+    parser_export.add_argument('--shape', type=int, nargs=2, default=(640, 704), help="input shape (width, height)")
     return parser
 
 def populate_args(

@@ -173,8 +173,8 @@ def train_one_epoch(
 
 def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, args=None):
     model.eval()
-    if args.fp16_eval:
-        model.half()
+    # GEORGE removed an if fp16_eval here because it didn't exist
+    model.half()
     criterion.eval()
 
     metric_logger = utils.MetricLogger(delimiter="  ")

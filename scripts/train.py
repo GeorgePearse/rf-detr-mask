@@ -6,6 +6,9 @@
 """
 Script to train RF-DETR with mask head on CMR segmentation data.
 Adapted from the original RF-DETR training script to work with CMR instance segmentation dataset.
+
+
+TODO: This script and main.py overlap far too much
 """
 
 import argparse
