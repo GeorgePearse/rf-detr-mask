@@ -64,7 +64,7 @@ def main(config_path: str = "configs/default.yaml"):
     num_classes = get_number_of_classes(config)
 
     # Set the num_classes in config
-    config.set_num_classes(num_classes)
+    config.training_config.num_classes = num_classes
 
     # Create output directory
     output_dir = Path(config.training.output_dir)
