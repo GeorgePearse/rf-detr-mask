@@ -84,9 +84,11 @@ class RFDETRDataModule(pl.LightningDataModule):
         logger.info(
             f"Setting up training dataset with annotation file: {self.training_annotation_file}"
         )
+        annotation_file = os.path.join(self.annotation_directory, self.training_annotation_file)
+        assert os.path.exists(annotation_file), f"Annotation file does not exist: {annotation_file}"
         self.dataset_train = CocoDetection(
             img_folder=self.image_directory,
-            ann_file=os.path.join(self.annotation_directory, self.training_annotation_file),
+            ann_file=annotation_file,
             transforms=self.training_transforms,
             test_limit=None,
         )
@@ -94,9 +96,11 @@ class RFDETRDataModule(pl.LightningDataModule):
         logger.info(
             f"Setting up validation dataset with annotation file: {self.validation_annotation_file}"
         )
+        annotation_file = os.path.join(self.annotation_directory, self.validation_annotation_file)
+        assert os.path.exists(annotation_file), f"Annotation file does not exist: {annotation_file}"
         self.dataset_val = CocoDetection(
             img_folder=self.image_directory,
-            ann_file=os.path.join(self.annotation_directory, self.validation_annotation_file),
+            ann_file=annotation_file,
             transforms=self.validation_transforms,
             test_limit=None,
         )
