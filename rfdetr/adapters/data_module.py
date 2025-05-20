@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, Sequ
 
 import rfdetr.util.misc as utils
 from rfdetr.adapters.dataset import CocoDetection
+from rfdetr.adapters.config import DataConfig
 import torchvision.transforms as transforms
 
 def get_training_transforms(image_width: int, image_height: int):
@@ -21,7 +22,7 @@ def get_validation_transforms(image_width: int, image_height: int):
 class RFDETRDataModule(pl.LightningDataModule):
     """Lightning data module for RF-DETR-Mask."""
 
-    def __init__(self, config: DatasetConfig):
+    def __init__(self, config: DataConfig):
         """Initialize the RF-DETR data module.
 
         Args:
