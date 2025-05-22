@@ -34,7 +34,7 @@ except ImportError:
     from torch.cuda.amp import autocast, GradScaler
 
     DEPRECATED_AMP = True
-from typing import DefaultDict, List, Callable, Dict, Any, Tuple
+from typing import DefaultDict, List, Callable, Dict, Any, Tuple, Optional
 from rfdetr.util.misc import NestedTensor
 
 
@@ -185,12 +185,12 @@ def train_one_epoch(
     epoch: int,
     batch_size: int,
     max_norm: float = 0,
-    ema_m: torch.nn.Module | None = None,
+    ema_m: Optional[torch.nn.Module] = None,
     schedules: dict = {},
     num_training_steps_per_epoch=None,
     vit_encoder_num_layers=None,
     args=None,
-    callbacks: DefaultDict[str, List[Callable]] | None = None,
+    callbacks: Optional[DefaultDict[str, List[Callable]]] = None,
 ) -> Dict[str, float]:
     """Train model for one epoch.
 
