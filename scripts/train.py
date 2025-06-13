@@ -488,7 +488,6 @@ def main(args):
 
         # Check if this is the best model so far
         map_regular = test_stats["coco_eval_bbox"][0]
-        segm_map = test_stats.get("coco_eval_masks", [0])[0] if args.masks else 0
 
         # Update best metrics
         _is_best = best_map_holder.update(map_regular, epoch, is_ema=False)
