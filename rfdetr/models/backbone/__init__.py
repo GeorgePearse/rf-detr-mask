@@ -17,6 +17,7 @@ from rfdetr.models.position_encoding import build_position_encoding
 from rfdetr.models.backbone.backbone import *
 from typing import Callable
 
+
 class Joiner(nn.Sequential):
     def __init__(self, backbone, position_embedding):
         super().__init__(backbone, position_embedding)
