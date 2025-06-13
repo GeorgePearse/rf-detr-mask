@@ -6,6 +6,7 @@
 """
 onnx optimizer and symbolic registry
 """
+
 from . import optimizer
 from . import symbolic
 

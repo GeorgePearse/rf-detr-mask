@@ -19,10 +19,16 @@ from PIL import Image
 
 from rfdetr.config import RFDETRBaseConfig, RFDETRLargeConfig, TrainConfig, ModelConfig
 from rfdetr.main import Model, download_pretrain_weights
-from rfdetr.util.metrics import MetricsPlotSink, MetricsTensorBoardSink, MetricsWandBSink
+from rfdetr.util.metrics import (
+    MetricsPlotSink,
+    MetricsTensorBoardSink,
+    MetricsWandBSink,
+)
 from rfdetr.util.coco_classes import COCO_CLASSES
 
 logger = getLogger(__name__)
+
+
 class RFDETR:
     means = [0.485, 0.456, 0.406]
     stds = [0.229, 0.224, 0.225]
@@ -42,7 +48,7 @@ class RFDETR:
     def train(self, **kwargs):
         config = self.get_train_config(**kwargs)
         self.train_from_config(config, **kwargs)
-    
+
     def export(self, **kwargs):
         self.model.export(**kwargs)
 
@@ -52,7 +58,9 @@ class RFDETR:
         ) as f:
             anns = json.load(f)
             num_classes = len(anns["categories"])
-            class_names = [c["name"] for c in anns["categories"] if c["supercategory"] != "none"]
+            class_names = [
+                c["name"] for c in anns["categories"] if c["supercategory"] != "none"
+            ]
             self.model.class_names = class_names
 
         if self.model_config.num_classes != num_classes:
@@ -61,14 +69,13 @@ class RFDETR:
                 f"reinitializing your detection head with {num_classes} classes."
             )
             self.model.reinitialize_detection_head(num_classes)
-        
-        
+
         train_config = config.dict()
         model_config = self.model_config.dict()
         model_config.pop("num_classes")
         if "class_names" in model_config:
             model_config.pop("class_names")
-        
+
         if "class_names" in train_config and train_config["class_names"] is None:
             train_config["class_names"] = class_names
 
@@ -77,15 +84,22 @@ class RFDETR:
                 model_config.pop(k)
             if k in kwargs:
                 kwargs.pop(k)
-        
-        all_kwargs = {**model_config, **train_config, **kwargs, "num_classes": num_classes}
+
+        all_kwargs = {
+            **model_config,
+            **train_config,
+            **kwargs,
+            "num_classes": num_classes,
+        }
 
         metrics_plot_sink = MetricsPlotSink(output_dir=config.output_dir)
         self.callbacks["on_fit_epoch_end"].append(metrics_plot_sink.update)
         self.callbacks["on_train_end"].append(metrics_plot_sink.save)
 
         if config.tensorboard:
-            metrics_tensor_board_sink = MetricsTensorBoardSink(output_dir=config.output_dir)
+            metrics_tensor_board_sink = MetricsTensorBoardSink(
+                output_dir=config.output_dir
+            )
             self.callbacks["on_fit_epoch_end"].append(metrics_tensor_board_sink.update)
             self.callbacks["on_train_end"].append(metrics_tensor_board_sink.close)
 
@@ -94,18 +108,19 @@ class RFDETR:
                 output_dir=config.output_dir,
                 project=config.project,
                 run=config.run,
-                config=config.model_dump()
+                config=config.model_dump(),
             )
             self.callbacks["on_fit_epoch_end"].append(metrics_wandb_sink.update)
             self.callbacks["on_train_end"].append(metrics_wandb_sink.close)
 
         if config.early_stopping:
             from rfdetr.util.early_stopping import EarlyStoppingCallback
+
             early_stopping_callback = EarlyStoppingCallback(
                 model=self.model,
                 patience=config.early_stopping_patience,
                 min_delta=config.early_stopping_min_delta,
-                use_ema=config.early_stopping_use_ema
+                use_ema=config.early_stopping_use_ema,
             )
             self.callbacks["on_fit_epoch_end"].append(early_stopping_callback.update)
 
@@ -119,21 +134,27 @@ class RFDETR:
 
     def get_model(self, config: ModelConfig):
         return Model(**config.dict())
-    
+
     # Get class_names from the model
     @property
     def class_names(self):
-        if hasattr(self.model, 'class_names') and self.model.class_names:
-            return {i+1: name for i, name in enumerate(self.model.class_names)}
-            
+        if hasattr(self.model, "class_names") and self.model.class_names:
+            return {i + 1: name for i, name in enumerate(self.model.class_names)}
+
         return COCO_CLASSES
 
     def predict(
-            self,
-            images: Union[str, Image.Image, np.ndarray, torch.Tensor, List[Union[str, np.ndarray, Image.Image, torch.Tensor]]],
-            threshold: float = 0.5,
-            return_masks: bool = False,
-            **kwargs,
+        self,
+        images: Union[
+            str,
+            Image.Image,
+            np.ndarray,
+            torch.Tensor,
+            List[Union[str, np.ndarray, Image.Image, torch.Tensor]],
+        ],
+        threshold: float = 0.5,
+        return_masks: bool = False,
+        **kwargs,
     ) -> Union[sv.Detections, List[sv.Detections]]:
         """Performs object detection and instance segmentation on the input images.
 
@@ -155,7 +176,7 @@ class RFDETR:
                 Additional keyword arguments.
 
         Returns:
-            Union[sv.Detections, List[sv.Detections]]: 
+            Union[sv.Detections, List[sv.Detections]]:
                 Either a single or multiple Detections objects containing bounding boxes,
                 confidence scores, class IDs, and optionally instance masks (if return_masks=True).
         """
@@ -168,13 +189,12 @@ class RFDETR:
         processed_images = []
 
         for img in images:
-
             if isinstance(img, str):
                 img = Image.open(img)
 
             if not isinstance(img, torch.Tensor):
                 img = F.to_tensor(img)
-            
+
             if (img > 1).any():
                 raise ValueError(
                     "Image has pixel values above 1. Please ensure the image is "
@@ -186,13 +206,15 @@ class RFDETR:
                     f"{img.shape[0]} channels."
                 )
             img_tensor = img
-            
+
             h, w = img_tensor.shape[1:]
             orig_sizes.append((h, w))
 
             img_tensor = img_tensor.to(self.model.device)
             img_tensor = F.normalize(img_tensor, self.means, self.stds)
-            img_tensor = F.resize(img_tensor, (self.model.resolution, self.model.resolution))
+            img_tensor = F.resize(
+                img_tensor, (self.model.resolution, self.model.resolution)
+            )
 
             processed_images.append(img_tensor)
 
@@ -201,15 +223,17 @@ class RFDETR:
         with torch.inference_mode():
             predictions = self.model.model(batch_tensor)
             target_sizes = torch.tensor(orig_sizes, device=self.model.device)
-            results = self.model.postprocessors["bbox"](predictions, target_sizes=target_sizes)
+            results = self.model.postprocessors["bbox"](
+                predictions, target_sizes=target_sizes
+            )
 
         detections_list = []
-        
+
         for result in results:
             scores = result["scores"]
             labels = result["labels"]
             boxes = result["boxes"]
-            
+
             # Extract masks if they are present in the results
             masks = result.get("masks", None)
 
@@ -217,7 +241,7 @@ class RFDETR:
             scores = scores[keep]
             labels = labels[keep]
             boxes = boxes[keep]
-            
+
             if masks is not None:
                 masks = masks[keep]
                 # Convert masks to numpy array with shape (n, H, W)
@@ -245,6 +269,7 @@ class RFDETRBase(RFDETR):
 
     def get_train_config(self, **kwargs):
         return TrainConfig(**kwargs)
+
 
 class RFDETRLarge(RFDETR):
     def get_model_config(self, **kwargs):

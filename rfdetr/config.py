@@ -6,9 +6,17 @@
 
 
 from pydantic import BaseModel
-from typing import List, Optional, Literal, Type
+from typing import List, Optional, Literal
 import torch
-DEVICE = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+
+DEVICE = (
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
+    if torch.backends.mps.is_available()
+    else "cpu"
+)
+
 
 class ModelConfig(BaseModel):
     encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"]
@@ -31,8 +39,11 @@ class ModelConfig(BaseModel):
     group_detr: int = 13
     gradient_checkpointing: bool = False
 
+
 class RFDETRBaseConfig(ModelConfig):
-    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = "dinov2_windowed_small"
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
+        "dinov2_windowed_small"
+    )
     hidden_dim: int = 256
     sa_nheads: int = 8
     ca_nheads: int = 16
@@ -43,14 +54,18 @@ class RFDETRBaseConfig(ModelConfig):
     out_feature_indexes: List[int] = [2, 5, 8, 11]
     pretrain_weights: Optional[str] = "rf-detr-base.pth"
 
+
 class RFDETRLargeConfig(RFDETRBaseConfig):
-    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = "dinov2_windowed_base"
+    encoder: Literal["dinov2_windowed_small", "dinov2_windowed_base"] = (
+        "dinov2_windowed_base"
+    )
     hidden_dim: int = 384
     sa_nheads: int = 12
     ca_nheads: int = 24
     dec_n_points: int = 4
     projector_scale: List[Literal["P3", "P4", "P5"]] = ["P3", "P5"]
     pretrain_weights: Optional[str] = "rf-detr-large.pth"
+
 
 class TrainConfig(BaseModel):
     lr: float = 1e-4

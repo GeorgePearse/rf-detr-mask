@@ -16,15 +16,13 @@
 """
 Backbone modules.
 """
-from functools import partial
+
 import torch
 import torch.nn.functional as F
-from torch import nn
 
-from transformers import AutoModel, AutoProcessor, AutoModelForCausalLM, AutoConfig, AutoBackbone
-from peft import LoraConfig, get_peft_model, PeftModel
+from peft import PeftModel
 
-from rfdetr.util.misc import NestedTensor, is_main_process
+from rfdetr.util.misc import NestedTensor
 
 from rfdetr.models.backbone.base import BackboneBase
 from rfdetr.models.backbone.projector import MultiScaleProjector
@@ -35,23 +33,25 @@ __all__ = ["Backbone"]
 
 class Backbone(BackboneBase):
     """backbone."""
-    def __init__(self,
-                 name: str,
-                 pretrained_encoder: str=None,
-                 window_block_indexes: list=None,
-                 drop_path=0.0,
-                 out_channels=256,
-                 out_feature_indexes: list=None,
-                 projector_scale: list=None,
-                 use_cls_token: bool = False,
-                 freeze_encoder: bool = False,
-                 layer_norm: bool = False,
-                 target_shape: tuple[int, int] = (640, 640),
-                 rms_norm: bool = False,
-                 backbone_lora: bool = False,
-                 gradient_checkpointing: bool = False,
-                 load_dinov2_weights: bool = True,
-                 ):
+
+    def __init__(
+        self,
+        name: str,
+        pretrained_encoder: str = None,
+        window_block_indexes: list = None,
+        drop_path=0.0,
+        out_channels=256,
+        out_feature_indexes: list = None,
+        projector_scale: list = None,
+        use_cls_token: bool = False,
+        freeze_encoder: bool = False,
+        layer_norm: bool = False,
+        target_shape: tuple[int, int] = (640, 640),
+        rms_norm: bool = False,
+        backbone_lora: bool = False,
+        gradient_checkpointing: bool = False,
+        load_dinov2_weights: bool = True,
+    ):
         super().__init__()
         # an example name here would be "dinov2_base" or "dinov2_registers_windowed_base"
         # if "registers" is in the name, then use_registers is set to True, otherwise it is set to False
@@ -69,7 +69,9 @@ class Backbone(BackboneBase):
         if "windowed" in name_parts:
             use_windowed_attn = True
             name_parts.remove("windowed")
-        assert len(name_parts) == 2, "name should be dinov2, then either registers, windowed, both, or none, then the size"
+        assert (
+            len(name_parts) == 2
+        ), "name should be dinov2, then either registers, windowed, both, or none, then the size"
         self.encoder = DinoV2(
             size=name_parts[-1],
             out_feature_indexes=out_feature_indexes,
@@ -185,6 +187,7 @@ def get_dinov2_lr_decay_rate(name, lr_decay_rate=1.0, num_layers=12):
         elif ".layer." in name and ".residual." not in name:
             layer_id = int(name[name.find(".layer.") :].split(".")[2]) + 1
     return lr_decay_rate ** (num_layers + 1 - layer_id)
+
 
 def get_dinov2_weight_decay_rate(name, weight_decay_rate=1.0):
     if (

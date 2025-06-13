@@ -34,7 +34,7 @@ except ImportError:
     from torch.cuda.amp import autocast, GradScaler
 
     DEPRECATED_AMP = True
-from typing import DefaultDict, List, Callable, Dict, Any, Tuple, Optional
+from typing import DefaultDict, List, Callable, Dict, Any, Tuple
 from rfdetr.util.misc import NestedTensor
 
 
@@ -185,12 +185,12 @@ def train_one_epoch(
     epoch: int,
     batch_size: int,
     max_norm: float = 0,
-    ema_m: Optional[torch.nn.Module] = None,
+    ema_m: torch.nn.Module | None = None,
     schedules: dict = {},
     num_training_steps_per_epoch=None,
     vit_encoder_num_layers=None,
     args=None,
-    callbacks: Optional[DefaultDict[str, List[Callable]]] = None,
+    callbacks: DefaultDict[str, List[Callable]] | None = None,
 ) -> Dict[str, float]:
     """Train model for one epoch.
 
@@ -373,15 +373,12 @@ def evaluate(
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
-        if args.fp16_eval:
-            samples.tensors = samples.tensors.half()
-
         # Add autocast for evaluation
         with autocast(**get_autocast_args(args)):
             outputs = model(samples)
 
         # Convert FP16 outputs to FP32 if needed
-        outputs = process_evaluation_outputs(outputs, args.fp16_eval)
+        outputs = process_evaluation_outputs(outputs, False)
 
         loss_dict = criterion(outputs, targets)
         weight_dict = criterion.weight_dict
