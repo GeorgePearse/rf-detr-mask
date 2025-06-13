@@ -348,6 +348,9 @@ def setup_data_loaders(
 
     # Build data samplers
     sampler_train: Optional[DistributedSampler] = None
+    sampler_val: Any = None
+    sampler_train_base: Any = None
+    
     if args.distributed:
         sampler_train = DistributedSampler(dataset_train)
         sampler_val = DistributedSampler(dataset_val, shuffle=False)
@@ -516,14 +519,14 @@ def main(args: argparse.Namespace) -> None:
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
         # Set epoch for sampler
-        if args.distributed:
+        if args.distributed and sampler_train is not None:
             sampler_train.set_epoch(epoch)
 
         # Calculate number of training steps per epoch
         num_training_steps_per_epoch = len(data_loader_train)
 
         # Create empty callbacks dictionary
-        callbacks: Dict[str, List[Any]] = defaultdict(list)
+        callbacks = defaultdict(list)
 
         # Add checkpoint saving callback
         def save_checkpoint_callback(callback_dict):
