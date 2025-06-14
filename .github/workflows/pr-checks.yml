@@ -1,0 +1,95 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Fetch all history for proper diff
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install pre-commit
+      run: |
+        pip install pre-commit
+        
+    - name: Run pre-commit
+      run: |
+        pre-commit run --all-files
+        
+  check-docstrings:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install pydocstyle
+        
+    - name: Check docstrings
+      run: |
+        pydocstyle rfdetr/ --convention=google || true
+        
+  check-requirements:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Check pyproject.toml validity
+      run: |
+        python -m pip install toml
+        python -c "import toml; toml.load('pyproject.toml')"
+        
+  test-minimal-install:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v2
+      
+    - name: Test minimal installation
+      run: |
+        uv pip install -e . --system
+        python -c "import rfdetr; print('Basic import successful')"
+        
+  check-changelog:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Check if PR modifies code
+      id: check_code_changes
+      run: |
+        # Check if PR modifies Python files
+        if git diff --name-only origin/main...HEAD | grep -E '\.(py|pyx|pxd)$'; then
+          echo "code_changed=true" >> $GITHUB_OUTPUT
+        else
+          echo "code_changed=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Suggest changelog update
+      if: steps.check_code_changes.outputs.code_changed == 'true'
+      run: |
+        echo "::notice::This PR modifies code files. Please ensure any user-facing changes are documented."

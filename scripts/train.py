@@ -26,17 +26,17 @@ import datetime
 import json
 import os
 import random
-import sys
 import time
 from collections import defaultdict
 from logging import getLogger
 from pathlib import Path
+from typing import Dict, Any, Optional, List, Tuple
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, DistributedSampler
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 import rfdetr.util.misc as utils
 from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
@@ -45,6 +45,10 @@ from rfdetr.models import build_model, build_criterion_and_postprocessors
 from rfdetr.util.files import download_file
 from rfdetr.util.get_param_dicts import get_param_dict
 from rfdetr.util.utils import ModelEma, BestMetricHolder
+from rfdetr.util.per_class_metrics import (
+    print_per_class_metrics,
+    get_coco_category_names,
+)
 
 if str(os.environ.get("USE_FILE_SYSTEM_SHARING", "False")).lower() in ["true", "1"]:
     import torch.multiprocessing
@@ -73,7 +77,7 @@ def download_pretrain_weights(pretrain_weights: str, redownload=False):
             )
 
 
-def get_args_parser():
+def get_args_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         "Train RF-DETR-Mask on CMR segmentation", add_help=True
     )
@@ -296,28 +300,28 @@ def get_args_parser():
         action="store_true",
         help="use square resize with dimensions divisible by 64",
     )
+    parser.add_argument(
+        "--print_per_class_metrics",
+        action="store_true",
+        help="Print per-class COCO mAP metrics after each epoch",
+    )
 
     return parser
 
 
-def main(args):
-    # Initialize distributed mode
-    utils.init_distributed_mode(args)
-    print("git:\n  {}\n".format(utils.get_sha()))
-    print(args)
-
-    device = torch.device(args.device)
-
-    # Fix the seed for reproducibility
+def setup_seeds(args: argparse.Namespace) -> None:
+    """Set random seeds for reproducibility."""
     seed = args.seed + utils.get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
 
-    # Build the model
-    model = build_model(args)
 
-    # Build criterion and postprocessors
+def setup_model_and_criterion(
+    args: argparse.Namespace, device: torch.device
+) -> Tuple[nn.Module, nn.Module, Dict[str, Any], nn.Module]:
+    """Build model, criterion, and postprocessors."""
+    model = build_model(args)
     criterion, postprocessors = build_criterion_and_postprocessors(args)
     model.to(device)
 
@@ -329,20 +333,13 @@ def main(args):
         if args.sync_bn:
             model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
-    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total trainable parameters: {n_parameters}")
+    return model, criterion, postprocessors, model_without_ddp
 
-    # Build optimizer
-    param_dicts = get_param_dict(args, model_without_ddp)
-    optimizer = torch.optim.AdamW(
-        param_dicts, lr=args.lr, weight_decay=args.weight_decay
-    )
 
-    # Build learning rate scheduler
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer, [args.lr_drop], gamma=0.1
-    )
-
+def setup_data_loaders(
+    args: argparse.Namespace,
+) -> Tuple[DataLoader, DataLoader, Any, Optional[DistributedSampler]]:
+    """Set up training and validation data loaders."""
     # Build datasets
     dataset_train = build_dataset(
         image_set="train", args=args, resolution=args.resolution
@@ -350,17 +347,23 @@ def main(args):
     dataset_val = build_dataset(image_set="val", args=args, resolution=args.resolution)
 
     # Build data samplers
+    sampler_train: Optional[DistributedSampler] = None
     if args.distributed:
         sampler_train = DistributedSampler(dataset_train)
         sampler_val = DistributedSampler(dataset_val, shuffle=False)
     else:
-        sampler_train = torch.utils.data.RandomSampler(dataset_train)
+        sampler_train_base = torch.utils.data.RandomSampler(dataset_train)
         sampler_val = torch.utils.data.SequentialSampler(dataset_val)
 
     # Build data loaders
-    batch_sampler_train = torch.utils.data.BatchSampler(
-        sampler_train, args.batch_size, drop_last=True
-    )
+    if args.distributed:
+        batch_sampler_train = torch.utils.data.BatchSampler(
+            sampler_train, args.batch_size, drop_last=True
+        )
+    else:
+        batch_sampler_train = torch.utils.data.BatchSampler(
+            sampler_train_base, args.batch_size, drop_last=True
+        )
 
     data_loader_train = DataLoader(
         dataset_train,
@@ -377,6 +380,46 @@ def main(args):
         num_workers=args.num_workers,
     )
 
+    # Get COCO API for evaluation
+    base_ds = get_coco_api_from_dataset(dataset_val)
+
+    return data_loader_train, data_loader_val, base_ds, sampler_train
+
+
+def main(args: argparse.Namespace) -> None:
+    # Initialize distributed mode
+    utils.init_distributed_mode(args)
+    print("git:\n  {}\n".format(utils.get_sha()))
+    print(args)
+
+    device = torch.device(args.device)
+
+    # Set random seeds
+    setup_seeds(args)
+
+    # Build model, criterion, and postprocessors
+    model, criterion, postprocessors, model_without_ddp = setup_model_and_criterion(
+        args, device
+    )
+
+    n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"Total trainable parameters: {n_parameters}")
+
+    # Build optimizer
+    param_dicts = get_param_dict(args, model_without_ddp)
+    optimizer = torch.optim.AdamW(
+        param_dicts, lr=args.lr, weight_decay=args.weight_decay
+    )
+
+    # Build learning rate scheduler
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
+        optimizer, [args.lr_drop], gamma=0.1
+    )
+
+    # Set up data loaders
+    data_loader_train, data_loader_val, base_ds, sampler_train = setup_data_loaders(
+        args
+    )
     # Create model EMA if needed
     ema_m = getattr(args, "ema", None)
     if ema_m:
@@ -384,12 +427,13 @@ def main(args):
     else:
         ema = None
 
-    # Get COCO API for evaluation
-    base_ds = get_coco_api_from_dataset(dataset_val)
-
     # Create output directory
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create checkpoints directory
+    checkpoints_dir = Path("checkpoints")
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
     # Resume from checkpoint if specified
     if args.resume:
@@ -421,6 +465,47 @@ def main(args):
         for k, v in test_stats.items():
             if isinstance(v, list):
                 print(f"{k}: {v}")
+
+        # Print per-class metrics in eval mode
+        if utils.is_main_process() and coco_evaluator is not None:
+            print("\nPer-Class Evaluation Metrics:")
+            category_names = get_coco_category_names(base_ds)
+
+            # Print per-class AP@[0.5:0.95]
+            print_per_class_metrics(
+                coco_evaluator,
+                iou_type="bbox",
+                class_names=category_names,
+                metric_name="AP",
+                iou_threshold=None,  # AP@[0.5:0.95]
+                max_dets=100,
+                area_range="all",
+            )
+
+            # Print per-class AP@0.5
+            print_per_class_metrics(
+                coco_evaluator,
+                iou_type="bbox",
+                class_names=category_names,
+                metric_name="AP",
+                iou_threshold=0.5,  # AP@0.5
+                max_dets=100,
+                area_range="all",
+            )
+
+            # If segmentation is enabled, print mask metrics too
+            if args.masks and "segm" in coco_evaluator.coco_eval:
+                print("\nSEGMENTATION METRICS:")
+                print_per_class_metrics(
+                    coco_evaluator,
+                    iou_type="segm",
+                    class_names=category_names,
+                    metric_name="AP",
+                    iou_threshold=None,  # AP@[0.5:0.95]
+                    max_dets=100,
+                    area_range="all",
+                )
+
         return
 
     # Create metrics holders
@@ -438,8 +523,69 @@ def main(args):
         num_training_steps_per_epoch = len(data_loader_train)
 
         # Create empty callbacks dictionary
+        callbacks: Dict[str, List[Any]] = defaultdict(list)
 
-        callbacks = defaultdict(list)
+        # Add checkpoint saving callback
+        def save_checkpoint_callback(callback_dict):
+            step = callback_dict["step"]
+            if step > 0 and step % 100 == 0:
+                checkpoint_path = checkpoints_dir / f"checkpoint_step_{step:06d}.pth"
+                checkpoint_data = {
+                    "model": model_without_ddp.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "lr_scheduler": lr_scheduler.state_dict(),
+                    "epoch": epoch,
+                    "step": step,
+                    "args": args,
+                }
+                if ema:
+                    checkpoint_data["ema"] = ema.ema.state_dict()
+                utils.save_on_master(checkpoint_data, checkpoint_path)
+                print(f"Saved checkpoint at step {step}")
+
+                # Evaluate and print per-class metrics for this checkpoint
+                if utils.is_main_process():
+                    print("\nEvaluating checkpoint for per-class metrics...")
+                    test_stats, coco_evaluator = evaluate(
+                        model,
+                        criterion,
+                        postprocessors,
+                        data_loader_val,
+                        base_ds,
+                        device,
+                        args,
+                    )
+
+                    if coco_evaluator is not None:
+                        print(f"\nCheckpoint Step {step} - Per-Class Metrics:")
+                        category_names = get_coco_category_names(base_ds)
+
+                        # Print per-class AP@[0.5:0.95]
+                        print_per_class_metrics(
+                            coco_evaluator,
+                            iou_type="bbox",
+                            class_names=category_names,
+                            metric_name="AP",
+                            iou_threshold=None,  # AP@[0.5:0.95]
+                            max_dets=100,
+                            area_range="all",
+                        )
+
+                        # If segmentation is enabled, print mask metrics too
+                        if args.masks and "segm" in coco_evaluator.coco_eval:
+                            print("\nSEGMENTATION METRICS:")
+                            print_per_class_metrics(
+                                coco_evaluator,
+                                iou_type="segm",
+                                class_names=category_names,
+                                metric_name="AP",
+                                iou_threshold=None,  # AP@[0.5:0.95]
+                                max_dets=100,
+                                area_range="all",
+                            )
+
+        # Add the callback to save checkpoints every 100 steps
+        callbacks["on_train_batch_start"].append(save_checkpoint_callback)
 
         # Train for one epoch
         train_stats = train_one_epoch(
@@ -475,6 +621,38 @@ def main(args):
                 checkpoint_dict["ema"] = ema.ema.state_dict()
             utils.save_on_master(checkpoint_dict, checkpoint_path)
 
+            # Print per-class metrics for periodic checkpoint
+            if utils.is_main_process() and coco_evaluator is not None:
+                print(f"\n{'='*80}")
+                print(f"PERIODIC CHECKPOINT - Epoch {epoch}")
+                print(f"{'='*80}")
+
+                category_names = get_coco_category_names(base_ds)
+
+                # Print per-class AP@[0.5:0.95]
+                print_per_class_metrics(
+                    coco_evaluator,
+                    iou_type="bbox",
+                    class_names=category_names,
+                    metric_name="AP",
+                    iou_threshold=None,  # AP@[0.5:0.95]
+                    max_dets=100,
+                    area_range="all",
+                )
+
+                # If segmentation is enabled, print mask metrics too
+                if args.masks and "segm" in coco_evaluator.coco_eval:
+                    print("\nSEGMENTATION METRICS:")
+                    print_per_class_metrics(
+                        coco_evaluator,
+                        iou_type="segm",
+                        class_names=category_names,
+                        metric_name="AP",
+                        iou_threshold=None,  # AP@[0.5:0.95]
+                        max_dets=100,
+                        area_range="all",
+                    )
+
         # Evaluate
         test_stats, coco_evaluator = evaluate(
             model,
@@ -486,8 +664,26 @@ def main(args):
             args.output_dir,
         )
 
+        # Print per-class metrics if requested
+        if (
+            args.print_per_class_metrics
+            and utils.is_main_process()
+            and coco_evaluator is not None
+        ):
+            print(f"\nEpoch {epoch} - Per-Class Metrics:")
+            category_names = get_coco_category_names(base_ds)
+            print_per_class_metrics(
+                coco_evaluator,
+                iou_type="bbox",
+                class_names=category_names,
+                metric_name="AP",
+                iou_threshold=None,  # AP@[0.5:0.95]
+                max_dets=100,
+                area_range="all",
+            )
+
         # Check if this is the best model so far
-        map_regular = test_stats["coco_eval_bbox"][0]
+        map_regular: float = test_stats["coco_eval_bbox"][0]
 
         # Update best metrics
         _is_best = best_map_holder.update(map_regular, epoch, is_ema=False)
@@ -503,6 +699,50 @@ def main(args):
             if ema:
                 checkpoint_dict["ema"] = ema.ema.state_dict()
             utils.save_on_master(checkpoint_dict, checkpoint_path)
+
+            # Print per-class metrics for the best model
+            if utils.is_main_process() and coco_evaluator is not None:
+                print("\n" + "=" * 80)
+                print(f"NEW BEST MODEL - Epoch {epoch} - mAP: {map_regular:.3f}")
+                print("=" * 80)
+
+                # Get category names from the dataset
+                category_names = get_coco_category_names(base_ds)
+
+                # Print per-class AP@[0.5:0.95]
+                print_per_class_metrics(
+                    coco_evaluator,
+                    iou_type="bbox",
+                    class_names=category_names,
+                    metric_name="AP",
+                    iou_threshold=None,  # AP@[0.5:0.95]
+                    max_dets=100,
+                    area_range="all",
+                )
+
+                # Print per-class AP@0.5
+                print_per_class_metrics(
+                    coco_evaluator,
+                    iou_type="bbox",
+                    class_names=category_names,
+                    metric_name="AP",
+                    iou_threshold=0.5,  # AP@0.5
+                    max_dets=100,
+                    area_range="all",
+                )
+
+                # If segmentation is enabled, print mask metrics too
+                if args.masks and "segm" in coco_evaluator.coco_eval:
+                    print("\nSEGMENTATION METRICS:")
+                    print_per_class_metrics(
+                        coco_evaluator,
+                        iou_type="segm",
+                        class_names=category_names,
+                        metric_name="AP",
+                        iou_threshold=None,  # AP@[0.5:0.95]
+                        max_dets=100,
+                        area_range="all",
+                    )
 
         # Log statistics
         log_stats = {
@@ -521,10 +761,8 @@ def main(args):
     print(f"Training completed in {total_time_str}")
 
 
-if __name__ == "__main__":
-    parser = get_args_parser()
-    args = parser.parse_args()
-
+def setup_training_config(args: argparse.Namespace) -> argparse.Namespace:
+    """Set up additional training configuration parameters."""
     # Set some defaults for compatibility
     args.focal_loss = True
     args.focal_alpha = 0.25
@@ -608,5 +846,15 @@ if __name__ == "__main__":
     # Additional parameter mapping
     args.grad_accum_steps = args.gradient_accumulation_steps
     args.fp16_eval = args.use_fp16  # Use FP16 for evaluation
+
+    return args
+
+
+if __name__ == "__main__":
+    parser = get_args_parser()
+    args = parser.parse_args()
+
+    # Set up training configuration
+    args = setup_training_config(args)
 
     main(args)

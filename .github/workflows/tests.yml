@@ -9,6 +9,55 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install uv
+      uses: astral-sh/setup-uv@v2
+      
+    - name: Install dependencies
+      run: |
+        uv pip install -e ".[dev]" --system
+        
+    - name: Run linting
+      run: |
+        ruff check rfdetr/ tests/
+        ruff format --check rfdetr/ tests/
+        
+    - name: Run type checking
+      run: |
+        mypy rfdetr/ --ignore-missing-imports || true
+        
+    - name: Run tests
+      run: |
+        python -m pytest tests/ -v --cov=rfdetr --cov-report=xml --cov-report=term-missing
+        
+    - name: Run security checks
+      run: |
+        bandit -r rfdetr/ -ll || true
+        
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      if: matrix.python-version == '3.11'
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+        
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: test
+    
     steps:
     - uses: actions/checkout@v4
     
@@ -22,20 +71,14 @@ jobs:
       
     - name: Install dependencies
       run: |
-        uv pip install -e ".[dev]" --system
+        uv pip install -e ".[dev,onnxexport]" --system
         
-    - name: Run tests
+    - name: Test model initialization
       run: |
-        python -m pytest tests/ -v --cov=rfdetr --cov-report=xml --cov-report=term
+        python -c "from rfdetr.detr import RFDETRBase; model = RFDETRBase(); print('Model initialized successfully')"
         
-    - name: Run mypy
+    - name: Test imports
       run: |
-        mypy rfdetr/ --ignore-missing-imports || true
-        
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
+        python -c "from rfdetr.util.per_class_metrics import print_per_class_metrics, get_per_class_metrics_dataframe"
+        python -c "from rfdetr.engine import train_one_epoch, evaluate"
+        python -c "from rfdetr.models import build_model"

@@ -356,8 +356,6 @@ def evaluate(
         Tuple of (stats_dict, coco_evaluator)
     """
     model.eval()
-    # GEORGE removed an if fp16_eval here because it didn't exist
-    model.half()
     criterion.eval()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
@@ -373,12 +371,18 @@ def evaluate(
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
-        # Add autocast for evaluation
-        with autocast(**get_autocast_args(args)):
-            outputs = model(samples)
+        # Add autocast for evaluation with no_grad
+        with torch.no_grad():
+            if args is not None and args.amp:
+                with autocast(**get_autocast_args(args)):
+                    outputs = model(samples)
+            else:
+                outputs = model(samples)
 
         # Convert FP16 outputs to FP32 if needed
-        outputs = process_evaluation_outputs(outputs, False)
+        outputs = process_evaluation_outputs(
+            outputs, args.amp if args is not None else False
+        )
 
         loss_dict = criterion(outputs, targets)
         weight_dict = criterion.weight_dict

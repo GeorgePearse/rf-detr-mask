@@ -40,8 +40,18 @@ class MLP(nn.Module):
         )
 
     def forward(self, x):
+        # Handle mixed precision: ensure computation in float32 for stability
+        input_dtype = x.dtype
+        if input_dtype in (torch.float16, torch.bfloat16):
+            x = x.float()
+
         for i, layer in enumerate(self.layers):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
+
+        # Convert back to original dtype
+        if input_dtype in (torch.float16, torch.bfloat16):
+            x = x.to(input_dtype)
+
         return x
 
 
