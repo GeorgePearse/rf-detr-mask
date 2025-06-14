@@ -455,7 +455,7 @@ def main(args: argparse.Namespace) -> None:
             data_loader_val,
             base_ds,
             device,
-            args.output_dir,
+            args,
         )
         if args.output_dir:
             utils.save_on_master(
@@ -661,7 +661,7 @@ def main(args: argparse.Namespace) -> None:
             data_loader_val,
             base_ds,
             device,
-            args.output_dir,
+            args,
         )
 
         # Print per-class metrics if requested
