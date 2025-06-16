@@ -30,7 +30,7 @@ import time
 from collections import defaultdict
 from logging import getLogger
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, Tuple
 
 import numpy as np
 import torch
@@ -75,6 +75,68 @@ def download_pretrain_weights(pretrain_weights: str, redownload=False):
                 HOSTED_MODELS[pretrain_weights],
                 pretrain_weights,
             )
+
+
+def print_all_per_class_metrics(coco_evaluator, category_names, masks_enabled=False):
+    """Print per-class metrics for both bbox and segm (if enabled).
+
+    Args:
+        coco_evaluator: COCO evaluator instance
+        category_names: Dictionary mapping category IDs to names
+        masks_enabled: Whether segmentation masks are enabled
+    """
+    print("\nPer-Class Evaluation Metrics:")
+
+    # Print bbox metrics
+    print("\nBOUNDING BOX METRICS:")
+
+    # Print per-class AP@[0.5:0.95]
+    print_per_class_metrics(
+        coco_evaluator,
+        iou_type="bbox",
+        class_names=category_names,
+        metric_name="AP",
+        iou_threshold=None,  # AP@[0.5:0.95]
+        max_dets=100,
+        area_range="all",
+    )
+
+    # Print per-class AP@0.5
+    print_per_class_metrics(
+        coco_evaluator,
+        iou_type="bbox",
+        class_names=category_names,
+        metric_name="AP",
+        iou_threshold=0.5,  # AP@0.5
+        max_dets=100,
+        area_range="all",
+    )
+
+    # If segmentation is enabled, print mask metrics too
+    if masks_enabled and "segm" in coco_evaluator.coco_eval:
+        print("\nSEGMENTATION METRICS:")
+
+        # Print per-class AP@[0.5:0.95]
+        print_per_class_metrics(
+            coco_evaluator,
+            iou_type="segm",
+            class_names=category_names,
+            metric_name="AP",
+            iou_threshold=None,  # AP@[0.5:0.95]
+            max_dets=100,
+            area_range="all",
+        )
+
+        # Print per-class AP@0.5
+        print_per_class_metrics(
+            coco_evaluator,
+            iou_type="segm",
+            class_names=category_names,
+            metric_name="AP",
+            iou_threshold=0.5,  # AP@0.5
+            max_dets=100,
+            area_range="all",
+        )
 
 
 def get_args_parser() -> argparse.ArgumentParser:
@@ -305,6 +367,18 @@ def get_args_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print per-class COCO mAP metrics after each epoch",
     )
+    parser.add_argument(
+        "--steps_per_validation",
+        type=int,
+        default=100,
+        help="Number of training steps between validation evaluations (default: 100)",
+    )
+    parser.add_argument(
+        "--test_limit",
+        type=int,
+        default=None,
+        help="Limit the number of validation samples for faster evaluation (default: None - use all samples)",
+    )
 
     return parser
 
@@ -336,6 +410,50 @@ def setup_model_and_criterion(
     return model, criterion, postprocessors, model_without_ddp
 
 
+def create_filtered_coco_api(full_coco_api, image_ids_to_keep):
+    """Create a new COCO API object containing only the specified image IDs and their annotations.
+
+    Args:
+        full_coco_api: The original COCO API object with all images and annotations
+        image_ids_to_keep: List of image IDs to include in the filtered API
+
+    Returns:
+        A new COCO API object containing only the specified images and their annotations
+    """
+    from pycocotools.coco import COCO
+
+    # Filter images
+    filtered_images = []
+    for img_id in image_ids_to_keep:
+        if img_id in full_coco_api.imgs:
+            filtered_images.append(full_coco_api.imgs[img_id])
+
+    # Filter annotations for the kept images
+    filtered_annotations = []
+    for img_id in image_ids_to_keep:
+        # Get annotation IDs for the current image ID
+        ann_ids = full_coco_api.getAnnIds(imgIds=[img_id])
+        # Load annotations and extend the list
+        anns = full_coco_api.loadAnns(ann_ids)
+        filtered_annotations.extend(anns)
+
+    # Reconstruct the COCO dataset dictionary structure
+    filtered_coco_dict = {
+        "info": full_coco_api.dataset.get("info", {}),
+        "licenses": full_coco_api.dataset.get("licenses", []),
+        "categories": full_coco_api.dataset.get("categories", []),
+        "images": filtered_images,
+        "annotations": filtered_annotations,
+    }
+
+    # Create a new COCO object with the filtered data
+    filtered_coco = COCO()
+    filtered_coco.dataset = filtered_coco_dict
+    filtered_coco.createIndex()
+
+    return filtered_coco
+
+
 def setup_data_loaders(
     args: argparse.Namespace,
 ) -> Tuple[DataLoader, DataLoader, Any, Optional[DistributedSampler]]:
@@ -346,11 +464,20 @@ def setup_data_loaders(
     )
     dataset_val = build_dataset(image_set="val", args=args, resolution=args.resolution)
 
+    # Apply test_limit if specified
+    if args.test_limit is not None and args.test_limit > 0:
+        # Create a subset of the validation dataset
+        indices = list(range(min(args.test_limit, len(dataset_val))))
+        dataset_val = torch.utils.data.Subset(dataset_val, indices)
+        print(
+            f"Limited validation dataset to {len(indices)} samples (from {len(dataset_val.dataset)} total)"
+        )
+
     # Build data samplers
     sampler_train: Optional[DistributedSampler] = None
     sampler_val: Any = None
     sampler_train_base: Any = None
-    
+
     if args.distributed:
         sampler_train = DistributedSampler(dataset_train)
         sampler_val = DistributedSampler(dataset_val, shuffle=False)
@@ -373,6 +500,10 @@ def setup_data_loaders(
         batch_sampler=batch_sampler_train,
         collate_fn=utils.collate_fn,
         num_workers=args.num_workers,
+        pin_memory=True,  # Speed up CPU to GPU transfer
+        persistent_workers=True
+        if args.num_workers > 0
+        else False,  # Keep workers alive
     )
     data_loader_val = DataLoader(
         dataset_val,
@@ -381,10 +512,30 @@ def setup_data_loaders(
         drop_last=False,
         collate_fn=utils.collate_fn,
         num_workers=args.num_workers,
+        pin_memory=True,  # Speed up CPU to GPU transfer
+        persistent_workers=True
+        if args.num_workers > 0
+        else False,  # Keep workers alive
     )
 
     # Get COCO API for evaluation
-    base_ds = get_coco_api_from_dataset(dataset_val)
+    if args.test_limit is not None and args.test_limit > 0:
+        # For subsets, we need to create a filtered COCO API that only contains
+        # the images and annotations for the subset
+        original_dataset = dataset_val.dataset
+        subset_indices = dataset_val.indices
+
+        # Get the full COCO API
+        full_coco_api = get_coco_api_from_dataset(original_dataset)
+
+        # Map subset indices to COCO image IDs
+        subset_image_ids = [original_dataset.ids[i] for i in subset_indices]
+
+        # Create a filtered COCO API for evaluation
+        base_ds = create_filtered_coco_api(full_coco_api, subset_image_ids)
+    else:
+        # For the full dataset, use the regular COCO API
+        base_ds = get_coco_api_from_dataset(dataset_val)
 
     return data_loader_train, data_loader_val, base_ds, sampler_train
 
@@ -440,7 +591,7 @@ def main(args: argparse.Namespace) -> None:
 
     # Resume from checkpoint if specified
     if args.resume:
-        checkpoint = torch.load(args.resume, map_location="cpu")
+        checkpoint = torch.load(args.resume, map_location="cpu", weights_only=False)
         model_without_ddp.load_state_dict(checkpoint["model"])
         if "optimizer" in checkpoint and "lr_scheduler" in checkpoint:
             optimizer.load_state_dict(checkpoint["optimizer"])
@@ -471,43 +622,8 @@ def main(args: argparse.Namespace) -> None:
 
         # Print per-class metrics in eval mode
         if utils.is_main_process() and coco_evaluator is not None:
-            print("\nPer-Class Evaluation Metrics:")
             category_names = get_coco_category_names(base_ds)
-
-            # Print per-class AP@[0.5:0.95]
-            print_per_class_metrics(
-                coco_evaluator,
-                iou_type="bbox",
-                class_names=category_names,
-                metric_name="AP",
-                iou_threshold=None,  # AP@[0.5:0.95]
-                max_dets=100,
-                area_range="all",
-            )
-
-            # Print per-class AP@0.5
-            print_per_class_metrics(
-                coco_evaluator,
-                iou_type="bbox",
-                class_names=category_names,
-                metric_name="AP",
-                iou_threshold=0.5,  # AP@0.5
-                max_dets=100,
-                area_range="all",
-            )
-
-            # If segmentation is enabled, print mask metrics too
-            if args.masks and "segm" in coco_evaluator.coco_eval:
-                print("\nSEGMENTATION METRICS:")
-                print_per_class_metrics(
-                    coco_evaluator,
-                    iou_type="segm",
-                    class_names=category_names,
-                    metric_name="AP",
-                    iou_threshold=None,  # AP@[0.5:0.95]
-                    max_dets=100,
-                    area_range="all",
-                )
+            print_all_per_class_metrics(coco_evaluator, category_names, args.masks)
 
         return
 
@@ -531,7 +647,7 @@ def main(args: argparse.Namespace) -> None:
         # Add checkpoint saving callback
         def save_checkpoint_callback(callback_dict):
             step = callback_dict["step"]
-            if step > 0 and step % 100 == 0:
+            if step > 0 and step % args.steps_per_validation == 0:
                 checkpoint_path = checkpoints_dir / f"checkpoint_step_{step:06d}.pth"
                 checkpoint_data = {
                     "model": model_without_ddp.state_dict(),
@@ -562,32 +678,11 @@ def main(args: argparse.Namespace) -> None:
                     if coco_evaluator is not None:
                         print(f"\nCheckpoint Step {step} - Per-Class Metrics:")
                         category_names = get_coco_category_names(base_ds)
-
-                        # Print per-class AP@[0.5:0.95]
-                        print_per_class_metrics(
-                            coco_evaluator,
-                            iou_type="bbox",
-                            class_names=category_names,
-                            metric_name="AP",
-                            iou_threshold=None,  # AP@[0.5:0.95]
-                            max_dets=100,
-                            area_range="all",
+                        print_all_per_class_metrics(
+                            coco_evaluator, category_names, args.masks
                         )
 
-                        # If segmentation is enabled, print mask metrics too
-                        if args.masks and "segm" in coco_evaluator.coco_eval:
-                            print("\nSEGMENTATION METRICS:")
-                            print_per_class_metrics(
-                                coco_evaluator,
-                                iou_type="segm",
-                                class_names=category_names,
-                                metric_name="AP",
-                                iou_threshold=None,  # AP@[0.5:0.95]
-                                max_dets=100,
-                                area_range="all",
-                            )
-
-        # Add the callback to save checkpoints every 100 steps
+        # Add the callback to save checkpoints based on steps_per_validation
         callbacks["on_train_batch_start"].append(save_checkpoint_callback)
 
         # Train for one epoch
@@ -631,30 +726,7 @@ def main(args: argparse.Namespace) -> None:
                 print(f"{'='*80}")
 
                 category_names = get_coco_category_names(base_ds)
-
-                # Print per-class AP@[0.5:0.95]
-                print_per_class_metrics(
-                    coco_evaluator,
-                    iou_type="bbox",
-                    class_names=category_names,
-                    metric_name="AP",
-                    iou_threshold=None,  # AP@[0.5:0.95]
-                    max_dets=100,
-                    area_range="all",
-                )
-
-                # If segmentation is enabled, print mask metrics too
-                if args.masks and "segm" in coco_evaluator.coco_eval:
-                    print("\nSEGMENTATION METRICS:")
-                    print_per_class_metrics(
-                        coco_evaluator,
-                        iou_type="segm",
-                        class_names=category_names,
-                        metric_name="AP",
-                        iou_threshold=None,  # AP@[0.5:0.95]
-                        max_dets=100,
-                        area_range="all",
-                    )
+                print_all_per_class_metrics(coco_evaluator, category_names, args.masks)
 
         # Evaluate
         test_stats, coco_evaluator = evaluate(
@@ -675,15 +747,7 @@ def main(args: argparse.Namespace) -> None:
         ):
             print(f"\nEpoch {epoch} - Per-Class Metrics:")
             category_names = get_coco_category_names(base_ds)
-            print_per_class_metrics(
-                coco_evaluator,
-                iou_type="bbox",
-                class_names=category_names,
-                metric_name="AP",
-                iou_threshold=None,  # AP@[0.5:0.95]
-                max_dets=100,
-                area_range="all",
-            )
+            print_all_per_class_metrics(coco_evaluator, category_names, args.masks)
 
         # Check if this is the best model so far
         map_regular: float = test_stats["coco_eval_bbox"][0]
@@ -711,41 +775,7 @@ def main(args: argparse.Namespace) -> None:
 
                 # Get category names from the dataset
                 category_names = get_coco_category_names(base_ds)
-
-                # Print per-class AP@[0.5:0.95]
-                print_per_class_metrics(
-                    coco_evaluator,
-                    iou_type="bbox",
-                    class_names=category_names,
-                    metric_name="AP",
-                    iou_threshold=None,  # AP@[0.5:0.95]
-                    max_dets=100,
-                    area_range="all",
-                )
-
-                # Print per-class AP@0.5
-                print_per_class_metrics(
-                    coco_evaluator,
-                    iou_type="bbox",
-                    class_names=category_names,
-                    metric_name="AP",
-                    iou_threshold=0.5,  # AP@0.5
-                    max_dets=100,
-                    area_range="all",
-                )
-
-                # If segmentation is enabled, print mask metrics too
-                if args.masks and "segm" in coco_evaluator.coco_eval:
-                    print("\nSEGMENTATION METRICS:")
-                    print_per_class_metrics(
-                        coco_evaluator,
-                        iou_type="segm",
-                        class_names=category_names,
-                        metric_name="AP",
-                        iou_threshold=None,  # AP@[0.5:0.95]
-                        max_dets=100,
-                        area_range="all",
-                    )
+                print_all_per_class_metrics(coco_evaluator, category_names, args.masks)
 
         # Log statistics
         log_stats = {

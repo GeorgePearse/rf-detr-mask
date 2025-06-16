@@ -132,9 +132,13 @@ class CocoEvaluator(object):
             scores = prediction["scores"].tolist()
             labels = prediction["labels"].tolist()
 
+            # Move masks to CPU if they're on GPU
+            if masks.is_cuda:
+                masks = masks.cpu()
+
             rles = [
                 mask_util.encode(
-                    np.array(mask[0, :, :, np.newaxis], dtype=np.uint8, order="F")
+                    np.array(mask[:, :, np.newaxis], dtype=np.uint8, order="F")
                 )[0]
                 for mask in masks
             ]

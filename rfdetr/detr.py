@@ -18,7 +18,7 @@ import torchvision.transforms.functional as F
 from PIL import Image
 
 from rfdetr.config import RFDETRBaseConfig, RFDETRLargeConfig, TrainConfig, ModelConfig
-from rfdetr.main import Model, download_pretrain_weights
+from rfdetr.model_utils import Model, download_pretrain_weights
 from rfdetr.util.metrics import (
     MetricsPlotSink,
     MetricsTensorBoardSink,

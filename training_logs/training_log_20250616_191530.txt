@@ -1,0 +1,12 @@
+Training started at: 2025-06-16 19:15:30.505107
+Command: /home/georgepearse/core/.venv/bin/python scripts/train.py --batch_size 2 --epochs 10 --steps_per_validation 10 --print_per_class_metrics --output_dir test_output --num_workers 2 --lr 1e-4 --lr_encoder 1e-5 --lr_projector 1e-5 --gradient_accumulation_steps 2
+================================================================================
+
+Traceback (most recent call last):
+  File "/home/georgepearse/rf-detr-mask/scripts/train.py", line 41, in <module>
+    import rfdetr.util.misc as utils
+ModuleNotFoundError: No module named 'rfdetr'
+
+================================================================================
+Training completed at: 2025-06-16 19:15:33.649478
+Exit code: 1

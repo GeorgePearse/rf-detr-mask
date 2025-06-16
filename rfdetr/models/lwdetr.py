@@ -171,7 +171,7 @@ class LWDETR(nn.Module):
 
         srcs = []
         masks = []
-        for l, feat in enumerate(features):
+        for level, feat in enumerate(features):
             src, mask = feat.decompose()
             srcs.append(src)
             masks.append(mask)
@@ -568,7 +568,6 @@ class SetCriterion(nn.Module):
         assert "pred_masks" in outputs
 
         src_idx = self._get_src_permutation_idx(indices)
-        tgt_idx = self._get_tgt_permutation_idx(indices)
 
         # Extract predicted masks for each matched query
         src_masks = outputs["pred_masks"][src_idx]
@@ -579,47 +578,31 @@ class SetCriterion(nn.Module):
             # Return zero loss if masks are not available
             return {"loss_mask": torch.as_tensor(0.0, device=src_masks.device)}
 
-        # Process each mask individually and resize to a common size before concatenation
-        resized_masks = []
+        # Efficient batch processing of all masks at once
+        all_masks = []
         for t, (_, i) in zip(targets, indices):
             if len(i) > 0:  # Skip if no indices for this batch item
-                # Get masks for current target and resize them all to 28x28
-                masks = t["masks"][i]  # Shape: [num_instances, h, w]
-                # Resize masks to 28x28 in batches to save memory
-                batch_size = 32  # Process in batches
-                num_masks = masks.shape[0]
-                resized_batch = []
+                all_masks.append(t["masks"][i])
 
-                for j in range(0, num_masks, batch_size):
-                    # Process a batch of masks
-                    mask_batch = masks[j : j + batch_size]
-                    # Resize this batch
-                    # Use half precision (FP16) for memory efficiency
-                    batch_resized = (
-                        F.interpolate(
-                            mask_batch.unsqueeze(1).half(),
-                            size=(28, 28),
-                            mode="bilinear",
-                        )
-                        .squeeze(1)
-                        .gt(0.5)
-                    )
-                    resized_batch.append(batch_resized)
-
-                # Concatenate the resized batches
-                masks = (
-                    torch.cat(resized_batch, dim=0)
-                    if resized_batch
-                    else torch.zeros((0, 28, 28), dtype=torch.bool, device=masks.device)
-                )
-                resized_masks.append(masks)
-
-        # Concatenate all resized masks
-        if resized_masks:
-            target_masks = torch.cat(resized_masks, dim=0)
-        else:
+        if not all_masks:
             # Return zero loss if no valid masks
             return {"loss_mask": torch.as_tensor(0.0, device=src_masks.device)}
+
+        # Concatenate all masks and resize in a single operation
+        target_masks = torch.cat(all_masks, dim=0)  # [total_instances, h, w]
+
+        # Resize all masks at once for efficiency
+        # Use half precision for memory efficiency, then convert back
+        target_masks = (
+            F.interpolate(
+                target_masks.unsqueeze(1).half(),
+                size=(28, 28),
+                mode="bilinear",
+                align_corners=False,
+            )
+            .squeeze(1)
+            .gt(0.5)
+        )
 
         # Compute dice loss
         src_masks = src_masks.flatten(1)  # [num_matched_queries, 28*28]
@@ -792,7 +775,8 @@ class PostProcess(nn.Module):
                           For evaluation, this must be the original image size (before any data augmentation)
                           For visualization, this should be the image size after data augment, but before padding
         """
-        out_logits, out_bbox = outputs["pred_logits"], outputs["pred_boxes"]
+        out_logits = outputs["pred_logits"]
+        out_bbox = outputs["pred_boxes"]
         out_mask = outputs.get("pred_masks", None)
 
         assert len(out_logits) == len(target_sizes)
@@ -814,8 +798,8 @@ class PostProcess(nn.Module):
         boxes = boxes * scale_fct[:, None, :]
 
         results = []
-        for i, (s, l, b) in enumerate(zip(scores, labels, boxes)):
-            result = {"scores": s, "labels": l, "boxes": b}
+        for i, (s, lbl, b) in enumerate(zip(scores, labels, boxes)):
+            result = {"scores": s, "labels": lbl, "boxes": b}
 
             # Include mask predictions if available
             if out_mask is not None:
@@ -880,7 +864,7 @@ class PostProcessSegm(nn.Module):
         Returns:
             List of dicts with mask predictions for each image
         """
-        out_logits, out_bbox = outputs["pred_logits"], outputs["pred_boxes"]
+        out_logits = outputs["pred_logits"]
         assert "pred_masks" in outputs, "Masks not found in model outputs"
         out_masks = outputs["pred_masks"]
 
@@ -970,7 +954,6 @@ def build_model(args):
     # For more details on this, check the following discussion
     # https://github.com/facebookresearch/detr/issues/108#issuecomment-650269223
     num_classes = args.num_classes + 1
-    device = torch.device(args.device)
 
     backbone = build_backbone(
         encoder=args.encoder,
@@ -1038,7 +1021,7 @@ def build_criterion_and_postprocessors(args):
 
     try:
         sum_group_losses = args.sum_group_losses
-    except:
+    except AttributeError:
         sum_group_losses = False
     criterion = SetCriterion(
         args.num_classes + 1,

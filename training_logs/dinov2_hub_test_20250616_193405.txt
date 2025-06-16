@@ -1,0 +1,55 @@
+DINOv2 hub test started at: 2025-06-16 19:34:05.885140
+Command: /home/georgepearse/core/.venv/bin/python scripts/train.py --batch_size 2 --epochs 1 --steps_per_validation 10 --print_per_class_metrics --output_dir test_dinov2 --num_workers 2 --lr 1e-5 --lr_encoder 1e-6 --gradient_accumulation_steps 1
+================================================================================
+
+Not using distributed mode
+git:
+  sha: 59b1488381d9b8aaa045f7123f405a80c92beae6, status: has uncommited changes, branch: main
+
+Namespace(dataset='coco', dataset_file='coco', coco_path='/home/georgepearse/data/cmr/annotations', coco_train='2025-05-15_12:38:23.077836_train_ordered.json', coco_val='2025-05-15_12:38:38.270134_val_ordered.json', coco_img_path='/home/georgepearse/data/images', output_dir='test_dinov2', lr=1e-05, lr_encoder=1e-06, lr_projector=1e-05, lr_vit_layer_decay=1.0, lr_component_decay=0.9, lr_drop=50, weight_decay=0.0001, batch_size=2, epochs=1, clip_max_norm=0.1, gradient_accumulation_steps=1, encoder='dinov2_base', pretrain_weights=None, resolution=644, set_loss='lw_detr', set_cost_class=5, set_cost_bbox=2, set_cost_giou=1, loss_class_coef=4.5, loss_bbox_coef=2.0, loss_giou_coef=1, num_classes=69, masks=True, loss_mask_coef=1.0, loss_dice_coef=1.0, seed=42, eval=False, num_workers=2, start_epoch=0, sync_bn=False, world_size=1, dist_url='env://', device='cuda', resume='', dropout=0.0, bbox_reparam=True, group_detr=1, two_stage=True, no_intermittent_layers=False, use_fp16=True, amp=False, square_resize=True, square_resize_div_64=False, print_per_class_metrics=True, steps_per_validation=10, focal_loss=True, focal_alpha=0.25, focal_gamma=2.0, num_queries=900, hidden_dim=256, position_embedding_scale=None, backbone_feature_layers=['res2', 'res3', 'res4', 'res5'], vit_encoder_num_layers=12, num_decoder_layers=6, num_decoder_points=4, dec_layers=6, pretrained_encoder=True, window_block_indexes=[], drop_path=0.1, out_feature_indexes=[3, 7, 11], projector_scale=['P3', 'P4', 'P5'], use_cls_token=True, position_embedding='sine', freeze_encoder=False, layer_norm=True, rms_norm=False, backbone_lora=False, force_no_pretrain=False, gradient_checkpointing=False, encoder_only=False, backbone_only=False, sa_nheads=8, ca_nheads=8, dim_feedforward=2048, num_feature_levels=3, dec_n_points=4, lite_refpoint_refine=False, decoder_norm='LN', aux_loss=True, cls_loss_coef=4.5, bbox_loss_coef=2.0, giou_loss_coef=1, use_varifocal_loss=False, mask_loss_coef=1.0, dice_loss_coef=1.0, use_position_supervised_loss=False, ia_bce_loss=False, sum_group_losses=False, num_select=300, multi_scale=False, expanded_scales=[480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800], grad_accum_steps=1, fp16_eval=True, distributed=False)
+Total trainable parameters: 120939252
+loading annotations into memory...
+Done (t=0.90s)
+creating index...
+index created!
+loading annotations into memory...
+Done (t=0.15s)
+creating index...
+index created!
+Starting training
+Grad accum steps:  1
+Total batch size:  2
+LENGTH OF DATA LOADER: 577
+Epoch: [0]  [  0/577]  eta: 0:29:28  lr: 0.000010  class_error: 100.00  loss: 39.0186 (39.0186)  loss_ce: 4.4228 (4.4228)  loss_bbox: 0.2381 (0.2381)  loss_giou: 0.9341 (0.9341)  loss_mask: 0.2937 (0.2937)  loss_ce_0: 3.9741 (3.9741)  loss_bbox_0: 0.2860 (0.2860)  loss_giou_0: 1.1064 (1.1064)  loss_mask_0: 0.2937 (0.2937)  loss_ce_1: 3.8912 (3.8912)  loss_bbox_1: 0.2552 (0.2552)  loss_giou_1: 1.0298 (1.0298)  loss_mask_1: 0.2937 (0.2937)  loss_ce_2: 3.9516 (3.9516)  loss_bbox_2: 0.2500 (0.2500)  loss_giou_2: 1.0296 (1.0296)  loss_mask_2: 0.2937 (0.2937)  loss_ce_3: 3.8863 (3.8863)  loss_bbox_3: 0.2979 (0.2979)  loss_giou_3: 1.0569 (1.0569)  loss_mask_3: 0.2937 (0.2937)  loss_ce_4: 3.9083 (3.9083)  loss_bbox_4: 0.2746 (0.2746)  loss_giou_4: 1.0702 (1.0702)  loss_mask_4: 0.2937 (0.2937)  loss_ce_enc: 3.5856 (3.5856)  loss_bbox_enc: 0.3232 (0.3232)  loss_giou_enc: 1.1909 (1.1909)  loss_mask_enc: 0.2937 (0.2937)  loss_ce_unscaled: 0.9829 (0.9829)  class_error_unscaled: 100.0000 (100.0000)  loss_bbox_unscaled: 0.1191 (0.1191)  loss_giou_unscaled: 0.9341 (0.9341)  cardinality_error_unscaled: 868.5000 (868.5000)  loss_mask_unscaled: 0.2937 (0.2937)  loss_ce_0_unscaled: 0.8831 (0.8831)  loss_bbox_0_unscaled: 0.1430 (0.1430)  loss_giou_0_unscaled: 1.1064 (1.1064)  cardinality_error_0_unscaled: 863.0000 (863.0000)  loss_mask_0_unscaled: 0.2937 (0.2937)  loss_ce_1_unscaled: 0.8647 (0.8647)  loss_bbox_1_unscaled: 0.1276 (0.1276)  loss_giou_1_unscaled: 1.0298 (1.0298)  cardinality_error_1_unscaled: 868.5000 (868.5000)  loss_mask_1_unscaled: 0.2937 (0.2937)  loss_ce_2_unscaled: 0.8781 (0.8781)  loss_bbox_2_unscaled: 0.1250 (0.1250)  loss_giou_2_unscaled: 1.0296 (1.0296)  cardinality_error_2_unscaled: 864.5000 (864.5000)  loss_mask_2_unscaled: 0.2937 (0.2937)  loss_ce_3_unscaled: 0.8636 (0.8636)  loss_bbox_3_unscaled: 0.1489 (0.1489)  loss_giou_3_unscaled: 1.0569 (1.0569)  cardinality_error_3_unscaled: 868.0000 (868.0000)  loss_mask_3_unscaled: 0.2937 (0.2937)  loss_ce_4_unscaled: 0.8685 (0.8685)  loss_bbox_4_unscaled: 0.1373 (0.1373)  loss_giou_4_unscaled: 1.0702 (1.0702)  cardinality_error_4_unscaled: 868.5000 (868.5000)  loss_mask_4_unscaled: 0.2937 (0.2937)  loss_ce_enc_unscaled: 0.7968 (0.7968)  loss_bbox_enc_unscaled: 0.1616 (0.1616)  loss_giou_enc_unscaled: 1.1909 (1.1909)  cardinality_error_enc_unscaled: 868.5000 (868.5000)  loss_mask_enc_unscaled: 0.2937 (0.2937)  time: 3.0655  data: 1.2361  max mem: 6676
+Traceback (most recent call last):
+  File "/home/georgepearse/rf-detr-mask/scripts/train.py", line 814, in <module>
+    main(args)
+  File "/home/georgepearse/rf-detr-mask/scripts/train.py", line 610, in main
+    train_stats = train_one_epoch(
+  File "/home/georgepearse/rf-detr-mask/rfdetr/engine.py", line 259, in train_one_epoch
+    loss_dict = process_gradient_accumulation_batch(
+  File "/home/georgepearse/rf-detr-mask/rfdetr/engine.py", line 167, in process_gradient_accumulation_batch
+    losses, loss_dict = compute_losses(
+  File "/home/georgepearse/rf-detr-mask/rfdetr/engine.py", line 120, in compute_losses
+    loss_dict = criterion(outputs, targets_device)
+  File "/home/georgepearse/core/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1553, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/georgepearse/core/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1562, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/georgepearse/rf-detr-mask/rfdetr/models/lwdetr.py", line 658, in forward
+    indices = self.matcher(outputs_without_aux, targets, group_detr=group_detr)
+  File "/home/georgepearse/core/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1553, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/georgepearse/core/.venv/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1562, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/georgepearse/core/.venv/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+  File "/home/georgepearse/rf-detr-mask/rfdetr/models/matcher.py", line 126, in forward
+    indices_g = [
+  File "/home/georgepearse/rf-detr-mask/rfdetr/models/matcher.py", line 127, in <listcomp>
+    linear_sum_assignment(c[i]) for i, c in enumerate(C_g.split(sizes, -1))
+ValueError: matrix contains invalid numeric entries
+
+================================================================================
+DINOv2 hub test completed at: 2025-06-16 19:34:31.810886
+Exit code: 1
