@@ -19,26 +19,36 @@ Train and eval functions used in main.py
 """
 
 import math
-from typing import Iterable
+from typing import Iterable, Dict, List, Callable, Any, Tuple, Union, Protocol, cast, DefaultDict
 
 import torch
+import torch.nn.parallel  # For DistributedDataParallel
 
 import rfdetr.util.misc as utils
 from rfdetr.datasets.coco_eval import CocoEvaluator
 
 try:
     from torch.amp import autocast, GradScaler
-
-    DEPRECATED_AMP = False
+    DEPRECATED_AMP: bool = False
 except ImportError:
     from torch.cuda.amp import autocast, GradScaler
+    DEPRECATED_AMP: bool = True
 
-    DEPRECATED_AMP = True
-from typing import DefaultDict, List, Callable, Dict, Any, Tuple
 from rfdetr.util.misc import NestedTensor
 
+# Protocol for the 'args' object (e.g., argparse.Namespace)
+# This assumes 'args' will always have an 'amp' attribute of type bool.
+class TrainingArgs(Protocol):
+    amp: bool
 
-def get_autocast_args(args):
+# Protocol for the actual model that has dropout/drop path update methods.
+# This avoids needing to import the specific model class.
+class DropoutUpdatableModel(Protocol):
+    def update_drop_path(self, rate: float, num_layers: int) -> None: ...
+    def update_dropout(self, rate: float) -> None: ...
+
+
+def get_autocast_args(args: TrainingArgs) -> Dict[str, Union[bool, torch.dtype, str]]:
     """Get autocast arguments based on PyTorch version and hardware support.
 
     Args:
@@ -48,20 +58,22 @@ def get_autocast_args(args):
         dict: Arguments to pass to autocast context manager
     """
     # Prefer bfloat16 if available, otherwise use float16
-    dtype = (
+    dtype: torch.dtype = (
         torch.bfloat16
         if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
         else torch.float16
     )
 
     if DEPRECATED_AMP:
+        # The return dictionary contains 'enabled' (bool) and 'dtype' (torch.dtype)
         return {"enabled": args.amp, "dtype": dtype}
     else:
+        # The return dictionary contains 'device_type' (str), 'enabled' (bool), and 'dtype' (torch.dtype)
         return {"device_type": "cuda", "enabled": args.amp, "dtype": dtype}
 
 
 def update_dropout_schedules(
-    model: torch.nn.Module,
+    model: torch.nn.Module,  # The input model can be a base model or a DDP wrapper
     schedules: Dict[str, List[float]],
     iteration: int,
     is_distributed: bool,
@@ -70,25 +82,32 @@ def update_dropout_schedules(
     """Update dropout and drop path rates based on schedules.
 
     Args:
-        model: The model to update
-        schedules: Dictionary containing 'dp' and/or 'do' schedules
-        iteration: Current training iteration
-        is_distributed: Whether using distributed training
-        vit_encoder_num_layers: Number of ViT encoder layers
+        model: The model to update. Can be a base model or a DistributedDataParallel wrapper.
+        schedules: Dictionary containing 'dp' (drop path) and/or 'do' (dropout) schedules.
+        iteration: Current training iteration.
+        is_distributed: Whether using distributed training.
+        vit_encoder_num_layers: Number of ViT encoder layers.
     """
+    actual_model: DropoutUpdatableModel
+    if is_distributed:
+        # If distributed, the 'model' is expected to be a DistributedDataParallel instance.
+        # Its 'module' attribute holds the actual model, which should conform to DropoutUpdatableModel.
+        # We cast 'model' to DistributedDataParallel to access '.module', then cast '.module'
+        # to our specific Protocol.
+        ddp_model = cast(torch.nn.parallel.DistributedDataParallel, model)
+        actual_model = cast(DropoutUpdatableModel, ddp_model.module)
+    else:
+        # If not distributed, the 'model' itself is the actual model and should conform
+        # to DropoutUpdatableModel.
+        actual_model = cast(DropoutUpdatableModel, model)
+
     if "dp" in schedules:
-        if is_distributed:
-            model.module.update_drop_path(
-                schedules["dp"][iteration], vit_encoder_num_layers
-            )
-        else:
-            model.update_drop_path(schedules["dp"][iteration], vit_encoder_num_layers)
+        actual_model.update_drop_path(
+            schedules["dp"][iteration], vit_encoder_num_layers
+        )
 
     if "do" in schedules:
-        if is_distributed:
-            model.module.update_dropout(schedules["do"][iteration])
-        else:
-            model.update_dropout(schedules["do"][iteration])
+        actual_model.update_dropout(schedules["do"][iteration])
 
 
 def compute_losses(

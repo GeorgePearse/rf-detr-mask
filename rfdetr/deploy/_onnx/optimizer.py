@@ -14,7 +14,7 @@ OnnxOptimizer
 import os
 from collections import OrderedDict
 from copy import deepcopy
-from typing import Union, List, Optional, Dict, Any, Tuple
+from typing import Union, List, Optional, Any, Tuple
 
 import numpy as np
 import onnx
