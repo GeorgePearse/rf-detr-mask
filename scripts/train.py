@@ -227,16 +227,19 @@ def get_args_parser() -> argparse.ArgumentParser:
     # Model parameters
     parser.add_argument(
         "--encoder",
-        default="dinov2_base",
+        default="dinov2_registers_windowed_small",
         type=str,
         help="Name of the transformer backbone",
     )
     parser.add_argument(
-        "--pretrain_weights", type=str, default=None, help="Path to pretrained weights"
+        "--pretrain_weights",
+        type=str,
+        default="rf-detr-base.pth",
+        help="Path to pretrained weights",
     )
     parser.add_argument(
         "--resolution",
-        default=644,
+        default=560,
         type=int,
         help="Input resolution to the encoder (must be divisible by 14 for DINOv2)",
     )
@@ -772,9 +775,9 @@ def main(args: argparse.Namespace) -> None:
 
             # Print per-class metrics for periodic checkpoint
             if utils.is_main_process() and coco_evaluator is not None:
-                print(f"\n{'='*80}")
+                print(f"\n{'=' * 80}")
                 print(f"PERIODIC CHECKPOINT - Epoch {epoch}")
-                print(f"{'='*80}")
+                print(f"{'=' * 80}")
 
                 category_names = get_coco_category_names(base_ds)
                 print_all_per_class_metrics(coco_evaluator, category_names, args.masks)
@@ -851,8 +854,27 @@ def setup_training_config(args: argparse.Namespace) -> argparse.Namespace:
     args.focal_loss = True
     args.focal_alpha = 0.25
     args.focal_gamma = 2.0
-    args.num_queries = 900
-    args.hidden_dim = 256
+
+    # Configure based on encoder type (small vs base)
+    if "small" in args.encoder:
+        # Small model configuration
+        args.num_queries = 300
+        args.hidden_dim = 256
+        args.sa_nheads = 8
+        args.ca_nheads = 16
+        args.dec_n_points = 2
+        args.projector_scale = ["P4"]  # Single scale for small model
+        args.out_feature_indexes = [2, 5, 8, 11]  # Default for small model
+    else:
+        # Base/Large model configuration
+        args.num_queries = 900
+        args.hidden_dim = 384
+        args.sa_nheads = 12
+        args.ca_nheads = 24
+        args.dec_n_points = 4
+        args.projector_scale = ["P3", "P5"]  # Multi-scale for large model
+        args.out_feature_indexes = [3, 7, 11]  # Default for large model
+
     args.position_embedding_scale = None
     args.backbone_feature_layers = ["res2", "res3", "res4", "res5"]
     args.vit_encoder_num_layers = 12
@@ -864,12 +886,6 @@ def setup_training_config(args: argparse.Namespace) -> argparse.Namespace:
     args.pretrained_encoder = True  # Use pretrained encoder by default
     args.window_block_indexes = []  # Empty list for window block indexes
     args.drop_path = 0.1  # Default drop path rate
-    args.out_feature_indexes = [3, 7, 11]  # Default output features
-    args.projector_scale = [
-        "P3",
-        "P4",
-        "P5",
-    ]  # Default projector scale levels, let's try without P6
     args.use_cls_token = True  # Use CLS token
     args.position_embedding = "sine"  # Use sine position embedding
     args.freeze_encoder = False  # Don't freeze encoder by default
@@ -880,15 +896,13 @@ def setup_training_config(args: argparse.Namespace) -> argparse.Namespace:
     args.gradient_checkpointing = False  # No gradient checkpointing by default
     args.encoder_only = False  # Use full DETR model, not just encoder
     args.backbone_only = False  # Use full model, not just backbone
+    args.load_dinov2_weights = True  # Load DINOv2 weights from hub
 
     # Transformer parameters
-    args.sa_nheads = 8  # Self-attention heads
-    args.ca_nheads = 8  # Cross-attention heads
     args.dim_feedforward = 2048  # Feedforward dimension
     args.num_feature_levels = (
-        3  # Number of feature levels for multi-scale (matching projector scale)
+        len(args.projector_scale)  # Number of feature levels for multi-scale
     )
-    args.dec_n_points = 4  # Number of attention points for decoder
     args.lite_refpoint_refine = False  # Lightweight reference point refinement
     args.decoder_norm = "LN"  # Type of normalization in decoder (LN or Identity)
 
