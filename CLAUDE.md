@@ -11,6 +11,30 @@ And check that it still succeeds until class-level metrics are displayed.
 
 Use agent parallelism where possible, e.g. spin up multiple claudes, and other LLMs to breakdown a task and build smaller components. Communicate via files on disk where possible.
 
+## Recent Updates and Key Changes
+
+### Architecture Simplifications
+- Removed separate `segmentation.py` file - mask head is now integrated directly into LWDETR
+- Consolidated model architecture for cleaner code organization
+- Fixed circular dependency issues in the codebase
+
+### ONNX Export Improvements
+- Enhanced ONNX optimizer with better operator fusion
+- Added proper handling for PyTorch version compatibility
+- Improved symbolic shape inference for dynamic batch sizes
+
+### Training Enhancements
+- Added Albumentations support with configurable transforms
+- Implemented per-class metrics tracking and visualization
+- Added support for custom annotation formats
+- Improved memory efficiency with better gradient accumulation
+
+### Testing and Quality
+- Comprehensive test suite covering detection and segmentation
+- Integration tests for DINOv2 hub models
+- Pre-commit hooks for code quality (ruff, mypy)
+- Quick training tests for rapid validation
+
 ## Build/Testing Commands
 
 ### Installation

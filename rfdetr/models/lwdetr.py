@@ -21,12 +21,12 @@ LW-DETR model and criterion classes
 
 import copy
 import math
-from typing import Callable
-from typing import Optional
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, Union
 
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch import Tensor
 
 from rfdetr.models.backbone import build_backbone
 from rfdetr.models.matcher import build_matcher
@@ -37,6 +37,23 @@ from rfdetr.util.misc import get_world_size
 from rfdetr.util.misc import is_dist_avail_and_initialized
 from rfdetr.util.misc import nested_tensor_from_tensor_list
 from rfdetr.util.misc import NestedTensor
+
+
+class TransformerProtocol(Protocol):
+    """Protocol for transformer modules used in LWDETR"""
+    d_model: int
+    decoder: nn.Module
+    enc_out_class_embed: Optional[nn.ModuleList]
+    enc_out_bbox_embed: Optional[nn.ModuleList]
+    
+    def __call__(self, srcs: List[Tensor], masks: Optional[List[Tensor]], poss: List[Tensor], 
+                 refpoint_embed_weight: Tensor, query_feat_weight: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]: ...
+
+
+class BackboneProtocol(Protocol):
+    """Protocol for backbone modules used in LWDETR"""
+    def __getitem__(self, idx: int) -> nn.Module: ...
+    def __call__(self, samples: NestedTensor) -> Tuple[List[NestedTensor], List[Tensor]]: ...
 
 
 def batch_resize_masks(
@@ -94,16 +111,16 @@ class LWDETR(nn.Module):
 
     def __init__(
         self,
-        backbone,
-        transformer,
-        num_classes,
-        num_queries,
-        aux_loss=False,
-        group_detr=1,
-        two_stage=False,
-        lite_refpoint_refine=False,
-        bbox_reparam=False,
-    ):
+        backbone: BackboneProtocol,
+        transformer: TransformerProtocol,
+        num_classes: int,
+        num_queries: int,
+        aux_loss: bool = False,
+        group_detr: int = 1,
+        two_stage: bool = False,
+        lite_refpoint_refine: bool = False,
+        bbox_reparam: bool = False,
+    ) -> None:
         """Initializes the model.
         Parameters:
             backbone: torch module of the backbone to be used. See backbone.py
@@ -146,13 +163,17 @@ class LWDETR(nn.Module):
         self.class_embed.bias.data = torch.ones(num_classes) * bias_value
 
         # init bbox_mebed
-        nn.init.constant_(self.bbox_embed.layers[-1].weight.data, 0)
-        nn.init.constant_(self.bbox_embed.layers[-1].bias.data, 0)
+        last_layer = self.bbox_embed.layers[-1]
+        assert isinstance(last_layer, nn.Linear)
+        nn.init.constant_(last_layer.weight.data, 0)
+        nn.init.constant_(last_layer.bias.data, 0)
 
         # Add mask head (28x28 masks, similar to Mask R-CNN)
         self.mask_embed = MLP(hidden_dim, hidden_dim, 28 * 28, 3)
-        nn.init.constant_(self.mask_embed.layers[-1].weight.data, 0)
-        nn.init.constant_(self.mask_embed.layers[-1].bias.data, 0)
+        last_mask_layer = self.mask_embed.layers[-1]
+        assert isinstance(last_mask_layer, nn.Linear)
+        nn.init.constant_(last_mask_layer.weight.data, 0)
+        nn.init.constant_(last_mask_layer.bias.data, 0)
 
         # two_stage
         self.two_stage = two_stage
@@ -166,7 +187,7 @@ class LWDETR(nn.Module):
 
         self._export = False
 
-    def reinitialize_detection_head(self, num_classes):
+    def reinitialize_detection_head(self, num_classes: int) -> None:
         # Create new classification head
         del self.class_embed
         self.add_module("class_embed", nn.Linear(self.transformer.d_model, num_classes))
@@ -185,20 +206,21 @@ class LWDETR(nn.Module):
                 ),
             )
 
-    def export(self):
+    def export(self) -> None:
         self._export = True
         self._forward_origin = self.forward
-        self.forward = self.forward_export
+        # Use setattr to avoid mypy method assignment error
+        setattr(self, 'forward', self.forward_export)
         for name, m in self.named_modules():
             if (
                 hasattr(m, "export")
-                and isinstance(m.export, Callable)
+                and callable(getattr(m, "export", None))
                 and hasattr(m, "_export")
                 and not m._export
             ):
                 m.export()
 
-    def forward(self, samples: NestedTensor, targets=None):
+    def forward(self, samples: NestedTensor, targets: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """The forward expects a NestedTensor, which consists of:
            - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
            - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
@@ -272,17 +294,17 @@ class LWDETR(nn.Module):
         if self.two_stage:
             group_detr = self.group_detr if self.training else 1
             hs_enc_list = hs_enc.chunk(group_detr, dim=1)
-            cls_enc = []
+            cls_enc_list: List[Tensor] = []
             for g_idx in range(group_detr):
                 cls_enc_gidx = self.transformer.enc_out_class_embed[g_idx](
                     hs_enc_list[g_idx]
                 )
-                cls_enc.append(cls_enc_gidx)
-            cls_enc = torch.cat(cls_enc, dim=1)
+                cls_enc_list.append(cls_enc_gidx)
+            cls_enc = torch.cat(cls_enc_list, dim=1)
             out["enc_outputs"] = {"pred_logits": cls_enc, "pred_boxes": ref_enc}
         return out
 
-    def forward_export(self, tensors):
+    def forward_export(self, tensors: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]:
         srcs, _, poss = self.backbone(tensors)
         # only use one group in inference
         refpoint_embed_weight = self.refpoint_embed.weight[: self.num_queries]
@@ -313,7 +335,7 @@ class LWDETR(nn.Module):
         return outputs_coord, outputs_class, outputs_mask, ref_unsigmoid
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class, outputs_coord, outputs_mask=None):
+    def _set_aux_loss(self, outputs_class: Tensor, outputs_coord: Tensor, outputs_mask: Optional[Tensor] = None) -> List[Dict[str, Tensor]]:
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
@@ -330,7 +352,7 @@ class LWDETR(nn.Module):
                 for a, b in zip(outputs_class[:-1], outputs_coord[:-1])
             ]
 
-    def update_drop_path(self, drop_path_rate, vit_encoder_num_layers):
+    def update_drop_path(self, drop_path_rate: float, vit_encoder_num_layers: int) -> None:
         """ """
         dp_rates = [
             x.item() for x in torch.linspace(0, drop_path_rate, vit_encoder_num_layers)
@@ -347,7 +369,7 @@ class LWDETR(nn.Module):
                         i
                     ].drop_path.drop_prob = dp_rates[i]
 
-    def update_dropout(self, drop_rate):
+    def update_dropout(self, drop_rate: float) -> None:
         for module in self.transformer.modules():
             if isinstance(module, nn.Dropout):
                 module.p = drop_rate
@@ -362,17 +384,17 @@ class SetCriterion(nn.Module):
 
     def __init__(
         self,
-        num_classes,
-        matcher,
-        weight_dict,
-        focal_alpha,
-        losses,
-        group_detr=1,
-        sum_group_losses=False,
-        use_varifocal_loss=False,
-        use_position_supervised_loss=False,
-        ia_bce_loss=False,
-    ):
+        num_classes: int,
+        matcher: nn.Module,
+        weight_dict: Dict[str, float],
+        focal_alpha: float,
+        losses: List[str],
+        group_detr: int = 1,
+        sum_group_losses: bool = False,
+        use_varifocal_loss: bool = False,
+        use_position_supervised_loss: bool = False,
+        ia_bce_loss: bool = False,
+    ) -> None:
         """Create the criterion.
         Parameters:
             num_classes: number of object categories, omitting the special no-object category
@@ -394,7 +416,7 @@ class SetCriterion(nn.Module):
         self.use_position_supervised_loss = use_position_supervised_loss
         self.ia_bce_loss = ia_bce_loss
 
-    def loss_labels(self, outputs, targets, indices, num_boxes, log=True):
+    def loss_labels(self, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]], indices: List[Tuple[Tensor, Tensor]], num_boxes: int, log: bool = True) -> Dict[str, Tensor]:
         """Classification loss (Binary focal loss)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
@@ -552,7 +574,7 @@ class SetCriterion(nn.Module):
         return losses
 
     @torch.no_grad()
-    def loss_cardinality(self, outputs, targets, indices, num_boxes):
+    def loss_cardinality(self, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]], indices: List[Tuple[Tensor, Tensor]], num_boxes: int) -> Dict[str, Tensor]:
         """Compute the cardinality error, ie the absolute error in the number of predicted non-empty boxes
         This is not really a loss, it is intended for logging purposes only. It doesn't propagate gradients
         """
@@ -567,7 +589,7 @@ class SetCriterion(nn.Module):
         losses = {"cardinality_error": card_err}
         return losses
 
-    def loss_boxes(self, outputs, targets, indices, num_boxes):
+    def loss_boxes(self, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]], indices: List[Tuple[Tensor, Tensor]], num_boxes: int) -> Dict[str, Tensor]:
         """Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss
         targets dicts must contain the key "boxes" containing a tensor of dim [nb_target_boxes, 4]
         The target boxes are expected in format (center_x, center_y, w, h), normalized by the image size.
@@ -593,7 +615,7 @@ class SetCriterion(nn.Module):
         losses["loss_giou"] = loss_giou.sum() / num_boxes
         return losses
 
-    def _get_src_permutation_idx(self, indices):
+    def _get_src_permutation_idx(self, indices: List[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Tensor]:
         # permute predictions following indices
         batch_idx = torch.cat(
             [torch.full_like(src, i) for i, (src, _) in enumerate(indices)]
@@ -601,7 +623,7 @@ class SetCriterion(nn.Module):
         src_idx = torch.cat([src for (src, _) in indices])
         return batch_idx, src_idx
 
-    def _get_tgt_permutation_idx(self, indices):
+    def _get_tgt_permutation_idx(self, indices: List[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Tensor]:
         # permute targets following indices
         batch_idx = torch.cat(
             [torch.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)]
@@ -609,7 +631,7 @@ class SetCriterion(nn.Module):
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
 
-    def loss_masks(self, outputs, targets, indices, num_boxes):
+    def loss_masks(self, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]], indices: List[Tuple[Tensor, Tensor]], num_boxes: int) -> Dict[str, Tensor]:
         """Compute the losses related to the masks: the focal loss and dice loss.
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
@@ -660,7 +682,7 @@ class SetCriterion(nn.Module):
 
         return losses
 
-    def get_loss(self, loss, outputs, targets, indices, num_boxes, **kwargs):
+    def get_loss(self, loss: str, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]], indices: List[Tuple[Tensor, Tensor]], num_boxes: int, **kwargs: Any) -> Dict[str, Tensor]:
         loss_map = {
             "labels": self.loss_labels,
             "cardinality": self.loss_cardinality,
@@ -670,7 +692,7 @@ class SetCriterion(nn.Module):
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
         return loss_map[loss](outputs, targets, indices, num_boxes, **kwargs)
 
-    def forward(self, outputs, targets):
+    def forward(self, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]]) -> Dict[str, Tensor]:
         """This performs the loss computation.
         Parameters:
              outputs: dict of tensors, see the output specification of the model for the format
@@ -687,12 +709,12 @@ class SetCriterion(nn.Module):
         num_boxes = sum(len(t["labels"]) for t in targets)
         if not self.sum_group_losses:
             num_boxes = num_boxes * group_detr
-        num_boxes = torch.as_tensor(
+        num_boxes_tensor = torch.as_tensor(
             [num_boxes], dtype=torch.float, device=next(iter(outputs.values())).device
         )
         if is_dist_avail_and_initialized():
-            torch.distributed.all_reduce(num_boxes)
-        num_boxes = torch.clamp(num_boxes / get_world_size(), min=1).item()
+            torch.distributed.all_reduce(num_boxes_tensor)
+        num_boxes = torch.clamp(num_boxes_tensor / get_world_size(), min=1).item()
 
         # Compute all the requested losses
         losses = {}
@@ -743,8 +765,8 @@ class SetCriterion(nn.Module):
 
 
 def sigmoid_focal_loss(
-    inputs, targets, num_boxes, alpha: float = 0.25, gamma: float = 2
-):
+    inputs: Tensor, targets: Tensor, num_boxes: int, alpha: float = 0.25, gamma: float = 2
+) -> Tensor:
     """
     Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
     Args:
@@ -773,8 +795,8 @@ def sigmoid_focal_loss(
 
 
 def sigmoid_varifocal_loss(
-    inputs, targets, num_boxes, alpha: float = 0.25, gamma: float = 2
-):
+    inputs: Tensor, targets: Tensor, num_boxes: int, alpha: float = 0.25, gamma: float = 2
+) -> Tensor:
     prob = inputs.sigmoid()
     focal_weight = (
         targets * (targets > 0.0).float()
@@ -787,8 +809,8 @@ def sigmoid_varifocal_loss(
 
 
 def position_supervised_loss(
-    inputs, targets, num_boxes, alpha: float = 0.25, gamma: float = 2
-):
+    inputs: Tensor, targets: Tensor, num_boxes: int, alpha: float = 0.25, gamma: float = 2
+) -> Tensor:
     prob = inputs.sigmoid()
     ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
     loss = ce_loss * (torch.abs(targets - prob) ** gamma)
@@ -805,12 +827,12 @@ def position_supervised_loss(
 class PostProcess(nn.Module):
     """This module converts the model's output into the format expected by the coco api"""
 
-    def __init__(self, num_select=300) -> None:
+    def __init__(self, num_select: int = 300) -> None:
         super().__init__()
         self.num_select = num_select
 
     @torch.no_grad()
-    def forward(self, outputs, target_sizes):
+    def forward(self, outputs: Dict[str, Tensor], target_sizes: Tensor) -> List[Dict[str, Tensor]]:
         """Perform the computation
         Parameters:
             outputs: raw outputs of the model
@@ -873,12 +895,12 @@ class PostProcessSegm(nn.Module):
     evaluation and visualization.
     """
 
-    def __init__(self, threshold=0.5):
+    def __init__(self, threshold: float = 0.5) -> None:
         super().__init__()
         self.threshold = threshold
 
     @torch.no_grad()
-    def forward(self, outputs, target_sizes):
+    def forward(self, outputs: Dict[str, Tensor], target_sizes: Tensor) -> List[Dict[str, Tensor]]:
         """
         Process the mask outputs to create high-resolution binary masks.
 
@@ -935,7 +957,7 @@ class PostProcessSegm(nn.Module):
 class MLP(nn.Module):
     """Very simple multi-layer perceptron (also called FFN)"""
 
-    def __init__(self, input_dim, hidden_dim, output_dim, num_layers):
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, num_layers: int) -> None:
         super().__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
@@ -943,13 +965,13 @@ class MLP(nn.Module):
             nn.Linear(n, k) for n, k in zip([input_dim] + h, h + [output_dim])
         )
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         for i, layer in enumerate(self.layers):
             x = F.relu(layer(x)) if i < self.num_layers - 1 else layer(x)
         return x
 
 
-def build_model(args):
+def build_model(args: Any) -> Union[nn.Module, Tuple[nn.Module, None, None], Tuple[nn.Module, nn.Module, Dict[str, Any]]]:
     # the `num_classes` naming here is somewhat misleading.
     # it indeed corresponds to `max_obj_id + 1`, where max_obj_id
     # is the maximum id for a class in your dataset. For example,
@@ -1007,7 +1029,7 @@ def build_model(args):
     return model
 
 
-def build_criterion_and_postprocessors(args):
+def build_criterion_and_postprocessors(args: Any) -> Tuple[nn.Module, Dict[str, nn.Module]]:
     device = torch.device(args.device)
     matcher = build_matcher(args)
     weight_dict = {"loss_ce": args.cls_loss_coef, "loss_bbox": args.bbox_loss_coef}

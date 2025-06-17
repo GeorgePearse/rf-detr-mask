@@ -17,6 +17,8 @@ Misc functions, including distributed helpers.
 Mostly copy-paste from torchvision references.
 """
 
+from __future__ import annotations
+
 import datetime
 import os
 import pickle
