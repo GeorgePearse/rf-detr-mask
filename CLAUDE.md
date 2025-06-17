@@ -9,6 +9,8 @@ After any implementation is complete, run:
 
 And check that it still succeeds until class-level metrics are displayed.
 
+Use agent parallelism where possible, e.g. spin up multiple claudes, and other LLMs to breakdown a task and build smaller components. Communicate via files on disk where possible.
+
 ## Build/Testing Commands
 
 ### Installation
@@ -49,11 +51,11 @@ RF-DETR-MASK extends RF-DETR (Real-time Fully End-to-End Detection with Transfor
 
 2. **Model Components** (`rfdetr/models/`):
    - `LWDETR`: Core detection model class that combines backbone, transformer, and heads
-   - `segmentation.py`: Mask head implementation (MaskHeadSmallConv) for instance segmentation
    - `transformer.py`: Transformer-based detection head with deformable attention
    - `backbone/`: DINOv2-based backbone implementations with optional windowed attention
    - `matcher.py`: Hungarian matcher for training target assignment
    - `ops/`: Custom CUDA operations for deformable attention
+   - **Note**: Segmentation functionality is now integrated directly into LWDETR model
 
 3. **Training Pipeline** (`rfdetr/engine.py`):
    Recently refactored into modular functions:
@@ -80,21 +82,26 @@ RF-DETR-MASK extends RF-DETR (Real-time Fully End-to-End Detection with Transfor
 - EMA (Exponential Moving Average) model support for improved stability
 
 ### Segmentation Extensions
-The segmentation head adds:
-- Convolutional mask prediction head that takes transformer outputs and multi-scale features
-- FPN-style multi-scale feature fusion from backbone layers
-- Mask loss computation integrated into the criterion
+The segmentation functionality is now integrated directly into the LWDETR model:
+- Convolutional mask prediction head (MaskHeadSmallConv) that takes transformer outputs and multi-scale features
+- FPN-style multi-scale feature fusion from backbone layers (fpn_channels configuration)
+- Mask loss computation integrated into the criterion with configurable loss weights
 - Modified postprocessing to return both boxes and masks
 - Support for COCO-style polygon annotations
+- Mask predictions are resized to match input image dimensions during inference
+- Uses sigmoid activation for mask outputs with binary cross-entropy loss
 
 ### Training Features
 - Gradient accumulation with configurable steps
 - Mixed precision training with GradScaler
 - Distributed training support (DDP)
 - Callback system for extensibility
-- Dynamic learning rate scheduling
-- Early stopping support
+- Dynamic learning rate scheduling (warmup, multi-step, cosine)
+- Early stopping support with patience configuration
 - TensorBoard and Weights & Biases logging integration
+- Per-class AP metrics tracking and visualization
+- Albumentations integration for advanced augmentations
+- Support for training with custom annotations
 
 ## Code Style Guidelines
 
@@ -118,3 +125,6 @@ The segmentation head adds:
 5. Test on small dataset first before full training runs
 6. When debugging training issues, check gradient accumulation settings and loss scaling
 7. For segmentation tasks, ensure masks are properly loaded in the dataset
+8. When modifying ONNX export, ensure compatibility with different PyTorch versions
+9. Use Albumentations for advanced data augmentation (see `configs/transforms/`)
+10. Monitor per-class metrics during training for balanced performance

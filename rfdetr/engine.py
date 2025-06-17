@@ -97,7 +97,7 @@ def compute_losses(
     samples: NestedTensor,
     targets: List[Dict[str, Any]],
     device: torch.device,
-    args: Any,
+    args: TrainingArgs,
 ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
     """Compute losses for a batch of samples.
 
@@ -132,7 +132,7 @@ def process_gradient_accumulation_batch(
     samples: NestedTensor,
     targets: List[Dict[str, Any]],
     device: torch.device,
-    args: Any,
+    args: TrainingArgs,
     scaler: GradScaler,
     sub_batch_size: int,
     grad_accum_steps: int,
@@ -179,18 +179,18 @@ def train_one_epoch(
     model: torch.nn.Module,
     criterion: torch.nn.Module,
     lr_scheduler: torch.optim.lr_scheduler.LRScheduler,
-    data_loader: Iterable,
+    data_loader: Iterable[Tuple[NestedTensor, List[Dict[str, Any]]]],
     optimizer: torch.optim.Optimizer,
     device: torch.device,
     epoch: int,
     batch_size: int,
     max_norm: float = 0,
-    ema_m: torch.nn.Module | None = None,
-    schedules: dict = {},
-    num_training_steps_per_epoch=None,
-    vit_encoder_num_layers=None,
-    args=None,
-    callbacks: DefaultDict[str, List[Callable]] | None = None,
+    ema_m: Union[torch.nn.Module, None] = None,
+    schedules: Dict[str, List[float]] = {},
+    num_training_steps_per_epoch: Union[int, None] = None,
+    vit_encoder_num_layers: Union[int, None] = None,
+    args: Union[TrainingArgs, None] = None,
+    callbacks: Union[DefaultDict[str, List[Callable[..., None]]], None] = None,
 ) -> Dict[str, float]:
     """Train model for one epoch.
 
@@ -339,8 +339,14 @@ def process_evaluation_outputs(
 
 
 def evaluate(
-    model, criterion, postprocessors, data_loader, base_ds, device, args=None
-) -> Tuple[Dict[str, Any], Any]:
+    model: torch.nn.Module,
+    criterion: torch.nn.Module,
+    postprocessors: Dict[str, torch.nn.Module],
+    data_loader: Iterable[Tuple[NestedTensor, List[Dict[str, Any]]]],
+    base_ds: Any,  # CocoDataset type, but keeping Any to avoid import
+    device: torch.device,
+    args: Union[TrainingArgs, None] = None
+) -> Tuple[Dict[str, Any], CocoEvaluator]:
     """Evaluate model on validation dataset.
 
     Args:

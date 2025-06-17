@@ -14,6 +14,7 @@ OnnxOptimizer
 import os
 from collections import OrderedDict
 from copy import deepcopy
+from typing import Union, List, Optional, Dict, Any, Tuple
 
 import numpy as np
 import onnx
@@ -26,65 +27,68 @@ from .symbolic import CustomOpSymbolicRegistry
 
 
 class OnnxOptimizer:
-    def __init__(self, input, severity=G_LOGGER.INFO):
+    def __init__(self, input: Union[str, onnx.onnx_ml_pb2.ModelProto], severity: int = G_LOGGER.INFO) -> None:
         if isinstance(input, str):
             onnx_graph = self.load_onnx(input)
         else:
             onnx_graph = input
-        self.graph = gs.import_onnx(onnx_graph)
-        self.severity = severity
+        self.graph: gs.Graph = gs.import_onnx(onnx_graph)
+        self.severity: int = severity
         self.set_severity(severity)
 
-    def set_severity(self, severity):
+    def set_severity(self, severity: int) -> None:
         G_LOGGER.severity = severity
 
-    def load_onnx(self, onnx_path: str):
+    def load_onnx(self, onnx_path: str) -> onnx.onnx_ml_pb2.ModelProto:
         """Load onnx from file"""
         assert os.path.isfile(onnx_path), f"not found onnx file: {onnx_path}"
         onnx_graph = onnx.load(onnx_path)
         G_LOGGER.info(f"load onnx file: {onnx_path}")
         return onnx_graph
 
-    def save_onnx(self, onnx_path: str):
+    def save_onnx(self, onnx_path: str) -> None:
         onnx_graph = gs.export_onnx(self.graph)
         G_LOGGER.info(f"save onnx file: {onnx_path}")
         onnx.save(onnx_graph, onnx_path)
 
-    def info(self, prefix=""):
+    def info(self, prefix: str = "") -> None:
         G_LOGGER.verbose(
             f"{prefix} .. {len(self.graph.nodes)} nodes, {len(self.graph.tensors().keys())} tensors, {len(self.graph.inputs)} inputs, {len(self.graph.outputs)} outputs"
         )
 
-    def cleanup(self, return_onnx=False):
+    def cleanup(self, return_onnx: bool = False) -> Optional[onnx.onnx_ml_pb2.ModelProto]:
         self.graph.cleanup().toposort()
         if return_onnx:
             return gs.export_onnx(self.graph)
+        return None
 
-    def select_outputs(self, keep, names=None):
+    def select_outputs(self, keep: List[int], names: Optional[List[str]] = None) -> None:
         self.graph.outputs = [self.graph.outputs[o] for o in keep]
         if names:
             for i, name in enumerate(names):
                 self.graph.outputs[i].name = name
 
-    def find_node_input(self, node, name: str = None, value=None) -> int:
+    def find_node_input(self, node: gs.Node, name: Optional[str] = None, value: Any = None) -> int:
+        index = -1
         for i, inp in enumerate(node.inputs):
-            if isinstance(name, str) and inp.name == name:
+            if name is not None and inp.name == name:
                 index = i
-            elif inp == value:
+            elif value is not None and inp == value:
                 index = i
         assert index >= 0, f"not found {name}({value}) in node.inputs"
         return index
 
-    def find_node_output(self, node, name: str = None, value=None) -> int:
+    def find_node_output(self, node: gs.Node, name: Optional[str] = None, value: Any = None) -> int:
+        index = -1
         for i, inp in enumerate(node.outputs):
-            if isinstance(name, str) and inp.name == name:
+            if name is not None and inp.name == name:
                 index = i
-            elif inp == value:
+            elif value is not None and inp == value:
                 index = i
         assert index >= 0, f"not found {name}({value}) in node.outputs"
         return index
 
-    def common_opt(self, return_onnx=False):
+    def common_opt(self, return_onnx: bool = False) -> Optional[onnx.onnx_ml_pb2.ModelProto]:
         for fn in CustomOpSymbolicRegistry._OPTIMIZER:
             fn(self)
             self.cleanup()
@@ -99,8 +103,9 @@ class OnnxOptimizer:
         self.cleanup()
         if return_onnx:
             return onnx_graph
+        return None
 
-    def resize_fix(self):
+    def resize_fix(self) -> int:
         """
         This function loops through the graph looking for Resize nodes that uses scales for resize (has 3 inputs).
         It substitutes found Resize with Resize that takes the size of the output tensor instead of scales.
@@ -199,7 +204,7 @@ class OnnxOptimizer:
         self.cleanup()
         return mResizeNodes
 
-    def adjustAddNode(self):
+    def adjustAddNode(self) -> int:
         nAdjustAddNode = 0
         for node in self.graph.nodes:
             # Change the bias const to the second input to allow Gemm+BiasAdd fusion in TRT.
@@ -212,7 +217,7 @@ class OnnxOptimizer:
         self.cleanup()
         return nAdjustAddNode
 
-    def decompose_instancenorms(self):
+    def decompose_instancenorms(self) -> int:
         nRemoveInstanceNorm = 0
         for node in self.graph.nodes:
             if node.op == "InstanceNormalization":
@@ -329,7 +334,7 @@ class OnnxOptimizer:
         self.cleanup()
         return nRemoveInstanceNorm
 
-    def insert_groupnorm_plugin(self):
+    def insert_groupnorm_plugin(self) -> int:
         nGroupNormPlugin = 0
         for node in self.graph.nodes:
             if (
@@ -408,7 +413,7 @@ class OnnxOptimizer:
         self.cleanup()
         return nGroupNormPlugin
 
-    def insert_layernorm_plugin(self):
+    def insert_layernorm_plugin(self) -> int:
         nLayerNormPlugin = 0
         for node in self.graph.nodes:
             if (
@@ -488,7 +493,7 @@ class OnnxOptimizer:
         self.cleanup()
         return nLayerNormPlugin
 
-    def fuse_kv(self, node_k, node_v, fused_kv_idx, heads, num_dynamic=0):
+    def fuse_kv(self, node_k: gs.Node, node_v: gs.Node, fused_kv_idx: int, heads: int, num_dynamic: int = 0) -> gs.Node:
         # Get weights of K
         weights_k = node_k.inputs[1].values
         # Get weights of V
@@ -540,8 +545,8 @@ class OnnxOptimizer:
         return fused_kv_node
 
     def insert_fmhca(
-        self, node_q, node_kv, final_tranpose, mhca_idx, heads, num_dynamic=0
-    ):
+        self, node_q: gs.Node, node_kv: gs.Node, final_tranpose: gs.Node, mhca_idx: int, heads: int, num_dynamic: int = 0
+    ) -> None:
         # Get inputs and outputs for the fMHCA plugin
         # We take an output of reshape that follows the Q GEMM
         output_q = node_q.o(num_dynamic).o().inputs[0]
@@ -612,7 +617,7 @@ class OnnxOptimizer:
 
         self.cleanup()
 
-    def fuse_qkv(self, node_q, node_k, node_v, fused_qkv_idx, heads, num_dynamic=0):
+    def fuse_qkv(self, node_q: gs.Node, node_k: gs.Node, node_v: gs.Node, fused_qkv_idx: int, heads: int, num_dynamic: int = 0) -> gs.Node:
         # Get weights of Q
         weights_q = node_q.inputs[1].values
         # Get weights of K
@@ -674,7 +679,7 @@ class OnnxOptimizer:
         self.cleanup()
         return fused_qkv_node
 
-    def insert_fmha(self, node_qkv, final_tranpose, mha_idx, heads, num_dynamic=0):
+    def insert_fmha(self, node_qkv: gs.Node, final_tranpose: gs.Node, mha_idx: int, heads: int, num_dynamic: int = 0) -> None:
         # Get inputs and outputs for the fMHA plugin
         output_qkv = node_qkv.o().inputs[0]
         output_final_tranpose = final_tranpose.outputs[0]
@@ -738,7 +743,7 @@ class OnnxOptimizer:
 
         self.cleanup()
 
-    def mha_mhca_detected(self, node, mha):
+    def mha_mhca_detected(self, node: gs.Node, mha: bool) -> Tuple[bool, int, int, Optional[gs.Node], Optional[gs.Node], Optional[gs.Node], Optional[gs.Node]]:
         # Go from V GEMM down to the S*V MatMul and all way up to K GEMM
         # If we are looking for MHCA inputs of two matmuls (K and V) must be equal.
         # If we are looking for MHA inputs (K and V) must be not equal.
@@ -797,7 +802,7 @@ class OnnxOptimizer:
                     )
         return False, 0, 0, None, None, None, None
 
-    def fuse_kv_insert_fmhca(self, heads, mhca_index, sm):
+    def fuse_kv_insert_fmhca(self, heads: int, mhca_index: int, sm: int) -> bool:
         nodes = self.graph.nodes
         # Iterate over graph and search for MHCA pattern
         for idx, _ in enumerate(nodes):
@@ -831,7 +836,7 @@ class OnnxOptimizer:
                 return True
         return False
 
-    def fuse_qkv_insert_fmha(self, heads, mha_index):
+    def fuse_qkv_insert_fmha(self, heads: int, mha_index: int) -> bool:
         nodes = self.graph.nodes
         # Iterate over graph and search for MHA pattern
         for idx, _ in enumerate(nodes):
@@ -862,13 +867,13 @@ class OnnxOptimizer:
                 return True
         return False
 
-    def insert_fmhca_plugin(self, num_heads, sm):
+    def insert_fmhca_plugin(self, num_heads: int, sm: int) -> int:
         mhca_index = 0
         while self.fuse_kv_insert_fmhca(num_heads, mhca_index, sm):
             mhca_index += 1
         return mhca_index
 
-    def insert_fmha_plugin(self, num_heads):
+    def insert_fmha_plugin(self, num_heads: int) -> int:
         mha_index = 0
         while self.fuse_qkv_insert_fmha(num_heads, mha_index):
             mha_index += 1
