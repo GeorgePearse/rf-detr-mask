@@ -21,7 +21,7 @@ LW-DETR model and criterion classes
 
 import copy
 import math
-from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple, Union
+from typing import Any, Dict, List, Optional, Protocol, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -41,19 +41,29 @@ from rfdetr.util.misc import NestedTensor
 
 class TransformerProtocol(Protocol):
     """Protocol for transformer modules used in LWDETR"""
+
     d_model: int
     decoder: nn.Module
     enc_out_class_embed: Optional[nn.ModuleList]
     enc_out_bbox_embed: Optional[nn.ModuleList]
-    
-    def __call__(self, srcs: List[Tensor], masks: Optional[List[Tensor]], poss: List[Tensor], 
-                 refpoint_embed_weight: Tensor, query_feat_weight: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor]: ...
+
+    def __call__(
+        self,
+        srcs: List[Tensor],
+        masks: Optional[List[Tensor]],
+        poss: List[Tensor],
+        refpoint_embed_weight: Tensor,
+        query_feat_weight: Tensor,
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor]: ...
 
 
 class BackboneProtocol(Protocol):
     """Protocol for backbone modules used in LWDETR"""
+
     def __getitem__(self, idx: int) -> nn.Module: ...
-    def __call__(self, samples: NestedTensor) -> Tuple[List[NestedTensor], List[Tensor]]: ...
+    def __call__(
+        self, samples: NestedTensor
+    ) -> Tuple[List[NestedTensor], List[Tensor]]: ...
 
 
 def batch_resize_masks(
@@ -210,7 +220,7 @@ class LWDETR(nn.Module):
         self._export = True
         self._forward_origin = self.forward
         # Use setattr to avoid mypy method assignment error
-        setattr(self, 'forward', self.forward_export)
+        setattr(self, "forward", self.forward_export)
         for name, m in self.named_modules():
             if (
                 hasattr(m, "export")
@@ -220,7 +230,9 @@ class LWDETR(nn.Module):
             ):
                 m.export()
 
-    def forward(self, samples: NestedTensor, targets: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    def forward(
+        self, samples: NestedTensor, targets: Optional[List[Dict[str, Any]]] = None
+    ) -> Dict[str, Any]:
         """The forward expects a NestedTensor, which consists of:
            - samples.tensor: batched images, of shape [batch_size x 3 x H x W]
            - samples.mask: a binary mask of shape [batch_size x H x W], containing 1 on padded pixels
@@ -335,7 +347,12 @@ class LWDETR(nn.Module):
         return outputs_coord, outputs_class, outputs_mask, ref_unsigmoid
 
     @torch.jit.unused
-    def _set_aux_loss(self, outputs_class: Tensor, outputs_coord: Tensor, outputs_mask: Optional[Tensor] = None) -> List[Dict[str, Tensor]]:
+    def _set_aux_loss(
+        self,
+        outputs_class: Tensor,
+        outputs_coord: Tensor,
+        outputs_mask: Optional[Tensor] = None,
+    ) -> List[Dict[str, Tensor]]:
         # this is a workaround to make torchscript happy, as torchscript
         # doesn't support dictionary with non-homogeneous values, such
         # as a dict having both a Tensor and a list.
@@ -352,7 +369,9 @@ class LWDETR(nn.Module):
                 for a, b in zip(outputs_class[:-1], outputs_coord[:-1])
             ]
 
-    def update_drop_path(self, drop_path_rate: float, vit_encoder_num_layers: int) -> None:
+    def update_drop_path(
+        self, drop_path_rate: float, vit_encoder_num_layers: int
+    ) -> None:
         """ """
         dp_rates = [
             x.item() for x in torch.linspace(0, drop_path_rate, vit_encoder_num_layers)
@@ -416,7 +435,14 @@ class SetCriterion(nn.Module):
         self.use_position_supervised_loss = use_position_supervised_loss
         self.ia_bce_loss = ia_bce_loss
 
-    def loss_labels(self, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]], indices: List[Tuple[Tensor, Tensor]], num_boxes: int, log: bool = True) -> Dict[str, Tensor]:
+    def loss_labels(
+        self,
+        outputs: Dict[str, Tensor],
+        targets: List[Dict[str, Any]],
+        indices: List[Tuple[Tensor, Tensor]],
+        num_boxes: int,
+        log: bool = True,
+    ) -> Dict[str, Tensor]:
         """Classification loss (Binary focal loss)
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
@@ -574,7 +600,13 @@ class SetCriterion(nn.Module):
         return losses
 
     @torch.no_grad()
-    def loss_cardinality(self, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]], indices: List[Tuple[Tensor, Tensor]], num_boxes: int) -> Dict[str, Tensor]:
+    def loss_cardinality(
+        self,
+        outputs: Dict[str, Tensor],
+        targets: List[Dict[str, Any]],
+        indices: List[Tuple[Tensor, Tensor]],
+        num_boxes: int,
+    ) -> Dict[str, Tensor]:
         """Compute the cardinality error, ie the absolute error in the number of predicted non-empty boxes
         This is not really a loss, it is intended for logging purposes only. It doesn't propagate gradients
         """
@@ -589,7 +621,13 @@ class SetCriterion(nn.Module):
         losses = {"cardinality_error": card_err}
         return losses
 
-    def loss_boxes(self, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]], indices: List[Tuple[Tensor, Tensor]], num_boxes: int) -> Dict[str, Tensor]:
+    def loss_boxes(
+        self,
+        outputs: Dict[str, Tensor],
+        targets: List[Dict[str, Any]],
+        indices: List[Tuple[Tensor, Tensor]],
+        num_boxes: int,
+    ) -> Dict[str, Tensor]:
         """Compute the losses related to the bounding boxes, the L1 regression loss and the GIoU loss
         targets dicts must contain the key "boxes" containing a tensor of dim [nb_target_boxes, 4]
         The target boxes are expected in format (center_x, center_y, w, h), normalized by the image size.
@@ -615,7 +653,9 @@ class SetCriterion(nn.Module):
         losses["loss_giou"] = loss_giou.sum() / num_boxes
         return losses
 
-    def _get_src_permutation_idx(self, indices: List[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Tensor]:
+    def _get_src_permutation_idx(
+        self, indices: List[Tuple[Tensor, Tensor]]
+    ) -> Tuple[Tensor, Tensor]:
         # permute predictions following indices
         batch_idx = torch.cat(
             [torch.full_like(src, i) for i, (src, _) in enumerate(indices)]
@@ -623,7 +663,9 @@ class SetCriterion(nn.Module):
         src_idx = torch.cat([src for (src, _) in indices])
         return batch_idx, src_idx
 
-    def _get_tgt_permutation_idx(self, indices: List[Tuple[Tensor, Tensor]]) -> Tuple[Tensor, Tensor]:
+    def _get_tgt_permutation_idx(
+        self, indices: List[Tuple[Tensor, Tensor]]
+    ) -> Tuple[Tensor, Tensor]:
         # permute targets following indices
         batch_idx = torch.cat(
             [torch.full_like(tgt, i) for i, (_, tgt) in enumerate(indices)]
@@ -631,7 +673,13 @@ class SetCriterion(nn.Module):
         tgt_idx = torch.cat([tgt for (_, tgt) in indices])
         return batch_idx, tgt_idx
 
-    def loss_masks(self, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]], indices: List[Tuple[Tensor, Tensor]], num_boxes: int) -> Dict[str, Tensor]:
+    def loss_masks(
+        self,
+        outputs: Dict[str, Tensor],
+        targets: List[Dict[str, Any]],
+        indices: List[Tuple[Tensor, Tensor]],
+        num_boxes: int,
+    ) -> Dict[str, Tensor]:
         """Compute the losses related to the masks: the focal loss and dice loss.
         targets dicts must contain the key "masks" containing a tensor of dim [nb_target_boxes, h, w]
         """
@@ -670,7 +718,8 @@ class SetCriterion(nn.Module):
         target_masks = torch.cat(all_masks, dim=0).gt(0.5)  # [total_instances, 28, 28]
 
         # Compute dice loss
-        src_masks = src_masks.flatten(1)  # [num_matched_queries, 28*28]
+        # Apply sigmoid to convert logits to probabilities
+        src_masks = src_masks.sigmoid().flatten(1)  # [num_matched_queries, 28*28]
         target_masks = target_masks.flatten(1)  # [num_matched_queries, 28*28]
 
         # Dice loss
@@ -682,7 +731,15 @@ class SetCriterion(nn.Module):
 
         return losses
 
-    def get_loss(self, loss: str, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]], indices: List[Tuple[Tensor, Tensor]], num_boxes: int, **kwargs: Any) -> Dict[str, Tensor]:
+    def get_loss(
+        self,
+        loss: str,
+        outputs: Dict[str, Tensor],
+        targets: List[Dict[str, Any]],
+        indices: List[Tuple[Tensor, Tensor]],
+        num_boxes: int,
+        **kwargs: Any,
+    ) -> Dict[str, Tensor]:
         loss_map = {
             "labels": self.loss_labels,
             "cardinality": self.loss_cardinality,
@@ -692,7 +749,9 @@ class SetCriterion(nn.Module):
         assert loss in loss_map, f"do you really want to compute {loss} loss?"
         return loss_map[loss](outputs, targets, indices, num_boxes, **kwargs)
 
-    def forward(self, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]]) -> Dict[str, Tensor]:
+    def forward(
+        self, outputs: Dict[str, Tensor], targets: List[Dict[str, Any]]
+    ) -> Dict[str, Tensor]:
         """This performs the loss computation.
         Parameters:
              outputs: dict of tensors, see the output specification of the model for the format
@@ -765,7 +824,11 @@ class SetCriterion(nn.Module):
 
 
 def sigmoid_focal_loss(
-    inputs: Tensor, targets: Tensor, num_boxes: int, alpha: float = 0.25, gamma: float = 2
+    inputs: Tensor,
+    targets: Tensor,
+    num_boxes: int,
+    alpha: float = 0.25,
+    gamma: float = 2,
 ) -> Tensor:
     """
     Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
@@ -795,7 +858,11 @@ def sigmoid_focal_loss(
 
 
 def sigmoid_varifocal_loss(
-    inputs: Tensor, targets: Tensor, num_boxes: int, alpha: float = 0.25, gamma: float = 2
+    inputs: Tensor,
+    targets: Tensor,
+    num_boxes: int,
+    alpha: float = 0.25,
+    gamma: float = 2,
 ) -> Tensor:
     prob = inputs.sigmoid()
     focal_weight = (
@@ -809,7 +876,11 @@ def sigmoid_varifocal_loss(
 
 
 def position_supervised_loss(
-    inputs: Tensor, targets: Tensor, num_boxes: int, alpha: float = 0.25, gamma: float = 2
+    inputs: Tensor,
+    targets: Tensor,
+    num_boxes: int,
+    alpha: float = 0.25,
+    gamma: float = 2,
 ) -> Tensor:
     prob = inputs.sigmoid()
     ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
@@ -832,7 +903,9 @@ class PostProcess(nn.Module):
         self.num_select = num_select
 
     @torch.no_grad()
-    def forward(self, outputs: Dict[str, Tensor], target_sizes: Tensor) -> List[Dict[str, Tensor]]:
+    def forward(
+        self, outputs: Dict[str, Tensor], target_sizes: Tensor
+    ) -> List[Dict[str, Tensor]]:
         """Perform the computation
         Parameters:
             outputs: raw outputs of the model
@@ -900,7 +973,9 @@ class PostProcessSegm(nn.Module):
         self.threshold = threshold
 
     @torch.no_grad()
-    def forward(self, outputs: Dict[str, Tensor], target_sizes: Tensor) -> List[Dict[str, Tensor]]:
+    def forward(
+        self, outputs: Dict[str, Tensor], target_sizes: Tensor
+    ) -> List[Dict[str, Tensor]]:
         """
         Process the mask outputs to create high-resolution binary masks.
 
@@ -957,7 +1032,9 @@ class PostProcessSegm(nn.Module):
 class MLP(nn.Module):
     """Very simple multi-layer perceptron (also called FFN)"""
 
-    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int, num_layers: int) -> None:
+    def __init__(
+        self, input_dim: int, hidden_dim: int, output_dim: int, num_layers: int
+    ) -> None:
         super().__init__()
         self.num_layers = num_layers
         h = [hidden_dim] * (num_layers - 1)
@@ -971,7 +1048,11 @@ class MLP(nn.Module):
         return x
 
 
-def build_model(args: Any) -> Union[nn.Module, Tuple[nn.Module, None, None], Tuple[nn.Module, nn.Module, Dict[str, Any]]]:
+def build_model(
+    args: Any,
+) -> Union[
+    nn.Module, Tuple[nn.Module, None, None], Tuple[nn.Module, nn.Module, Dict[str, Any]]
+]:
     # the `num_classes` naming here is somewhat misleading.
     # it indeed corresponds to `max_obj_id + 1`, where max_obj_id
     # is the maximum id for a class in your dataset. For example,
@@ -1029,7 +1110,9 @@ def build_model(args: Any) -> Union[nn.Module, Tuple[nn.Module, None, None], Tup
     return model
 
 
-def build_criterion_and_postprocessors(args: Any) -> Tuple[nn.Module, Dict[str, nn.Module]]:
+def build_criterion_and_postprocessors(
+    args: Any,
+) -> Tuple[nn.Module, Dict[str, nn.Module]]:
     device = torch.device(args.device)
     matcher = build_matcher(args)
     weight_dict = {"loss_ce": args.cls_loss_coef, "loss_bbox": args.bbox_loss_coef}
