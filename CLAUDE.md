@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Quality Assurance Process
+
 Before writing any code, make a plan and check it with any other available models (ChatGPT and Gemini for instance), after you complete any code check the implementation with ChatGPT and Gemini. Try to make it a conversation, e.g. the model should be presented with a question, and asked to review your work, but you can make it a multi-turn interaction, e.g. explain your own reasoning afterwards if necessary.
 
 After any implementation is complete, run:
@@ -152,3 +154,53 @@ The segmentation functionality is now integrated directly into the LWDETR model:
 8. When modifying ONNX export, ensure compatibility with different PyTorch versions
 9. Use Albumentations for advanced data augmentation (see `configs/transforms/`)
 10. Monitor per-class metrics during training for balanced performance
+
+## Testing Patterns
+
+### Test Organization
+- Unit tests in `tests/` root directory
+- Integration tests in `tests/integration/`
+- Use pytest markers: `@pytest.mark.e2e`, `@pytest.mark.slow`, `@pytest.mark.gpu`
+- Configure tests via `conftest.py` fixtures
+
+### Running Tests
+- Run all tests with coverage: `python -m pytest tests/ -v --cov=rfdetr --cov-report=xml --cov-report=term`
+- Run quick tests only: `python -m pytest tests/ -m quick`
+- Run integration tests: `python -m pytest tests/integration/ -m integration`
+- Run specific test: `python -m pytest tests/test_specific.py::test_function -v`
+
+### Test Data Configuration
+When testing instance segmentation on CMR dataset:
+```python
+train_annotations = "/home/georgepearse/data/cmr/annotations/2025-05-15_12:38:23.077836_train_ordered.json"
+val_annotations = "/home/georgepearse/data/cmr/annotations/2025-05-15_12:38:38.270134_val_ordered.json"
+images_dir = "/home/georgepearse/data/images"
+```
+
+### Integration Test Pattern
+```bash
+python scripts/train.py \
+    --batch_size 2 \
+    --epochs 1 \
+    --steps_per_validation 10 \
+    --test_limit 20 \
+    --print_per_class_metrics \
+    --num_workers 0
+```
+
+## Pre-commit Hooks
+
+The project uses pre-commit hooks for code quality. Configuration includes:
+- **Ruff**: Code formatting and linting
+- **MyPy**: Type checking with strict mode
+- **Bandit**: Security vulnerability scanning
+- **Pydocstyle**: Documentation format (Google convention)
+
+Run manually: `pre-commit run --all-files`
+
+## Additional Resources
+
+- **Albumentations Integration**: See `docs/albumentations_integration.md` for advanced augmentations
+- **Custom Annotations**: See `docs/custom_annotations.md` for using custom COCO-format annotations
+- **Transform Configs**: Available in `configs/transforms/` directory
+- **Example Scripts**: See `examples/` for training examples with different configurations
