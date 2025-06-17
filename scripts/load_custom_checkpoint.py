@@ -2,6 +2,7 @@
 """
 Load and visualize a custom RF-DETR-MASK checkpoint with FiftyOne.
 """
+
 import argparse
 from pathlib import Path
 from typing import Any

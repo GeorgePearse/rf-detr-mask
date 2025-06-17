@@ -3,11 +3,14 @@
 Test script to verify the dtype mismatch fix for mixed precision training
 """
 
+import pytest
 import torch
 import torch.nn as nn
 from rfdetr.models.transformer import MLP, TransformerDecoder, TransformerDecoderLayer
 
 
+@pytest.mark.dtype
+@pytest.mark.quick
 def test_mlp_mixed_precision():
     """Test MLP with mixed precision dtypes"""
     # Create an MLP
@@ -17,15 +20,12 @@ def test_mlp_mixed_precision():
     x_fp16 = torch.randn(10, 20, 512).half()
 
     # This should work now with our fix
-    try:
-        # Convert to float32 for computation
-        x_fp32 = x_fp16.float()
-        output = mlp(x_fp32)
-        output_fp16 = output.half()
-        print("✓ MLP forward pass with mixed precision successful")
-        print(f"  Input dtype: {x_fp16.dtype}, Output dtype: {output_fp16.dtype}")
-    except RuntimeError as e:
-        print(f"✗ MLP forward pass failed: {e}")
+    # Convert to float32 for computation
+    x_fp32 = x_fp16.float()
+    output = mlp(x_fp32)
+    output_fp16 = output.half()
+    assert output_fp16.dtype == torch.float16
+    assert output_fp16.shape == (10, 20, 256)
 
     # Test with bfloat16 if available
     if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
@@ -33,10 +33,15 @@ def test_mlp_mixed_precision():
         x_fp32 = x_bf16.float()
         output = mlp(x_fp32)
         output_bf16 = output.bfloat16()
-        print("✓ MLP forward pass with bfloat16 successful")
-        print(f"  Input dtype: {x_bf16.dtype}, Output dtype: {output_bf16.dtype}")
+        assert output_bf16.dtype == torch.bfloat16
+        assert output_bf16.shape == (10, 20, 256)
 
 
+@pytest.mark.dtype
+@pytest.mark.gpu
+@pytest.mark.xfail(
+    reason="TransformerDecoder mixed precision support not yet implemented"
+)
 def test_transformer_decoder_mixed_precision():
     """Test TransformerDecoder with mixed precision"""
     # Create decoder components
@@ -74,24 +79,21 @@ def test_transformer_decoder_mixed_precision():
     # Move decoder to half precision
     decoder.half()
 
-    try:
-        # Our fix should handle the dtype conversion internally
-        spatial_shapes = torch.tensor(
-            [[20, 25], [10, 13], [5, 7], [3, 4]], dtype=torch.long
-        )
-        level_start_index = torch.tensor([0, 500, 630, 665], dtype=torch.long)
+    # Our fix should handle the dtype conversion internally
+    spatial_shapes = torch.tensor(
+        [[20, 25], [10, 13], [5, 7], [3, 4]], dtype=torch.long
+    )
+    level_start_index = torch.tensor([0, 500, 630, 665], dtype=torch.long)
 
-        hs, references = decoder(
-            tgt_fp16,
-            memory_fp16,
-            refpoints_unsigmoid=refpoints_fp16,
-            spatial_shapes=spatial_shapes,
-            level_start_index=level_start_index,
-        )
-        print("✓ TransformerDecoder forward pass with mixed precision successful")
-        print(f"  Input dtype: {tgt_fp16.dtype}, Output dtype: {hs.dtype}")
-    except RuntimeError as e:
-        print(f"✗ TransformerDecoder forward pass failed: {e}")
+    # This is expected to fail until mixed precision is properly implemented
+    hs, references = decoder(
+        tgt_fp16,
+        memory_fp16,
+        refpoints_unsigmoid=refpoints_fp16,
+        spatial_shapes=spatial_shapes,
+        level_start_index=level_start_index,
+    )
+    assert hs.dtype == torch.float16
 
     # Test with normal precision
     decoder.float()
@@ -102,14 +104,7 @@ def test_transformer_decoder_mixed_precision():
         spatial_shapes=spatial_shapes,
         level_start_index=level_start_index,
     )
-    print("✓ TransformerDecoder forward pass with float32 successful")
-
-
-if __name__ == "__main__":
-    print("Testing RF-DETR dtype mismatch fix...")
-    print("-" * 50)
-    test_mlp_mixed_precision()
-    print("-" * 50)
-    test_transformer_decoder_mixed_precision()
-    print("-" * 50)
-    print("All tests completed!")
+    assert hs.dtype == torch.float32
+    assert hs.shape[0] == 2  # num_layers
+    assert hs.shape[1] == bs
+    assert hs.shape[2] == num_queries

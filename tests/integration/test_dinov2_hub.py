@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Test training by loading DINOv2 weights from hub."""
 
 import subprocess
@@ -6,25 +5,30 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import pytest
 
-def test_dinov2_hub():
+
+@pytest.mark.e2e
+@pytest.mark.slow
+def test_dinov2_hub(tmp_path):
+    """Test that DINOv2 weights can be loaded from Hugging Face hub."""
     # Create logs directory
-    logs_dir = Path("training_logs")
+    logs_dir = tmp_path / "training_logs"
     logs_dir.mkdir(exist_ok=True)
 
     # Create log filename with timestamp
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_file = logs_dir / f"dinov2_hub_test_{timestamp}.txt"
 
-    print(
-        f"Starting test with DINOv2 hub weights. Output will be logged to: {log_file}"
-    )
-    print(f"{'='*80}")
+    # Get project root
+    project_root = Path(__file__).parent.parent.parent
 
     # Training command without pretrain_weights (will load DINOv2 from hub)
+    script_path = project_root / "scripts" / "train.py"
+    output_dir = tmp_path / "test_dinov2"
     cmd = [
         sys.executable,
-        "scripts/train.py",
+        str(script_path),
         "--batch_size",
         "2",
         "--epochs",
@@ -33,7 +37,7 @@ def test_dinov2_hub():
         "10",
         "--print_per_class_metrics",
         "--output_dir",
-        "test_dinov2",
+        str(output_dir),
         "--num_workers",
         "2",
         "--lr",
@@ -45,8 +49,12 @@ def test_dinov2_hub():
         # Note: NOT specifying pretrain_weights, so it will load DINOv2 from hub
     ]
 
-    print(f"Running command: {' '.join(cmd)}")
-    print("Note: DINOv2 weights will be loaded from Hugging Face hub")
+    # Expected to find in output
+    expected_patterns = [
+        "Loading DINOv2",  # Should see DINOv2 loading message
+        "Per-Class",  # Should print per-class metrics
+        "Averaged stats:",  # Should complete validation
+    ]
 
     # Run training and capture output
     with open(log_file, "w") as log:
@@ -65,15 +73,11 @@ def test_dinov2_hub():
         )
 
         # Stream output
-        has_per_class = False
+        output_lines = []
         for line in process.stdout:
-            print(line, end="")
+            output_lines.append(line)
             log.write(line)
             log.flush()
-
-            # Check for per-class metrics
-            if "Per-Class" in line:
-                has_per_class = True
 
         # Wait for completion
         process.wait()
@@ -82,23 +86,23 @@ def test_dinov2_hub():
         log.write(f"DINOv2 hub test completed at: {datetime.now()}\n")
         log.write(f"Exit code: {process.returncode}\n")
 
-    print(f"\n{'='*80}")
-    print(f"DINOv2 hub test complete. Full log saved to: {log_file}")
+    # Join all output
+    full_output = "".join(output_lines)
 
-    # Summary
-    if has_per_class:
-        print("\n✅ SUCCESS: Per-class metrics were printed during training!")
-    else:
-        print("\n⚠️ Per-class metrics were not seen (may be in the log file)")
+    # Assertions
+    assert (
+        process.returncode == 0
+    ), f"Training failed with exit code: {process.returncode}"
 
-    if process.returncode == 0:
-        print("✅ Training completed successfully")
-    else:
-        print(f"❌ Training failed with exit code: {process.returncode}")
+    # Check for expected patterns
+    for pattern in expected_patterns:
+        assert (
+            pattern in full_output
+        ), f"Expected pattern '{pattern}' not found in output"
 
-    return process.returncode, log_file
+    # Verify output directory was created
+    assert output_dir.exists(), "Output directory was not created"
 
-
-if __name__ == "__main__":
-    exit_code, log_file = test_dinov2_hub()
-    sys.exit(exit_code)
+    # Check that checkpoint was saved
+    checkpoints = list(output_dir.glob("checkpoint*.pth"))
+    assert len(checkpoints) > 0, "No checkpoints were saved"
