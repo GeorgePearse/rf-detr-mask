@@ -15,30 +15,26 @@
 # Modified from Deformable DETR (https://github.com/fundamentalvision/Deformable-DETR)
 # Copyright (c) 2020 SenseTime. All Rights Reserved.
 # ------------------------------------------------------------------------
-
 """
 LW-DETR model and criterion classes
 """
-
 import copy
 import math
 from typing import Callable
+
 import torch
 import torch.nn.functional as F
 from torch import nn
 
-from rfdetr.util import box_ops
-from rfdetr.util.misc import (
-    NestedTensor,
-    nested_tensor_from_tensor_list,
-    accuracy,
-    get_world_size,
-    is_dist_avail_and_initialized,
-)
-
 from rfdetr.models.backbone import build_backbone
 from rfdetr.models.matcher import build_matcher
 from rfdetr.models.transformer import build_transformer
+from rfdetr.util import box_ops
+from rfdetr.util.misc import accuracy
+from rfdetr.util.misc import get_world_size
+from rfdetr.util.misc import is_dist_avail_and_initialized
+from rfdetr.util.misc import nested_tensor_from_tensor_list
+from rfdetr.util.misc import NestedTensor
 
 
 class LWDETR(nn.Module):
@@ -582,27 +578,22 @@ class SetCriterion(nn.Module):
         all_masks = []
         for t, (_, i) in zip(targets, indices):
             if len(i) > 0:  # Skip if no indices for this batch item
-                all_masks.append(t["masks"][i])
+                masks = t["masks"][i]
+                # Resize masks to a common size before appending
+                masks_resized = F.interpolate(
+                    masks.unsqueeze(1).float(),
+                    size=(28, 28),
+                    mode="bilinear",
+                    align_corners=False,
+                ).squeeze(1)
+                all_masks.append(masks_resized)
 
         if not all_masks:
             # Return zero loss if no valid masks
             return {"loss_mask": torch.as_tensor(0.0, device=src_masks.device)}
 
-        # Concatenate all masks and resize in a single operation
-        target_masks = torch.cat(all_masks, dim=0)  # [total_instances, h, w]
-
-        # Resize all masks at once for efficiency
-        # Use half precision for memory efficiency, then convert back
-        target_masks = (
-            F.interpolate(
-                target_masks.unsqueeze(1).half(),
-                size=(28, 28),
-                mode="bilinear",
-                align_corners=False,
-            )
-            .squeeze(1)
-            .gt(0.5)
-        )
+        # Concatenate all resized masks
+        target_masks = torch.cat(all_masks, dim=0).gt(0.5)  # [total_instances, 28, 28]
 
         # Compute dice loss
         src_masks = src_masks.flatten(1)  # [num_matched_queries, 28*28]

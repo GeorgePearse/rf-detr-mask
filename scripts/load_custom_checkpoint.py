@@ -2,10 +2,11 @@
 """
 Load and visualize a custom RF-DETR-MASK checkpoint with FiftyOne.
 """
-
 import argparse
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any
+from typing import Dict
+from typing import Optional
 
 import fiftyone as fo
 import torch
@@ -13,7 +14,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from rfdetr.config import RFDETRBaseConfig
-from rfdetr.main import Model
+from rfdetr.model_utils import Model
 from rfdetr.util.coco_classes import COCO_CLASSES
 
 

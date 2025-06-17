@@ -15,12 +15,10 @@
 # Modified from DETR (https://github.com/facebookresearch/detr)
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 # ------------------------------------------------------------------------
-
 """
 Unified training script for RF-DETR with mask head.
 Supports both programmatic usage and command-line interface.
 """
-
 import argparse
 import datetime
 import json
@@ -30,7 +28,10 @@ import time
 from collections import defaultdict
 from logging import getLogger
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+from typing import Any
+from typing import Dict
+from typing import Optional
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -39,16 +40,18 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 
 import rfdetr.util.misc as utils
-from rfdetr.datasets import build_dataset, get_coco_api_from_dataset
-from rfdetr.engine import evaluate, train_one_epoch
-from rfdetr.models import build_model, build_criterion_and_postprocessors
+from rfdetr.datasets import build_dataset
+from rfdetr.datasets import get_coco_api_from_dataset
+from rfdetr.engine import evaluate
+from rfdetr.engine import train_one_epoch
+from rfdetr.models import build_criterion_and_postprocessors
+from rfdetr.models import build_model
 from rfdetr.util.files import download_file
 from rfdetr.util.get_param_dicts import get_param_dict
-from rfdetr.util.utils import ModelEma, BestMetricHolder
-from rfdetr.util.per_class_metrics import (
-    print_per_class_metrics,
-    get_coco_category_names,
-)
+from rfdetr.util.per_class_metrics import get_coco_category_names
+from rfdetr.util.per_class_metrics import print_per_class_metrics
+from rfdetr.util.utils import BestMetricHolder
+from rfdetr.util.utils import ModelEma
 
 if str(os.environ.get("USE_FILE_SYSTEM_SHARING", "False")).lower() in ["true", "1"]:
     import torch.multiprocessing
@@ -378,6 +381,53 @@ def get_args_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Limit the number of validation samples for faster evaluation (default: None - use all samples)",
+    )
+
+    # Albumentations support
+    parser.add_argument(
+        "--use_albumentations",
+        action="store_true",
+        help="Use albumentations for data augmentation instead of built-in transforms",
+    )
+    parser.add_argument(
+        "--albumentations_config",
+        type=str,
+        default=None,
+        help="Path to albumentations YAML configuration file",
+    )
+
+    # Multi-scale training arguments
+    parser.add_argument(
+        "--multi_scale",
+        action="store_true",
+        default=False,
+        help="Enable multi-scale training",
+    )
+    parser.add_argument(
+        "--expanded_scales",
+        action="store_true",
+        default=False,
+        help="Use expanded scale range for multi-scale training",
+    )
+
+    # Rectangular training arguments
+    parser.add_argument(
+        "--rectangular",
+        action="store_true",
+        default=False,
+        help="Use rectangular training with aspect ratio preservation (for CMR: 832x640)",
+    )
+    parser.add_argument(
+        "--rect_width",
+        type=int,
+        default=832,
+        help="Width for rectangular training (default: 832)",
+    )
+    parser.add_argument(
+        "--rect_height",
+        type=int,
+        default=640,
+        help="Height for rectangular training (default: 640)",
     )
 
     return parser

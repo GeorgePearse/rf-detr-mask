@@ -12,15 +12,13 @@
 # Copied from DETR (https://github.com/facebookresearch/detr)
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 # ------------------------------------------------------------------------
-
 """
 Transforms and data augmentation for both image + bbox.
 """
-
 import random
 
-import PIL
 import numpy as np
+import PIL
 
 try:
     from collections.abc import Sequence
@@ -263,6 +261,53 @@ class SquareResize(object):
             target["area"] = scaled_area
 
         target["size"] = torch.tensor([h, w])
+
+        return rescaled_img, target
+
+
+class RectangularResize(object):
+    """Resize to a fixed rectangular size (width, height) that preserves aspect ratio."""
+
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+
+    def __call__(self, img, target=None):
+        # Resize to exactly the specified dimensions
+        rescaled_img = F.resize(img, (self.height, self.width))
+
+        if target is None:
+            return rescaled_img, None
+
+        # Calculate scaling ratios
+        w_orig, h_orig = img.size
+        ratios = (self.width / w_orig, self.height / h_orig)
+        ratio_width, ratio_height = ratios
+
+        target = target.copy()
+        if "boxes" in target:
+            boxes = target["boxes"]
+            scaled_boxes = boxes * torch.as_tensor(
+                [ratio_width, ratio_height, ratio_width, ratio_height]
+            )
+            target["boxes"] = scaled_boxes
+
+        if "area" in target:
+            area = target["area"]
+            scaled_area = area * (ratio_width * ratio_height)
+            target["area"] = scaled_area
+
+        target["size"] = torch.tensor([self.height, self.width])
+
+        if "masks" in target:
+            # Resize masks to match the new image size
+            masks = target["masks"]
+            # masks shape: [N, H, W]
+            if len(masks.shape) == 3:
+                masks = masks.unsqueeze(1)  # Add channel dimension
+                masks = F.resize(masks, (self.height, self.width))
+                masks = masks.squeeze(1)  # Remove channel dimension
+                target["masks"] = masks
 
         return rescaled_img, target
 

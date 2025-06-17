@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Before writing any code, make a plan and check it with any other available models (ChatGPT and Gemini for instance), after you complete any code check the implementation with ChatGPT and Gemini.
+
+After any implementation is complete, run:
+`python scripts/train.py --steps_per_validation 20 --test_limit 20`
+
+And check that it still succeeds until class-level metrics are displayed.
+
 ## Build/Testing Commands
 
 ### Installation

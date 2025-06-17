@@ -1,0 +1,76 @@
+# Configuration for DINOv2 models that require square inputs
+# Ensures images are resized to squares divisible by 64
+
+train_transforms:
+  # First resize to square
+  - name: LongestMaxSize
+    params:
+      max_size: 896  # Divisible by 64
+      interpolation: 1
+
+  # Pad to make square
+  - name: PadIfNeeded
+    params:
+      min_height: 896
+      min_width: 896
+      border_mode: 0
+      value: [0, 0, 0]
+
+  # Random square crop
+  - name: RandomCrop
+    params:
+      height: 832  # Also divisible by 64
+      width: 832
+      p: 0.5
+
+  # Standard augmentations
+  - name: HorizontalFlip
+    params:
+      p: 0.5
+
+  - name: RandomBrightnessContrast
+    params:
+      brightness_limit: 0.2
+      contrast_limit: 0.2
+      p: 0.5
+
+  - name: HueSaturationValue
+    params:
+      hue_shift_limit: 20
+      sat_shift_limit: 30
+      val_shift_limit: 20
+      p: 0.4
+
+  # Normalize with ImageNet stats (DINOv2 was trained on ImageNet)
+  - name: Normalize
+    params:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+
+  - name: ToTensorV2
+
+val_transforms:
+  # Fixed square size for validation
+  - name: LongestMaxSize
+    params:
+      max_size: 896
+      interpolation: 1
+
+  - name: PadIfNeeded
+    params:
+      min_height: 896
+      min_width: 896
+      border_mode: 0
+      value: [0, 0, 0]
+
+  - name: CenterCrop
+    params:
+      height: 896
+      width: 896
+
+  - name: Normalize
+    params:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+
+  - name: ToTensorV2

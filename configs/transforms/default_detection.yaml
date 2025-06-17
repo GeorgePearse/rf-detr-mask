@@ -1,0 +1,68 @@
+# Default albumentations configuration for detection tasks
+# This configuration provides standard augmentations for object detection
+
+train_transforms:
+  # Random horizontal flip
+  - name: HorizontalFlip
+    params:
+      p: 0.5
+
+  # Random brightness and contrast adjustments
+  - name: RandomBrightnessContrast
+    params:
+      brightness_limit: 0.2
+      contrast_limit: 0.2
+      p: 0.5
+
+  # Color jitter
+  - name: HueSaturationValue
+    params:
+      hue_shift_limit: 20
+      sat_shift_limit: 30
+      val_shift_limit: 20
+      p: 0.5
+
+  # Random scale
+  - name: RandomScale
+    params:
+      scale_limit: 0.1
+      p: 0.5
+
+  # Random crop (with proper bbox handling)
+  - name: RandomSizedBBoxSafeCrop
+    params:
+      height: 800
+      width: 800
+      erosion_rate: 0.0
+      interpolation: 1
+      p: 0.5
+
+  # Normalize with ImageNet stats
+  - name: Normalize
+    params:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+
+  # Convert to tensor (must be last)
+  - name: ToTensorV2
+
+val_transforms:
+  # Only resize and normalize for validation
+  - name: LongestMaxSize
+    params:
+      max_size: 1333
+      interpolation: 1
+
+  - name: PadIfNeeded
+    params:
+      min_height: 1333
+      min_width: 1333
+      border_mode: 0  # cv2.BORDER_CONSTANT
+      value: [0, 0, 0]
+
+  - name: Normalize
+    params:
+      mean: [0.485, 0.456, 0.406]
+      std: [0.229, 0.224, 0.225]
+
+  - name: ToTensorV2

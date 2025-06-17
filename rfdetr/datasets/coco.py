@@ -12,20 +12,17 @@
 # Copied from DETR (https://github.com/facebookresearch/detr)
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 # ------------------------------------------------------------------------
-
 """
 COCO dataset which returns image_id for evaluation.
 
 Mostly copy-paste from https://github.com/pytorch/vision/blob/13b35ff/references/detection/coco_utils.py
 """
-
 from pathlib import Path
-import numpy as np
 
-import torch
+import numpy as np
+import pycocotools.mask as mask_util
 import torch.utils.data
 import torchvision
-import pycocotools.mask as mask_util
 
 import rfdetr.datasets.transforms as T
 
@@ -58,10 +55,11 @@ def compute_multi_scale_scales(resolution, expanded_scales=False):
 
 
 class CocoDetection(torchvision.datasets.CocoDetection):
-    def __init__(self, img_folder, ann_file, transforms):
+    def __init__(self, img_folder, ann_file, transforms, use_albumentations=False):
         super(CocoDetection, self).__init__(img_folder, ann_file)
         self._transforms = transforms
         self.prepare = ConvertCoco()
+        self.use_albumentations = use_albumentations
 
     def __getitem__(self, idx):
         img, target = super(CocoDetection, self).__getitem__(idx)
@@ -245,6 +243,61 @@ def make_coco_transforms_square_div_64(
     raise ValueError(f"unknown {image_set}")
 
 
+def make_coco_transforms_rectangular(
+    image_set, width, height, multi_scale=False, expanded_scales=False
+):
+    """Create transforms for rectangular (non-square) training."""
+    normalize = T.Compose(
+        [T.ToTensor(), T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])]
+    )
+
+    if image_set == "train":
+        return T.Compose(
+            [
+                T.RandomHorizontalFlip(),
+                T.RectangularResize(width, height),
+                normalize,
+            ]
+        )
+
+    if image_set == "val" or image_set == "val_speed":
+        return T.Compose(
+            [
+                T.RectangularResize(width, height),
+                normalize,
+            ]
+        )
+
+    raise ValueError(f"unknown {image_set}")
+
+
+def make_albumentations_transforms(image_set, config_path=None, with_masks=True):
+    """Create albumentations transforms from YAML config."""
+    # Lazy import to avoid circular dependency
+    from rfdetr.datasets.albumentations_wrapper import create_albumentations_transform
+
+    if config_path is None:
+        # Use default config based on image set
+        if image_set == "train":
+            config_path = (
+                Path(__file__).parent.parent.parent
+                / "configs"
+                / "transforms"
+                / "default_detection.yaml"
+            )
+        else:
+            config_path = (
+                Path(__file__).parent.parent.parent
+                / "configs"
+                / "transforms"
+                / "default_detection.yaml"
+            )
+
+    return create_albumentations_transform(
+        config_path=config_path, is_train=(image_set == "train"), with_masks=with_masks
+    )
+
+
 def build(image_set, args, resolution):
     root = Path(args.coco_path)
     assert root.exists(), f"provided COCO path {root} does not exist"
@@ -290,16 +343,40 @@ def build(image_set, args, resolution):
     assert ann_file.exists(), f"Annotation file {ann_file} does not exist"
 
     try:
-        square_resize = args.square_resize
-    except:
-        square_resize = False
-
-    try:
         square_resize_div_64 = args.square_resize_div_64
-    except:
+    except AttributeError:
         square_resize_div_64 = False
 
-    if square_resize_div_64:
+    # Check if we should use albumentations
+    use_albumentations = getattr(args, "use_albumentations", False)
+    albumentations_config = getattr(args, "albumentations_config", None)
+    use_rectangular = getattr(args, "rectangular", False)
+    rect_width = getattr(args, "rect_width", 832)
+    rect_height = getattr(args, "rect_height", 640)
+
+    if use_albumentations:
+        # Use albumentations transforms
+        with_masks = getattr(args, "masks", False)
+        transforms = make_albumentations_transforms(
+            image_set, config_path=albumentations_config, with_masks=with_masks
+        )
+        dataset = CocoDetection(
+            img_folder, ann_file, transforms=transforms, use_albumentations=True
+        )
+    elif use_rectangular:
+        # Use rectangular transforms
+        dataset = CocoDetection(
+            img_folder,
+            ann_file,
+            transforms=make_coco_transforms_rectangular(
+                image_set,
+                rect_width,
+                rect_height,
+                multi_scale=args.multi_scale,
+                expanded_scales=args.expanded_scales,
+            ),
+        )
+    elif square_resize_div_64:
         dataset = CocoDetection(
             img_folder,
             ann_file,
@@ -327,7 +404,6 @@ def build(image_set, args, resolution):
 def build_roboflow(image_set, args, resolution):
     root = Path(args.dataset_dir)
     assert root.exists(), f"provided Roboflow path {root} does not exist"
-    mode = "instances"
     PATHS = {
         "train": (root / "train", root / "train" / "_annotations.coco.json"),
         "val": (root / "valid", root / "valid" / "_annotations.coco.json"),
@@ -337,16 +413,24 @@ def build_roboflow(image_set, args, resolution):
     img_folder, ann_file = PATHS[image_set.split("_")[0]]
 
     try:
-        square_resize = args.square_resize
-    except:
-        square_resize = False
-
-    try:
         square_resize_div_64 = args.square_resize_div_64
-    except:
+    except AttributeError:
         square_resize_div_64 = False
 
-    if square_resize_div_64:
+    # Check if we should use albumentations
+    use_albumentations = getattr(args, "use_albumentations", False)
+    albumentations_config = getattr(args, "albumentations_config", None)
+
+    if use_albumentations:
+        # Use albumentations transforms
+        with_masks = getattr(args, "masks", False)
+        transforms = make_albumentations_transforms(
+            image_set, config_path=albumentations_config, with_masks=with_masks
+        )
+        dataset = CocoDetection(
+            img_folder, ann_file, transforms=transforms, use_albumentations=True
+        )
+    elif square_resize_div_64:
         dataset = CocoDetection(
             img_folder,
             ann_file,
