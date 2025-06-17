@@ -215,7 +215,7 @@ def get_args_parser() -> argparse.ArgumentParser:
         "--epochs", default=100, type=int, help="Number of epochs to train for"
     )
     parser.add_argument(
-        "--clip_max_norm", default=0.1, type=float, help="Gradient clipping max norm"
+        "--clip_max_norm", default=1.0, type=float, help="Gradient clipping max norm"
     )
     parser.add_argument(
         "--gradient_accumulation_steps",
@@ -294,7 +294,6 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--masks",
         action="store_true",
-        default=True,
         help="Train segmentation head for panoptic segmentation",
     )
 
@@ -358,7 +357,7 @@ def get_args_parser() -> argparse.ArgumentParser:
         help="Avoid computing intermediate decodings",
     )
     parser.add_argument(
-        "--use_fp16", default=True, type=bool, help="Use FP16 models (half)"
+        "--use_fp16", default=False, type=bool, help="Use FP16 models (half)"
     )
     parser.add_argument("--amp", action="store_true", help="use mixed precision")
     parser.add_argument(
@@ -865,6 +864,12 @@ def setup_training_config(args: argparse.Namespace) -> argparse.Namespace:
         args.dec_n_points = 2
         args.projector_scale = ["P4"]  # Single scale for small model
         args.out_feature_indexes = [2, 5, 8, 11]  # Default for small model
+        # Much lower learning rates for small model to prevent gradient explosion
+        args.lr = 1e-6  # 100x lower than default
+        args.lr_encoder = 1e-7  # 100x lower than default
+        args.lr_projector = 1e-7  # 100x lower than default
+        # Don't load pretrained weights for small model (incompatible with base weights)
+        args.pretrain_weights = None
     else:
         # Base/Large model configuration
         args.num_queries = 900

@@ -367,14 +367,17 @@ class WindowedDinov2WithRegistersEmbeddings(nn.Module):
             # reshape for windows
             num_h_patches = height // self.config.patch_size
             num_w_patches = width // self.config.patch_size
+
             cls_token_with_pos_embed = embeddings[:, :1]
             pixel_tokens_with_pos_embed = embeddings[:, 1:]
+
             pixel_tokens_with_pos_embed = pixel_tokens_with_pos_embed.view(
                 batch_size, num_h_patches, num_w_patches, -1
             )
             num_w_patches_per_window = num_w_patches // self.config.num_windows
             num_h_patches_per_window = num_h_patches // self.config.num_windows
             num_windows = self.config.num_windows
+
             windowed_pixel_tokens = pixel_tokens_with_pos_embed.view(
                 batch_size,
                 num_windows,
@@ -384,6 +387,7 @@ class WindowedDinov2WithRegistersEmbeddings(nn.Module):
                 -1,
             )
             windowed_pixel_tokens = windowed_pixel_tokens.permute(0, 1, 3, 2, 4, 5)
+
             windowed_pixel_tokens = windowed_pixel_tokens.reshape(
                 batch_size * num_windows**2,
                 num_h_patches_per_window * num_w_patches_per_window,

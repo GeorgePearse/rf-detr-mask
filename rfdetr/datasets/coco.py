@@ -158,19 +158,14 @@ def make_coco_transforms(
         print(scales)
 
     if image_set == "train":
+        # For windowed attention, we need square images
+        print(f"[TRANSFORM DEBUG] Creating train transforms with scales: {scales}")
         return T.Compose(
             [
                 T.RandomHorizontalFlip(),
-                T.RandomSelect(
-                    T.RandomResize(scales, max_size=1333),
-                    T.Compose(
-                        [
-                            T.RandomResize([400, 500, 600]),
-                            T.RandomSizeCrop(384, 600),
-                            T.RandomResize(scales, max_size=1333),
-                        ]
-                    ),
-                ),
+                T.SquareResize(
+                    scales
+                ),  # Changed to SquareResize for windowed attention
                 normalize,
             ]
         )
@@ -178,7 +173,9 @@ def make_coco_transforms(
     if image_set == "val":
         return T.Compose(
             [
-                T.RandomResize([resolution], max_size=1333),
+                T.SquareResize(
+                    [resolution]
+                ),  # Changed to SquareResize for windowed attention
                 normalize,
             ]
         )
@@ -212,16 +209,7 @@ def make_coco_transforms_square_div_64(
         return T.Compose(
             [
                 T.RandomHorizontalFlip(),
-                T.RandomSelect(
-                    T.SquareResize(scales),
-                    T.Compose(
-                        [
-                            T.RandomResize([400, 500, 600]),
-                            T.RandomSizeCrop(384, 600),
-                            T.SquareResize(scales),
-                        ]
-                    ),
-                ),
+                T.SquareResize(scales),
                 normalize,
             ]
         )
@@ -389,6 +377,9 @@ def build(image_set, args, resolution):
             ),
         )
     else:
+        print(
+            f"[DATASET DEBUG] Creating dataset with make_coco_transforms for {image_set}"
+        )
         dataset = CocoDetection(
             img_folder,
             ann_file,
