@@ -2,7 +2,7 @@ import requests
 from tqdm import tqdm
 
 
-def download_file(url, filename):
+def download_file(url: str, filename: str) -> None:
     response = requests.get(url, stream=True)
     total_size = int(response.headers["content-length"])
     with (

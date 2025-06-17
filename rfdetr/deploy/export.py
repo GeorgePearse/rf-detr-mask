@@ -15,6 +15,7 @@ import os
 import random
 import subprocess
 import torch.nn as nn
+from typing import Any
 
 import onnx
 import torch
@@ -29,7 +30,9 @@ from rfdetr.deploy._onnx import OnnxOptimizer
 import re
 
 
-def run_command_shell(command, dry_run: bool = False) -> int:
+def run_command_shell(
+    command: str, dry_run: bool = False
+) -> subprocess.CompletedProcess[str]:
     if dry_run:
         print("")
         print(f"CUDA_VISIBLE_DEVICES={os.environ['CUDA_VISIBLE_DEVICES']} {command}")
@@ -43,16 +46,18 @@ def run_command_shell(command, dry_run: bool = False) -> int:
         raise
 
 
-def make_infer_image(infer_dir, shape, batch_size, device="cuda"):
-    if infer_dir is None:
-        dummy = np.random.randint(0, 256, (shape[0], shape[1], 3), dtype=np.uint8)
+def make_infer_image(args: Any, device: str = "cuda") -> torch.Tensor:
+    if args.infer_dir is None:
+        dummy = np.random.randint(
+            0, 256, (args.shape[0], args.shape[1], 3), dtype=np.uint8
+        )
         image = Image.fromarray(dummy, mode="RGB")
     else:
-        image = Image.open(infer_dir).convert("RGB")
+        image = Image.open(args.infer_dir).convert("RGB")
 
     transforms = T.Compose(
         [
-            T.SquareResize([shape[0]]),
+            T.SquareResize([args.shape[0]]),
             T.ToTensor(),
             T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
         ]
@@ -61,7 +66,7 @@ def make_infer_image(infer_dir, shape, batch_size, device="cuda"):
     inps, _ = transforms(image, None)
     inps = inps.to(device)
     # inps = utils.nested_tensor_from_tensor_list([inps for _ in range(args.batch_size)])
-    inps = torch.stack([inps for _ in range(batch_size)])
+    inps = torch.stack([inps for _ in range(args.batch_size)])
     return inps
 
 
@@ -162,7 +167,7 @@ def trtexec(onnx_dir: str, args) -> None:
         command = trt_command
 
     output = run_command_shell(command, args.dry_run)
-    stats = parse_trtexec_output(output.stdout)
+    parse_trtexec_output(output.stdout)
 
 
 def parse_trtexec_output(output_text):

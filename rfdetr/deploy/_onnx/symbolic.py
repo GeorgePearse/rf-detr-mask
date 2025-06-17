@@ -10,18 +10,20 @@
 CustomOpSymbolicRegistry class
 """
 
+from typing import List, Callable, Any
+
 
 class CustomOpSymbolicRegistry:
     # _SYMBOLICS = {}
-    _OPTIMIZER = []
+    _OPTIMIZER: List[Callable[..., Any]] = []
 
     @classmethod
-    def optimizer(cls, fn):
+    def optimizer(cls, fn: Callable[..., Any]) -> None:
         cls._OPTIMIZER.append(fn)
 
 
-def register_optimizer():
-    def optimizer_wrapper(fn):
+def register_optimizer() -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def optimizer_wrapper(fn: Callable[..., Any]) -> Callable[..., Any]:
         CustomOpSymbolicRegistry.optimizer(fn)
         return fn
 

@@ -13,4 +13,9 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 # ------------------------------------------------------------------------
 
-from .lwdetr import build_model, build_criterion_and_postprocessors
+from .lwdetr import (
+    build_model as build_model,
+    build_criterion_and_postprocessors as build_criterion_and_postprocessors,
+)
+
+__all__ = ["build_model", "build_criterion_and_postprocessors"]

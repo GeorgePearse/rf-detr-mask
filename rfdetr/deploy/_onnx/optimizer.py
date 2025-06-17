@@ -349,7 +349,7 @@ class OnnxOptimizer:
 
                 gammaNode = node.o().o().o().o().o().o().o().o().o().o().o()
                 index = [
-                    type(i) == gs.ir.tensor.Constant for i in gammaNode.inputs
+                    isinstance(i, gs.ir.tensor.Constant) for i in gammaNode.inputs
                 ].index(True)
                 gamma = np.array(
                     deepcopy(gammaNode.inputs[index].values.tolist()), dtype=np.float32
@@ -361,7 +361,7 @@ class OnnxOptimizer:
 
                 betaNode = gammaNode.o()
                 index = [
-                    type(i) == gs.ir.tensor.Constant for i in betaNode.inputs
+                    isinstance(i, gs.ir.tensor.Constant) for i in betaNode.inputs
                 ].index(True)
                 beta = np.array(
                     deepcopy(betaNode.inputs[index].values.tolist()), dtype=np.float32
@@ -433,7 +433,7 @@ class OnnxOptimizer:
 
                 gammaNode = node.o().o().o().o().o().o().o()
                 index = [
-                    type(i) == gs.ir.tensor.Constant for i in gammaNode.inputs
+                    isinstance(i, gs.ir.tensor.Constant) for i in gammaNode.inputs
                 ].index(True)
                 gamma = np.array(
                     deepcopy(gammaNode.inputs[index].values.tolist()), dtype=np.float32
@@ -445,7 +445,7 @@ class OnnxOptimizer:
 
                 betaNode = gammaNode.o()
                 index = [
-                    type(i) == gs.ir.tensor.Constant for i in betaNode.inputs
+                    isinstance(i, gs.ir.tensor.Constant) for i in betaNode.inputs
                 ].index(True)
                 beta = np.array(
                     deepcopy(betaNode.inputs[index].values.tolist()), dtype=np.float32
