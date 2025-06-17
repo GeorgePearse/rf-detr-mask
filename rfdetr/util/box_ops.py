@@ -10,7 +10,6 @@
 # Copied from DETR (https://github.com/facebookresearch/detr)
 # Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved.
 # ------------------------------------------------------------------------
-
 """
 Utilities for bounding box manipulation and GIoU.
 """
@@ -33,6 +32,13 @@ def box_cxcywh_to_xyxy(x):
 def box_xyxy_to_cxcywh(x):
     x0, y0, x1, y1 = x.unbind(-1)
     b = [(x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0), (y1 - y0)]
+    return torch.stack(b, dim=-1)
+
+
+def box_xyxy_to_xywh(x):
+    """Convert boxes from [x1, y1, x2, y2] to [x, y, w, h] format."""
+    x0, y0, x1, y1 = x.unbind(-1)
+    b = [x0, y0, x1 - x0, y1 - y0]
     return torch.stack(b, dim=-1)
 
 

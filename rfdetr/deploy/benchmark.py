@@ -6,7 +6,6 @@
 # Modified from LW-DETR (https://github.com/Atten4Vis/LW-DETR)
 # Copyright (c) 2024 Baidu. All Rights Reserved.
 # ------------------------------------------------------------------------
-
 """
 This tool provides performance benchmarks by using ONNX Runtime and TensorRT
 to run inference on a given model with the COCO validation set. It offers
@@ -15,27 +14,30 @@ on the device.
 """
 
 import argparse
-import copy
 import contextlib
+import copy
 import json
 import os
 import os.path as osp
 import random
 import time
-from collections import namedtuple, OrderedDict
-
-from pycocotools.cocoeval import COCOeval
-from pycocotools.coco import COCO
+from collections import namedtuple
+from collections import OrderedDict
 
 import numpy as np
-from PIL import Image
+import onnxruntime as nxrun
+import pycuda.driver as cuda
+import tensorrt as trt
 import torch
 import torchvision.transforms.functional as F
 import tqdm
+from PIL import Image
+from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
 
-import pycuda.driver as cuda
-import onnxruntime as nxrun
-import tensorrt as trt
+from rfdetr.util.box_ops import box_cxcywh_to_xyxy
+from rfdetr.util.box_ops import box_xyxy_to_cxcywh
+from rfdetr.util.box_ops import box_xyxy_to_xywh
 
 
 def parser_args():
@@ -119,7 +121,7 @@ class CocoEvaluator(object):
                 continue
 
             boxes = prediction["boxes"]
-            boxes = convert_to_xywh(boxes).tolist()
+            boxes = box_xyxy_to_xywh(boxes).tolist()
             scores = prediction["scores"].tolist()
             labels = prediction["labels"].tolist()
 
@@ -194,11 +196,6 @@ def evaluate(self):
     return p.imgIds, evalImgs
 
 
-def convert_to_xywh(boxes):
-    boxes[:, 2:] -= boxes[:, :2]
-    return boxes
-
-
 def get_image_list(ann_file):
     with open(ann_file, "r") as fin:
         data = json.load(fin)
@@ -209,6 +206,9 @@ def load_image(file_path):
     return Image.open(file_path).convert("RGB")
 
 
+# Note: These transform classes are kept separate from rfdetr.datasets.transforms
+# because they have benchmark-specific behavior (e.g., Normalize converts boxes
+# to cxcywh format which is specific to the benchmark evaluation)
 class Compose(object):
     def __init__(self, transforms):
         self.transforms = transforms
@@ -297,17 +297,6 @@ def infer_transforms():
     )
 
 
-def box_cxcywh_to_xyxy(x):
-    x_c, y_c, w, h = x.unbind(-1)
-    b = [
-        (x_c - 0.5 * w.clamp(min=0.0)),
-        (y_c - 0.5 * h.clamp(min=0.0)),
-        (x_c + 0.5 * w.clamp(min=0.0)),
-        (y_c + 0.5 * h.clamp(min=0.0)),
-    ]
-    return torch.stack(b, dim=-1)
-
-
 def post_process(outputs, target_sizes):
     out_logits, out_bbox = outputs["labels"], outputs["dets"]
 
@@ -330,7 +319,8 @@ def post_process(outputs, target_sizes):
     boxes = boxes * scale_fct[:, None, :]
 
     results = [
-        {"scores": s, "labels": l, "boxes": b} for s, l, b in zip(scores, labels, boxes)
+        {"scores": s, "labels": lbl, "boxes": b}
+        for s, lbl, b in zip(scores, labels, boxes)
     ]
 
     return results
@@ -389,12 +379,6 @@ def infer_engine(
 
         samples = image_tensor[None].to(device)
         _, _, h, w = samples.shape
-        im_shape = torch.Tensor(np.array([h, w]).reshape((1, 2)).astype(np.float32)).to(
-            device
-        )
-        scale_factor = torch.Tensor(
-            np.array([h / height, w / width]).reshape((1, 2)).astype(np.float32)
-        ).to(device)
 
         time_profile.reset()
         with time_profile:

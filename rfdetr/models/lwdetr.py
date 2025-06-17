@@ -18,9 +18,11 @@
 """
 LW-DETR model and criterion classes
 """
+
 import copy
 import math
 from typing import Callable
+from typing import Optional
 
 import torch
 import torch.nn.functional as F
@@ -35,6 +37,56 @@ from rfdetr.util.misc import get_world_size
 from rfdetr.util.misc import is_dist_avail_and_initialized
 from rfdetr.util.misc import nested_tensor_from_tensor_list
 from rfdetr.util.misc import NestedTensor
+
+
+def batch_resize_masks(
+    masks: torch.Tensor,
+    target_height: int,
+    target_width: int,
+    batch_size: int = 32,
+    apply_threshold: Optional[float] = None,
+) -> torch.Tensor:
+    """
+    Resize masks in batches to reduce memory consumption.
+
+    Args:
+        masks: Tensor of shape [N, H, W] containing masks to resize
+        target_height: Target height for resizing
+        target_width: Target width for resizing
+        batch_size: Number of masks to process at once
+        apply_threshold: If provided, apply this threshold after resizing
+
+    Returns:
+        Resized masks tensor of shape [N, target_height, target_width]
+    """
+    num_masks = masks.shape[0]
+    if num_masks == 0:
+        dtype = torch.bool if apply_threshold is not None else masks.dtype
+        return torch.zeros(
+            (0, target_height, target_width),
+            dtype=dtype,
+            device=masks.device,
+        )
+
+    resized_masks = []
+    for j in range(0, num_masks, batch_size):
+        # Process a batch of masks
+        batch_masks = masks[j : j + batch_size]
+        # Ensure FP16 for interpolation
+        batch_resized = F.interpolate(
+            batch_masks.unsqueeze(1).half(),
+            size=(target_height, target_width),
+            mode="bilinear",
+            align_corners=False,
+        ).squeeze(1)
+
+        # Apply threshold if provided
+        if apply_threshold is not None:
+            batch_resized = batch_resized > apply_threshold
+
+        resized_masks.append(batch_resized)
+
+    return torch.cat(resized_masks, dim=0)
 
 
 class LWDETR(nn.Module):
@@ -803,30 +855,12 @@ class PostProcess(nn.Module):
                 )
 
                 # Resize masks to original image size with batching to reduce memory consumption
-                batch_size = 32  # Process masks in batches of this size
-                num_masks = masks.shape[0]
-                resized_masks = []
-
-                for j in range(0, num_masks, batch_size):
-                    # Process a batch of masks
-                    batch_masks = masks[j : j + batch_size]
-                    # Ensure FP16 for interpolation
-                    batch_resized = F.interpolate(
-                        batch_masks.unsqueeze(1).half(),
-                        size=(int(img_h[i].item()), int(img_w[i].item())),
-                        mode="bilinear",
-                        align_corners=False,
-                    ).squeeze(1)
-                    resized_masks.append(batch_resized)
-
-                # Concatenate batches back together
-                if resized_masks:
-                    result["masks"] = torch.cat(resized_masks, dim=0)
-                else:
-                    result["masks"] = torch.zeros(
-                        (0, int(img_h[i].item()), int(img_w[i].item())),
-                        device=masks.device,
-                    )
+                result["masks"] = batch_resize_masks(
+                    masks,
+                    int(img_h[i].item()),
+                    int(img_w[i].item()),
+                    batch_size=32,
+                )
 
             results.append(result)
 
@@ -879,33 +913,13 @@ class PostProcessSegm(nn.Module):
 
             # Upsample masks to original image size with batching for memory efficiency
             img_h, img_w = target_sizes[i]
-            batch_size = 32  # Process masks in batches of this size
-            num_masks = masks.shape[0]
-            resized_masks = []
-
-            for j in range(0, num_masks, batch_size):
-                # Process a batch of masks
-                batch_masks = masks[j : j + batch_size]
-                # Ensure FP16 for interpolation
-                batch_resized = F.interpolate(
-                    batch_masks.unsqueeze(1).half(),
-                    size=(int(img_h.item()), int(img_w.item())),
-                    mode="bilinear",
-                    align_corners=False,
-                ).squeeze(1)
-                # Apply threshold immediately to save memory
-                batch_resized = batch_resized > self.threshold
-                resized_masks.append(batch_resized)
-
-            # Concatenate batches back together
-            if resized_masks:
-                masks = torch.cat(resized_masks, dim=0)
-            else:
-                masks = torch.zeros(
-                    (0, int(img_h.item()), int(img_w.item())),
-                    dtype=torch.bool,
-                    device=masks.device,
-                )
+            masks = batch_resize_masks(
+                masks,
+                int(img_h.item()),
+                int(img_w.item()),
+                batch_size=32,
+                apply_threshold=self.threshold,
+            )
 
             results.append(
                 {
