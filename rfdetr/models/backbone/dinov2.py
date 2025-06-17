@@ -91,6 +91,10 @@ class DinoV2(nn.Module):
 
             dino_config = get_config(size, use_registers)
 
+            # Remove conflicting config entries that we'll override
+            dino_config.pop("out_features", None)
+            dino_config.pop("out_indices", None)
+            
             dino_config["return_dict"] = False
             dino_config["out_features"] = [f"stage{i}" for i in out_feature_indexes]
 

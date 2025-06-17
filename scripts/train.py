@@ -227,7 +227,7 @@ def get_args_parser() -> argparse.ArgumentParser:
     # Model parameters
     parser.add_argument(
         "--encoder",
-        default="dinov2_registers_windowed_small",
+        default="dinov2_windowed_small",
         type=str,
         help="Name of the transformer backbone",
     )
@@ -239,7 +239,7 @@ def get_args_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--resolution",
-        default=560,
+        default=448,
         type=int,
         help="Input resolution to the encoder (must be divisible by 14 for DINOv2)",
     )
