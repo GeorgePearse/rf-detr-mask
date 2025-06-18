@@ -182,8 +182,9 @@ class LWDETR(nn.Module):
         self.mask_embed = MLP(hidden_dim, hidden_dim, 28 * 28, 3)
         last_mask_layer = self.mask_embed.layers[-1]
         assert isinstance(last_mask_layer, nn.Linear)
-        nn.init.constant_(last_mask_layer.weight.data, 0)
-        nn.init.constant_(last_mask_layer.bias.data, 0)
+        # Initialize with small random values instead of zeros
+        nn.init.xavier_uniform_(last_mask_layer.weight.data, gain=1e-4)
+        nn.init.constant_(last_mask_layer.bias.data, -2.0)  # Bias for sigmoid(x) ≈ 0.12
 
         # two_stage
         self.two_stage = two_stage
@@ -1117,7 +1118,9 @@ def build_criterion_and_postprocessors(
     matcher = build_matcher(args)
     weight_dict = {"loss_ce": args.cls_loss_coef, "loss_bbox": args.bbox_loss_coef}
     weight_dict["loss_giou"] = args.giou_loss_coef
-    weight_dict["loss_mask"] = 1.0  # Add weight for mask loss
+    weight_dict["loss_mask"] = (
+        args.loss_mask_coef
+    )  # Use mask loss coefficient from args
     # TODO this is a hack
     if args.aux_loss:
         aux_weight_dict = {}

@@ -19,7 +19,18 @@ Train and eval functions used in main.py
 """
 
 import math
-from typing import Iterable, Dict, List, Callable, Any, Tuple, Union, Protocol, cast, DefaultDict
+from typing import (
+    Iterable,
+    Dict,
+    List,
+    Callable,
+    Any,
+    Tuple,
+    Union,
+    Protocol,
+    cast,
+    DefaultDict,
+)
 
 import torch
 import torch.nn.parallel  # For DistributedDataParallel
@@ -29,17 +40,21 @@ from rfdetr.datasets.coco_eval import CocoEvaluator
 
 try:
     from torch.amp import autocast, GradScaler
+
     DEPRECATED_AMP: bool = False
 except ImportError:
     from torch.cuda.amp import autocast, GradScaler
+
     DEPRECATED_AMP: bool = True
 
 from rfdetr.util.misc import NestedTensor
+
 
 # Protocol for the 'args' object (e.g., argparse.Namespace)
 # This assumes 'args' will always have an 'amp' attribute of type bool.
 class TrainingArgs(Protocol):
     amp: bool
+
 
 # Protocol for the actual model that has dropout/drop path update methods.
 # This avoids needing to import the specific model class.
@@ -364,7 +379,7 @@ def evaluate(
     data_loader: Iterable[Tuple[NestedTensor, List[Dict[str, Any]]]],
     base_ds: Any,  # CocoDataset type, but keeping Any to avoid import
     device: torch.device,
-    args: Union[TrainingArgs, None] = None
+    args: Union[TrainingArgs, None] = None,
 ) -> Tuple[Dict[str, Any], CocoEvaluator]:
     """Evaluate model on validation dataset.
 
@@ -431,6 +446,13 @@ def evaluate(
 
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
         results = postprocessors["bbox"](outputs, orig_target_sizes)
+
+        # If segmentation is enabled, also process masks
+        if "segm" in postprocessors and "pred_masks" in outputs:
+            # Process masks using the same results from bbox postprocessor
+            # The bbox postprocessor already handles masks if they exist
+            pass
+
         res = {
             target["image_id"].item(): output
             for target, output in zip(targets, results)
