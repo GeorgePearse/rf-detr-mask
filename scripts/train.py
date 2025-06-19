@@ -663,6 +663,7 @@ def main(args: argparse.Namespace) -> None:
             base_ds,
             device,
             args,
+            compute_loss=False,  # No need to compute losses in eval-only mode
         )
         if args.output_dir:
             utils.save_on_master(
@@ -864,10 +865,10 @@ def setup_training_config(args: argparse.Namespace) -> argparse.Namespace:
         args.dec_n_points = 2
         args.projector_scale = ["P4"]  # Single scale for small model
         args.out_feature_indexes = [2, 5, 8, 11]  # Default for small model
-        # Much lower learning rates for small model to prevent gradient explosion
-        args.lr = 1e-6  # 100x lower than default
-        args.lr_encoder = 1e-7  # 100x lower than default
-        args.lr_projector = 1e-7  # 100x lower than default
+        # Lower learning rates for small model to prevent gradient explosion
+        args.lr = 1e-4  # Standard learning rate
+        args.lr_encoder = 1e-5  # Standard encoder learning rate
+        args.lr_projector = 1e-5  # Standard projector learning rate
         # Don't load pretrained weights for small model (incompatible with base weights)
         args.pretrain_weights = None
     else:

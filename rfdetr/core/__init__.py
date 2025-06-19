@@ -1,0 +1,1 @@
+"""Core module for RF-DETR refactored architecture."""

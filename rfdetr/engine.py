@@ -380,6 +380,7 @@ def evaluate(
     base_ds: Any,  # CocoDataset type, but keeping Any to avoid import
     device: torch.device,
     args: Union[TrainingArgs, None] = None,
+    compute_loss: bool = True,
 ) -> Tuple[Dict[str, Any], CocoEvaluator]:
     """Evaluate model on validation dataset.
 
@@ -391,6 +392,7 @@ def evaluate(
         base_ds: Base dataset for COCO evaluation
         device: Device to run evaluation on
         args: Evaluation arguments
+        compute_loss: Whether to compute losses during evaluation (default: True)
 
     Returns:
         Tuple of (stats_dict, coco_evaluator)
@@ -399,9 +401,10 @@ def evaluate(
     criterion.eval()
 
     metric_logger = utils.MetricLogger(delimiter="  ")
-    metric_logger.add_meter(
-        "class_error", utils.SmoothedValue(window_size=1, fmt="{value:.2f}")
-    )
+    if compute_loss:
+        metric_logger.add_meter(
+            "class_error", utils.SmoothedValue(window_size=1, fmt="{value:.2f}")
+        )
     header = "Test:"
 
     iou_types = tuple(k for k in ("segm", "bbox") if k in postprocessors.keys())
@@ -424,25 +427,26 @@ def evaluate(
             outputs, args.amp if args is not None else False
         )
 
-        loss_dict = criterion(outputs, targets)
-        weight_dict = criterion.weight_dict
+        if compute_loss:
+            loss_dict = criterion(outputs, targets)
+            weight_dict = criterion.weight_dict
 
-        # reduce losses over all GPUs for logging purposes
-        loss_dict_reduced = utils.reduce_dict(loss_dict)
-        loss_dict_reduced_scaled = {
-            k: v * weight_dict[k]
-            for k, v in loss_dict_reduced.items()
-            if k in weight_dict
-        }
-        loss_dict_reduced_unscaled = {
-            f"{k}_unscaled": v for k, v in loss_dict_reduced.items()
-        }
-        metric_logger.update(
-            loss=sum(loss_dict_reduced_scaled.values()),
-            **loss_dict_reduced_scaled,
-            **loss_dict_reduced_unscaled,
-        )
-        metric_logger.update(class_error=loss_dict_reduced["class_error"])
+            # reduce losses over all GPUs for logging purposes
+            loss_dict_reduced = utils.reduce_dict(loss_dict)
+            loss_dict_reduced_scaled = {
+                k: v * weight_dict[k]
+                for k, v in loss_dict_reduced.items()
+                if k in weight_dict
+            }
+            loss_dict_reduced_unscaled = {
+                f"{k}_unscaled": v for k, v in loss_dict_reduced.items()
+            }
+            metric_logger.update(
+                loss=sum(loss_dict_reduced_scaled.values()),
+                **loss_dict_reduced_scaled,
+                **loss_dict_reduced_unscaled,
+            )
+            metric_logger.update(class_error=loss_dict_reduced["class_error"])
 
         orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
         results = postprocessors["bbox"](outputs, orig_target_sizes)
