@@ -2,7 +2,7 @@
 
 <div align="center">
   <img src="https://img.shields.io/badge/PyTorch-2.0+-ee4c2c?logo=pytorch&logoColor=white" alt="PyTorch">
-  <img src="https://img.shields.io/badge/Python-3.8+-blue?logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/Python-3.13-blue?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/COCO%20AP-60%2B-green" alt="COCO AP">
   <img src="https://img.shields.io/badge/License-MIT-yellow" alt="License">
 </div>

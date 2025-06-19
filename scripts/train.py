@@ -162,13 +162,13 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--coco_train",
         type=str,
-        default="2025-05-15_12:38:23.077836_train_ordered.json",
+        default="2025-06-09_08:01:39.725192_train_ordered.json",
         help="Training annotation file name",
     )
     parser.add_argument(
         "--coco_val",
         type=str,
-        default="2025-05-15_12:38:38.270134_val_ordered.json",
+        default="2025-06-09_08:01:53.613830_val_ordered.json",
         help="Validation annotation file name",
     )
     parser.add_argument(
@@ -359,7 +359,7 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--use_fp16", default=False, type=bool, help="Use FP16 models (half)"
     )
-    parser.add_argument("--amp", action="store_true", help="use mixed precision")
+    parser.add_argument("--amp", default=True, type=bool, help="use mixed precision (default: True)")
     parser.add_argument(
         "--square_resize", action="store_true", help="use square resize for images"
     )
@@ -960,5 +960,11 @@ if __name__ == "__main__":
 
     # Set up training configuration
     args = setup_training_config(args)
+    
+    # Ensure square resize is used for consistent train/test resolution
+    if not hasattr(args, 'square_resize') or not args.square_resize:
+        print(f"WARNING: Training without square_resize may lead to resolution mismatch between train and test.")
+        print(f"Setting square_resize=True to ensure consistent {args.resolution}x{args.resolution} resolution.")
+        args.square_resize = True
 
     main(args)

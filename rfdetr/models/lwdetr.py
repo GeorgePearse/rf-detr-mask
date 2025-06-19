@@ -70,17 +70,17 @@ def batch_resize_masks(
     masks: torch.Tensor,
     target_height: int,
     target_width: int,
-    batch_size: int = 32,
+    batch_size: int = 8,  # Reduced default batch size for better memory efficiency
     apply_threshold: Optional[float] = None,
 ) -> torch.Tensor:
     """
-    Resize masks in batches to reduce memory consumption.
+    Memory-efficient mask resizing with optimized batching and precision handling.
 
     Args:
         masks: Tensor of shape [N, H, W] containing masks to resize
         target_height: Target height for resizing
         target_width: Target width for resizing
-        batch_size: Number of masks to process at once
+        batch_size: Number of masks to process at once (default: 8 for memory efficiency)
         apply_threshold: If provided, apply this threshold after resizing
 
     Returns:
@@ -88,32 +88,58 @@ def batch_resize_masks(
     """
     num_masks = masks.shape[0]
     if num_masks == 0:
-        dtype = torch.bool if apply_threshold is not None else masks.dtype
+        dtype = torch.uint8 if apply_threshold is not None else masks.dtype
         return torch.zeros(
             (0, target_height, target_width),
             dtype=dtype,
             device=masks.device,
         )
 
-    resized_masks = []
+    # Pre-allocate output tensor for memory efficiency
+    if apply_threshold is not None:
+        # Use uint8 for binary masks to save memory (8x reduction vs float)
+        output = torch.zeros(
+            (num_masks, target_height, target_width),
+            dtype=torch.uint8,
+            device=masks.device,
+        )
+    else:
+        output = torch.zeros(
+            (num_masks, target_height, target_width),
+            dtype=torch.float16,
+            device=masks.device,
+        )
+
     for j in range(0, num_masks, batch_size):
-        # Process a batch of masks
-        batch_masks = masks[j : j + batch_size]
-        # Ensure FP16 for interpolation
-        batch_resized = F.interpolate(
-            batch_masks.unsqueeze(1).half(),
-            size=(target_height, target_width),
-            mode="bilinear",
-            align_corners=False,
-        ).squeeze(1)
-
-        # Apply threshold if provided
+        end_idx = min(j + batch_size, num_masks)
+        batch_masks = masks[j:end_idx]
+        
+        # Apply sigmoid before resizing for more stable interpolation
+        if apply_threshold is None:
+            batch_masks = batch_masks.sigmoid()
+        
+        # Ensure FP16 for interpolation to save memory
+        with torch.amp.autocast('cuda', enabled=False):  # Disable autocast to control precision
+            batch_resized = F.interpolate(
+                batch_masks.unsqueeze(1).half(),
+                size=(target_height, target_width),
+                mode="bilinear",
+                align_corners=False,
+            ).squeeze(1)
+        
+        # Apply threshold and convert to uint8 for memory efficiency
         if apply_threshold is not None:
-            batch_resized = batch_resized > apply_threshold
+            output[j:end_idx] = (batch_resized > apply_threshold).to(torch.uint8)
+        else:
+            output[j:end_idx] = batch_resized
+        
+        # Explicitly free memory
+        del batch_resized
+        # Clear cache less frequently to avoid performance impact
+        if j > 0 and j % (batch_size * 10) == 0:  # Clear every ~80 masks
+            torch.cuda.empty_cache()
 
-        resized_masks.append(batch_resized)
-
-    return torch.cat(resized_masks, dim=0)
+    return output
 
 
 class LWDETR(nn.Module):
@@ -907,7 +933,7 @@ class PostProcess(nn.Module):
     def forward(
         self, outputs: Dict[str, Tensor], target_sizes: Tensor
     ) -> List[Dict[str, Tensor]]:
-        """Perform the computation
+        """Memory-efficient post-processing with optimized mask handling.
         Parameters:
             outputs: raw outputs of the model
             target_sizes: tensor of dimension [batch_size x 2] containing the size of each images of the batch
@@ -921,15 +947,21 @@ class PostProcess(nn.Module):
         assert len(out_logits) == len(target_sizes)
         assert target_sizes.shape[1] == 2
 
-        prob = out_logits.sigmoid()
+        # Use half precision for probabilities to save memory
+        prob = out_logits.sigmoid().half()
         topk_values, topk_indexes = torch.topk(
             prob.view(out_logits.shape[0], -1), self.num_select, dim=1
         )
         scores = topk_values
         topk_boxes = topk_indexes // out_logits.shape[2]
         labels = topk_indexes % out_logits.shape[2]
+        
+        # Convert boxes and free intermediate tensors
         boxes = box_ops.box_cxcywh_to_xyxy(out_bbox)
         boxes = torch.gather(boxes, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4))
+        
+        # Clear probability tensor to free memory
+        del prob
 
         # and from relative [0, 1] to absolute [0, height] coordinates
         img_h, img_w = target_sizes.unbind(1)
@@ -938,27 +970,37 @@ class PostProcess(nn.Module):
 
         results = []
         for i, (s, lbl, b) in enumerate(zip(scores, labels, boxes)):
-            result = {"scores": s, "labels": lbl, "boxes": b}
+            result = {"scores": s.float(), "labels": lbl, "boxes": b}
 
             # Include mask predictions if available
             if out_mask is not None:
-                # Get the top-k masks
+                # Get the top-k masks for this image
                 masks_per_image = out_mask[i]
-                masks = torch.gather(
-                    masks_per_image,
-                    0,
-                    topk_boxes[i].unsqueeze(-1).unsqueeze(-1).repeat(1, 28, 28),
-                )
-
-                # Resize masks to original image size with batching to reduce memory consumption
+                
+                # More memory-efficient gathering
+                mask_indices = topk_boxes[i].unsqueeze(-1).unsqueeze(-1).expand(-1, 28, 28)
+                masks = masks_per_image.gather(0, mask_indices)
+                
+                # Apply sigmoid before resizing for better numerical stability
+                masks = masks.sigmoid()
+                
+                # Resize masks with optimized parameters
                 result["masks"] = batch_resize_masks(
                     masks,
                     int(img_h[i].item()),
                     int(img_w[i].item()),
-                    batch_size=32,
+                    batch_size=8,  # Smaller batch size for better memory efficiency
+                    apply_threshold=0.5,  # Apply threshold to get binary masks
                 )
+                
+                # Clear intermediate mask tensors
+                del masks_per_image, masks, mask_indices
 
             results.append(result)
+            
+            # Clear cache less frequently for large batches
+            if i > 0 and i % 8 == 0:
+                torch.cuda.empty_cache()
 
         return results
 
@@ -1009,13 +1051,15 @@ class PostProcessSegm(nn.Module):
         for i in range(batch_size):
             masks = out_masks[i, topk_boxes[i]]  # [num_queries, H/4, W/4]
 
-            # Upsample masks to original image size with batching for memory efficiency
+            # Upsample masks to original image size with optimized memory usage
             img_h, img_w = target_sizes[i]
+            # Apply sigmoid before resizing for numerical stability
+            masks = masks.sigmoid()
             masks = batch_resize_masks(
                 masks,
                 int(img_h.item()),
                 int(img_w.item()),
-                batch_size=32,
+                batch_size=8,  # Smaller batch size for better memory efficiency
                 apply_threshold=self.threshold,
             )
 
