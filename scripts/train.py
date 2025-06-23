@@ -727,6 +727,7 @@ def main(args: argparse.Namespace) -> None:
                         base_ds,
                         device,
                         args,
+                        compute_loss=False,  # Don't compute losses during validation
                     )
 
                     if coco_evaluator is not None:
@@ -791,6 +792,7 @@ def main(args: argparse.Namespace) -> None:
             base_ds,
             device,
             args,
+            compute_loss=False,  # Don't compute losses during validation
         )
 
         # Print per-class metrics if requested
